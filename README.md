@@ -19,9 +19,9 @@ It does that with three things:
 | **`wengold-kernel`** | The *validity kernel*: on each change it classifies every prior result **valid / invalidated / unknown** and computes the minimum new evidence needed. |
 | **`wengold-ledger`** | An append-only, content-addressed record of every run, revision, verdict and waiver, tied to its source. |
 
-Everything above is MIT-licensed. Commercial tools plug in through adapters;
-the open stack (Verilator, Icarus, cocotb, Yosys, SymbiYosys, Z3, GTKWave) is
-first-class and works out of the box.
+Everything above is dual-licensed under MIT or Apache-2.0, at your option.
+Commercial tools plug in through adapters; the open stack (Verilator, Icarus,
+cocotb, Yosys, SymbiYosys, Z3, GTKWave) is first-class and works out of the box.
 
 ## Why
 
@@ -61,4 +61,10 @@ filled in. See [`docs/roadmap.md`](docs/roadmap.md).
 
 ## License
 
-MIT. See [`LICENSE`](LICENSE).
+Dual-licensed under either of
+
+- the MIT License ([`LICENSE-MIT`](LICENSE-MIT))
+- the Apache License, Version 2.0 ([`LICENSE-APACHE`](LICENSE-APACHE))
+
+at your option. Contributions are accepted under the same terms unless you state
+otherwise.
