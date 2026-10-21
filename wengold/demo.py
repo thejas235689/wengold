@@ -8,7 +8,11 @@ import os
 
 from .agents.orchestrator import Orchestrator
 from .graph.builder import GraphBuilder
+from .kernel import invariants
+from .kernel.contract import (Acceptance, Assumptions, Contract, Establishes,
+                              Execution, Limits, Method, MethodKind, Scope)
 from .kernel.minimize import minimum_new_evidence
+from .kernel.reuse import decide, verify_decision
 from .kernel.validity import Result, classify_all
 from .ledger.store import Ledger
 from .tools.adapters.cocotb import CocotbAdapter
@@ -44,13 +48,11 @@ def prior_results() -> list[Result]:
         Result("dma_key_test", "sim", depends_on={"dma", "sec_firewall"}),
         Result("npu_conv_test", "sim", depends_on={"npu"}),
         Result("a_secure_bit", "formal", depends_on={"sec_firewall"}),
-        # a result with no recorded dependencies — the kernel refuses to call it valid
         Result("legacy_cov", "coverage", depends_on=set()),
     ]
 
 
 def _dry_runner(workdir: str):
-    """A runner for the walkthrough: sim runs dry, formal has no engine installed."""
     cocotb = CocotbAdapter()
 
     def run(result_id: str, kind: str) -> Outcome:
@@ -59,6 +61,57 @@ def _dry_runner(workdir: str):
         return Outcome(kind, "run", ToolOutcome.TOOL_MISSING)
 
     return run
+
+
+def _firewall_contract() -> Contract:
+    return Contract(
+        claim="The secure key store is never written by a non-secure transaction.",
+        scope=Scope.make(files=["rtl/sec_firewall.sv"], config={"KEYS": 2},
+                         reset="async active-low"),
+        method=Method.make(MethodKind.PROOF, engine="sby",
+                           settings={"mode": "prove", "depth": "unbounded"}),
+        assumptions=Assumptions.make(
+            ["axi_awvalid held until awready", "reset released before first access"],
+            discharged=["axi_awvalid held until awready"]),
+        limits=Limits.make(supported_config={"KEYS": [1, 2, 4]},
+                           gaps=["key store ECC not modeled"]),
+    )
+
+
+def show_contract() -> None:
+    """What a result establishes, and under what conditions it may be reused."""
+    print("\n  result contract and the four questions\n")
+    c = _firewall_contract()
+    r = Result("sec_firewall_proof", "formal", depends_on={"sec_firewall"},
+               contract=c, execution=Execution.PASSED,
+               establishes=Establishes.PROOF, acceptance=Acceptance.ACCEPTED)
+
+    print(f"    claim       {c.claim}")
+    print(f"    scope       files={list(c.scope.files)} config={c.config()} reset={c.scope.reset}")
+    print(f"    method      {c.method.kind.value} via {c.method.engine} {dict(c.method.settings)}")
+    print(f"    assumptions {list(c.assumptions.items)}")
+    print(f"    evidence    fingerprints={dict(c.evidence.fingerprints)} "
+          f"status={c.evidence.proof_status}")
+    print(f"    limits      config={dict(c.limits.supported_config)} gaps={list(c.limits.gaps)}")
+    print(f"    questions   execution={r.execution.value}  establishes={r.establishes.value}"
+          f"  acceptance={r.acceptance.value}  currency=<computed>")
+
+    graph = build_graph()
+    d = decide(graph, r, {"sec_firewall"}, results=[r],
+               required=Establishes.PROOF, require_contract=True)
+    print(f"\n    reuse?      reusable={d.reusable}  currency={d.currency.value}")
+    print(f"    unmet       {d.unmet() or 'none'}")
+    rec = d.record(r, Establishes.PROOF).as_dict()
+    ok, issues = verify_decision(rec)
+    print(f"    decision record independently checked: ok={ok} {issues or ''}")
+
+    # a waiver must not become a technical pass
+    w = Result("sec_firewall_proof", "formal", depends_on={"sec_firewall"},
+               contract=c, execution=Execution.PASSED,
+               establishes=Establishes.PROOF, acceptance=Acceptance.WAIVED)
+    dw = decide(graph, w, {"sec_firewall"}, results=[w], required=Establishes.PROOF)
+    print(f"    waived:     reusable={dw.reusable} accepted_for_use={dw.accepted_for_use}"
+          f"  ({dw.reason})")
 
 
 def main() -> None:
@@ -86,10 +139,8 @@ def main() -> None:
     print(f"\n  minimum new evidence: {todo}")
     print(f"  kept from r1:         {kept}")
 
-    # a result derived from a rerun result is stale too — propagation
-    prior[3].depends_on_results = {"sec_acl_test"}   # npu summary consumes the acl result
-    todo2 = minimum_new_evidence(graph, classes)
-    print(f"  with result propagation: {todo2}")
+    prior[3].depends_on_results = {"sec_acl_test"}
+    print(f"  with result propagation: {minimum_new_evidence(graph, classes)}")
 
     print("\n  running the verification loop ...")
     orch = Orchestrator(graph, ledger, workdir="/tmp/wengold-demo-run")
@@ -99,6 +150,13 @@ def main() -> None:
     print(f"    settled:    {report['settled']}")
     if report["unsettled"]:
         print(f"    unsettled:  {report['unsettled']}  (no engine installed — reported, not assumed)")
+
+    show_contract()
+
+    print("\n  self-verification of the invalidation logic ...")
+    violations = invariants.fuzz(range(120), n_nodes=9, n_edges=16)
+    print(f"    invariants + reference cross-check over 120 generated graphs: "
+          f"{len(violations)} violation(s)")
 
     cp = ledger.checkpoint()
     audit = ledger.audit(checkpoint=True)

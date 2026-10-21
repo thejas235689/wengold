@@ -33,6 +33,8 @@ class NodeKind(str, Enum):
     RESET = "reset"
     CDC = "cdc"
     CONSTRAINT = "constraint"
+    ASSUMPTION = "assumption"
+    GUARANTEE = "guarantee"
 
 
 class EdgeKind(str, Enum):
@@ -50,6 +52,8 @@ class EdgeKind(str, Enum):
     DEFINED_IN = "defined_in"  # a module is defined in a file
     GENERATES = "generates"    # a generate block contributes to a module
     CONSTRAINED_BY = "constrained_by"
+    ASSUMES = "assumes"        # a block/result assumes a condition
+    GUARANTEES = "guarantees"  # a block/result guarantees a condition
     UNKNOWN = "unknown"        # dependency we cannot yet resolve -> kernel says UNKNOWN
 
 

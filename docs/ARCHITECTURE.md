@@ -66,3 +66,49 @@ Every verdict is bound to the RTL, testbench, assertions and constraints it
 consumed, the tool, version, arguments, seed, working directory and timeout, and
 an environment fingerprint — reduced to a single `repro` hash. Change any input
 and the evidence no longer describes the design, so the result is stale.
+
+## The result contract
+
+A result carries what it establishes and under what conditions it may be reused —
+`Claim`, `Scope` (files, configuration, reset), `Method` (kind, engine, settings),
+`Assumptions`, `Evidence` (fingerprints, commands, proof status, artifacts) and
+`Limits` (supported configuration, modeling gaps). Without it a stored `PASS` is
+read more broadly than the check supports.
+
+## Four independent questions
+
+| Question | Field | Values |
+|---|---|---|
+| What happened during execution? | `execution` | passed / failed / timed_out / crashed / tool_missing |
+| Is the evidence current? | `currency` (computed) | current / stale / unknown / withdrawn |
+| What does it establish? | `establishes` | none / observation / bounded_check / proof |
+| Has engineering accepted it? | `acceptance` | pending / accepted / rejected / waived |
+
+They are never collapsed. A waiver is an engineering decision and never becomes a
+technical pass: `decide()` reports `reusable` (technical) apart from
+`accepted_for_use` (reusable or waived).
+
+## Reuse as an auditable decision
+
+`decide()` evaluates explicit obligations — evidence current, established at the
+required level, acceptance not rejected, contract present (when required), config
+in scope, assumptions discharged, supporting evidence not withdrawn — and exports
+a `DecisionRecord`. `verify_decision()` re-derives the decision from that record
+alone, independently of the kernel's own path.
+
+## Typed dependencies and composition
+
+Edges carry a `DependencyType` (compilation, elaboration, behavioral, assumption,
+configuration, requirement), each with its own reassessment rule. Blocks carry
+assumptions and guarantees; `check_subsystem()` verifies that a parent's
+assumptions are discharged by its children, so a proven block is not promoted into
+a proven subsystem.
+
+## Verifying the kernel itself
+
+`wengold/kernel/reference.py` is an independent implementation of the invalidation
+semantics (explicit path enumeration, not a closure). `wengold/kernel/invariants.py`
+checks five invariants — no upgrade under added uncertainty, known changes
+invalidate consumers, no confidence from removed information, determinism, and
+withdrawal propagation — over generated graphs (`gengraph.py`) and against the
+reference. `invariants.fuzz()` returns zero violations.

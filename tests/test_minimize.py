@@ -1,9 +1,17 @@
 """Minimum new evidence must propagate downstream through the result graph."""
-from wengold.graph.model import DesignGraph
+from wengold.graph.model import DesignGraph, Node, NodeKind
 from wengold.kernel.minimize import minimum_new_evidence, propagate_results
 from wengold.kernel.validity import Result, classify_all
 
-GRAPH = DesignGraph()
+
+def _graph():
+    g = DesignGraph()
+    g.add_node(Node("x", NodeKind.RTL))
+    g.add_node(Node("y", NodeKind.RTL))
+    return g
+
+
+GRAPH = _graph()
 
 
 def _results():

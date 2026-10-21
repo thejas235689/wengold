@@ -71,6 +71,75 @@ python -m wengold.demo                  # run the bundled SoC walkthrough
   stdio so any MCP-capable agent can query the graph, classify results and append
   to the ledger.
 
+## What a result establishes, and when it may be reused
+
+A stored "PASS" is ambiguous. Every result can carry a **contract** — what it
+claims, over what scope, by what method, under what assumptions, with what
+evidence, and within what limits — so the conclusion cannot be read more broadly
+than the check supports:
+
+```python
+Contract(
+  claim="The secure key store is never written by a non-secure transaction.",
+  scope=Scope.make(files=["rtl/sec_firewall.sv"], config={"KEYS": 2}),
+  method=Method.make(MethodKind.PROOF, engine="sby"),
+  assumptions=Assumptions.make([...], discharged=[...]),
+  evidence=EvidenceRef.make(fingerprints={...}, proof_status="PASS"),
+  limits=Limits.make(supported_config={"KEYS": [1, 2, 4]}, gaps=[...]),
+)
+```
+
+**Four questions, kept separate** — never collapsed into one bit:
+
+| Question | Values |
+|---|---|
+| What happened during execution? | `passed` · `failed` · `timed_out` · `crashed` · `tool_missing` |
+| Is the evidence current? | `current` · `stale` · `unknown` · `withdrawn` *(computed by the kernel)* |
+| What does it establish? | `none` · `observation` · `bounded_check` · `proof` |
+| Has engineering accepted it? | `pending` · `accepted` · `rejected` · `waived` |
+
+A current simulation pass is limited evidence. A **waiver records an engineering
+decision and never becomes a technical pass** — `decide()` reports `reusable`
+(the technical decision) separately from `accepted_for_use` (reusable *or* waived).
+
+**Reuse is an auditable decision.** `decide()` evaluates explicit obligations
+(evidence current, established at the required level, not rejected, contract in
+scope, assumptions discharged, supporting evidence not withdrawn) and exports a
+small `DecisionRecord` that `verify_decision()` re-derives independently.
+
+**Deeper capabilities, all implemented:**
+
+- **Typed dependencies** — compilation, elaboration, behavioral, assumption,
+  configuration and requirement dependencies, each with its own reassessment rule.
+- **Claim dependencies** — requirements trace to properties, tests and runs, so a
+  changed requirement invalidates a conclusion even when the RTL is unchanged.
+- **Composition contracts** — blocks carry assumptions and guarantees; integration
+  is checked so a proven block is not promoted into a proven subsystem.
+- **Configuration coverage** — results record the configuration they were
+  established over, and `Limits.covers()` says whether a given config is inside them.
+- **Evidence withdrawal** — a checker bug, bad assumption or tool issue retracts a
+  conclusion, and reuse of anything that leaned on it is re-assessed.
+- **Independent decision checking** — the decision record is validated by a
+  separate implementation of the rule.
+
+## Verifying WENGOLD's own invalidation logic
+
+The kernel's reasoning is itself tested, not just its code paths. Five invariants
+are checked against generated graphs, mutation and an independent reference
+implementation (`wengold/kernel/reference.py`, which enumerates upstream paths
+rather than computing a closure):
+
+1. Adding uncertainty must not upgrade an affected result to reusable.
+2. A known changed input must invalidate evidence that consumed it.
+3. Removing graph information must not increase confidence.
+4. Identical recorded inputs must produce deterministic classifications.
+5. Reassessment must propagate when supporting evidence is withdrawn.
+
+```python
+from wengold.kernel import invariants
+violations = invariants.fuzz(range(400))   # 0
+```
+
 ## CLI
 
 ```bash
