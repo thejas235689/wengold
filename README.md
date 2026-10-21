@@ -59,6 +59,13 @@ Palladium, Veloce, Vivado, Quartus, Yosys, vManager.
 Pre-alpha. The kernel, graph and ledger are implemented; agent roles are being
 filled in. See [`docs/roadmap.md`](docs/roadmap.md).
 
+## Documentation
+
+- [Architecture specification](docs/WENGOLD-Architecture-Spec.pdf) — the graph, the validity kernel and the ledger, in full.
+- [Open-core strategy](docs/WENGOLD-OpenCore-Strategy.pdf) — the model, the market and the boundary.
+- [Pitch deck](docs/WENGOLD-Pitch-Deck.html) — open it in any browser.
+- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) and [`docs/roadmap.md`](docs/roadmap.md) — short reference and plan.
+
 ## License
 
 Dual-licensed under either of
