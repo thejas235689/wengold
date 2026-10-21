@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WENGOLD — open silicon verification</title>
+<meta name="description" content="WENGOLD is the open-source validity kernel for silicon verification: it keeps the results that still hold after a change and reruns only what the change could have affected.">
+<style>
+  :root { --ground:#140E0B; --ink:#F9EFEB; --ink2:#C5BBB7; --ink3:#99908C;
+          --accent:#FF6A00; --green:#6CD092; --rule:#2E2724; --raised:#241E1B; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--ground); color:var(--ink);
+         font:16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; }
+  .wrap { max-width: 880px; margin: 0 auto; padding: 72px 28px 96px; }
+  .mark { display:flex; align-items:center; gap:14px; margin-bottom:40px; }
+  .chip { width:44px; height:44px; border:2px solid var(--ink); border-radius:11px;
+          position:relative; flex:none; }
+  .chip i { position:absolute; display:block; border-radius:2px; background:var(--ink); }
+  .wordmark { font-size:30px; font-weight:700; letter-spacing:.14em; }
+  h1 { font-size:clamp(34px,6vw,58px); line-height:1.05; margin:0 0 20px; letter-spacing:-.01em; }
+  .lede { font-size:20px; color:var(--ink2); max-width:660px; margin:0 0 40px; }
+  .accent { color:var(--accent); }
+  .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:16px; margin:44px 0; }
+  a.card { display:block; text-decoration:none; color:inherit; background:var(--raised);
+           border:1px solid var(--rule); border-radius:12px; padding:22px 22px 24px; transition:border-color .15s; }
+  a.card:hover { border-color:var(--accent); }
+  .card .k { font-size:12px; letter-spacing:.12em; text-transform:uppercase; color:var(--accent); }
+  .card h2 { font-size:20px; margin:10px 0 8px; }
+  .card p { margin:0; color:var(--ink3); font-size:15px; }
+  pre { background:var(--raised); border:1px solid var(--rule); border-radius:12px;
+        padding:18px 20px; overflow-x:auto; font-size:14px; color:var(--ink2); }
+  .q { border-left:3px solid var(--accent); padding:4px 0 4px 18px; color:var(--ink2);
+       font-size:18px; margin:36px 0; }
+  footer { margin-top:56px; padding-top:24px; border-top:1px solid var(--rule);
+           color:var(--ink3); font-size:14px; display:flex; flex-wrap:wrap; gap:18px; justify-content:space-between; }
+  footer a { color:var(--ink2); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="mark">
+    <span class="chip" aria-hidden="true">
+      <i style="left:10px;top:9px;width:5px;height:24px;transform:rotate(20deg);background:#FF6A00"></i>
+      <i style="left:19px;top:9px;width:5px;height:24px;transform:rotate(-20deg);background:#6CD092"></i>
+      <i style="left:28px;top:9px;width:5px;height:24px;transform:rotate(20deg);background:#4D8DFF"></i>
+    </span>
+    <span class="wordmark">WENGOLD</span>
+  </div>
+
+  <h1>Verification that compounds, <span class="accent">in the open.</span></h1>
+  <p class="lede">WENGOLD keeps every verification result that still holds after a change,
+     and reruns only what the change could have touched. The graph, the validity kernel
+     and the ledger are open — dual-licensed MIT or Apache-2.0.</p>
+
+  <div class="q">After every change: <strong>which of my previous results still hold?</strong>
+     Valid, invalidated, or unknown — never assumed.</div>
+
+  <div class="grid">
+    <a class="card" href="WENGOLD-Pitch-Deck.html">
+      <div class="k">Deck</div>
+      <h2>Pitch deck</h2>
+      <p>Thirteen slides: the problem, the system, the market and the model.</p>
+    </a>
+    <a class="card" href="WENGOLD-Architecture-Spec.pdf">
+      <div class="k">Specification</div>
+      <h2>Architecture spec</h2>
+      <p>The graph, the validity kernel and the ledger, in full.</p>
+    </a>
+    <a class="card" href="WENGOLD-OpenCore-Strategy.pdf">
+      <div class="k">Strategy</div>
+      <h2>Open-core model</h2>
+      <p>The market, the boundary between open core and enterprise, and the risks.</p>
+    </a>
+    <a class="card" href="https://github.com/thejas235689/wengold">
+      <div class="k">Code</div>
+      <h2>Repository</h2>
+      <p>The kernel, graph, ledger, agents and MCP server — with 100+ tests.</p>
+    </a>
+  </div>
+
+  <h2 style="font-size:22px;margin:44px 0 12px;">Install</h2>
+  <pre>git clone https://github.com/thejas235689/wengold.git
+cd wengold
+python -m pip install -e ".[open]"
+python -m wengold.demo</pre>
+
+  <footer>
+    <span>WENGOLD · open silicon verification</span>
+    <span><a href="https://github.com/thejas235689/wengold">github.com/thejas235689/wengold</a> · MIT OR Apache-2.0</span>
+  </footer>
+</div>
+</body>
+</html>
