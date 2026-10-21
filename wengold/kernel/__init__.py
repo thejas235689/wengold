@@ -1,2 +1,3 @@
-from .validity import Verdict, Result, classify, classify_all   # noqa: F401
-from .minimize import minimum_new_evidence                       # noqa: F401
+from .validity import (Verdict, Result, Classification, classify,   # noqa: F401
+                       classify_all, completeness_report)
+from .minimize import minimum_new_evidence, propagate_results       # noqa: F401

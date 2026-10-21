@@ -1,26 +1,38 @@
-"""SymbiYosys adapter — open formal proofs (BMC, k-induction, cover)."""
+"""SymbiYosys adapter — open formal proofs (BMC, k-induction, cover).
+
+The exit code is not the verdict: sby can exit 0 having proved nothing. The
+outcome is parsed from its `DONE (...)` / `Status:` lines, and anything that does
+not clearly say PASS becomes FAIL or INCONCLUSIVE — never a silent pass.
+"""
 from __future__ import annotations
 
 import shutil
-import subprocess
 
 from ..base import ToolSpec
+from ..outcome import (Outcome, ToolOutcome, parse_sby_status, run_tool)
 from ..registry import TOOL_GROUPS
 
 SPEC: ToolSpec = next(t for t in TOOL_GROUPS["formal"] if t.key == "symbiyosys")
+BIN = SPEC.binary or "sby"
 
 
 class SymbiYosysAdapter:
     spec = SPEC
 
     def available(self) -> bool:
-        return shutil.which(self.spec.binary or "sby") is not None
+        return shutil.which(BIN) is not None
 
-    def prove(self, sby_file: str) -> dict:
-        p = subprocess.run([self.spec.binary or "sby", "-f", sby_file],
-                           capture_output=True, text=True)
-        return {"tool": "symbiyosys", "action": "prove", "rc": p.returncode,
-                "log": p.stdout + p.stderr, "verdict": "pass" if p.returncode == 0 else "fail"}
+    def prove(self, sby_file: str, timeout: float = 1800.0, cwd: str | None = None) -> Outcome:
+        def interpret(log: str, rc: int):
+            parsed = parse_sby_status(log)
+            if parsed is not None:
+                return parsed
+            # no structured status: an unparseable run proves nothing
+            return ToolOutcome.INCONCLUSIVE if rc == 0 else ToolOutcome.ERROR
 
-    def run(self, **kwargs) -> dict:
+        return run_tool(BIN, ["-f", sby_file], tool="symbiyosys", action="prove",
+                        timeout=timeout, cwd=cwd, interpret=interpret,
+                        collect=["*.vcd", "*.log", "**/logfile.txt"])
+
+    def run(self, **kwargs) -> Outcome:
         return self.prove(**kwargs)

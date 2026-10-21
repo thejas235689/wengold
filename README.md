@@ -19,9 +19,9 @@ It does that with three things:
 | **`wengold-kernel`** | The *validity kernel*: on each change it classifies every prior result **valid / invalidated / unknown** and computes the minimum new evidence needed. |
 | **`wengold-ledger`** | An append-only, content-addressed record of every run, revision, verdict and waiver, tied to its source. |
 
-Everything above is dual-licensed under MIT or Apache-2.0, at your option.
-Commercial tools plug in through adapters; the open stack (Verilator, Icarus,
-cocotb, Yosys, SymbiYosys, Z3, GTKWave) is first-class and works out of the box.
+Everything above is dual-licensed under MIT or Apache-2.0. Commercial tools plug
+in through adapters; the open stack (Verilator, Icarus, cocotb, Yosys,
+SymbiYosys, Z3, GTKWave) is first-class and works out of the box.
 
 ## Why
 
@@ -35,10 +35,50 @@ affected.
 ## Install
 
 ```bash
-git clone https://github.com/wengold/wengold.git
+git clone https://github.com/thejas235689/wengold.git
 cd wengold
 python -m pip install -e ".[open]"     # open toolchain only
-wengold demo                            # run the bundled SoC walkthrough
+python -m wengold.demo                  # run the bundled SoC walkthrough
+```
+
+## What is implemented
+
+- **Elaboration, not regex.** `wengold.graph.elaborate` resolves `include` chains,
+  `define` macros, `package`/`import`, `parameter`s, `generate` blocks and `.f`
+  file lists, and reports anything it cannot resolve.
+- **Conservative kernel.** The kernel returns `VALID` only when it can prove a
+  result is unaffected. An empty dependency set, a dependency on an unresolved
+  node, or a graph built without full elaboration all yield `UNKNOWN` — never a
+  false pass.
+- **Rerun propagation.** `minimum_new_evidence()` closes over the result graph, so
+  anything derived from a re-run result is re-established too.
+- **Reproducible evidence.** Every result is bound to the RTL, testbench,
+  assertions and constraints it consumed, the tool, version, arguments, seed and
+  working directory, and an environment fingerprint — as a single `repro` hash.
+- **A real simulation flow.** `CocotbAdapter.run()` builds the environment,
+  compiles and runs through the project Makefile, parses `results.xml` and
+  collects waveforms and logs.
+- **Honest tool outcomes.** Missing tool, timeout, crash, failed check and
+  inconclusive proof are distinct; formal results are parsed from sby's own
+  status, not its exit code.
+- **A hardened ledger.** Concurrent-write locking, sequence and chain
+  validation, malformed-record handling, and a trusted checkpoint that catches
+  truncation of trailing records.
+- **Operational agents.** Deterministic testbench and SVA generation, log-based
+  diagnosis, repair proposals with an apply path, and `Orchestrator.run_loop()`
+  that drives a complete classify → run → evidence → diagnose → repair loop.
+- **A working MCP server.** `python -m wengold.mcp.server` speaks JSON-RPC over
+  stdio so any MCP-capable agent can query the graph, classify results and append
+  to the ledger.
+
+## CLI
+
+```bash
+wengold index ./rtl                       # build the dependency graph
+wengold completeness ./rtl                # report unresolved nodes
+wengold classify ./rtl --changed sec_firewall --results results.json
+wengold serve                             # run the MCP server over stdio
+wengold demo                              # the bundled walkthrough
 ```
 
 ## Tool coverage
@@ -56,8 +96,10 @@ Palladium, Veloce, Vivado, Quartus, Yosys, vManager.
 
 ## Status
 
-Pre-alpha. The kernel, graph and ledger are implemented; agent roles are being
-filled in. See [`docs/roadmap.md`](docs/roadmap.md).
+v0.2. The graph, kernel and ledger are implemented and tested (69 tests); the
+agents run a real loop; the MCP server works. Analog and mixed-signal
+verification and physical signoff are out of scope. See
+[`docs/roadmap.md`](docs/roadmap.md).
 
 ## Documentation
 

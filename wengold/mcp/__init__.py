@@ -1,1 +1,1 @@
-"""MCP server so code agents (Claude Code, opencode, Copilot) can drive WENGOLD."""
+from .server import WengoldServer, main, TOOLS   # noqa: F401

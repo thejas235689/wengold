@@ -2,14 +2,14 @@
 
 Used for commercial tools (VCS, Xcelium, Questa, JasperGold, ...) and for flow
 tools (Git, Jira, Slack). Absent binaries are reported as `tool_missing` — never
-as a pass.
+as a pass; a timeout or crash is reported as such, never as a check failure.
 """
 from __future__ import annotations
 
 import shutil
-import subprocess
 
 from ..base import ToolSpec
+from ..outcome import Outcome, run_tool
 
 
 class GenericAdapter:
@@ -19,9 +19,8 @@ class GenericAdapter:
     def available(self) -> bool:
         return self.spec.binary is not None and shutil.which(self.spec.binary) is not None
 
-    def run(self, args: list[str], cwd: str | None = None) -> dict:
-        if not self.available():
-            return {"tool": self.spec.key, "verdict": "tool_missing"}
-        p = subprocess.run([self.spec.binary, *args], capture_output=True, text=True, cwd=cwd)
-        return {"tool": self.spec.key, "rc": p.returncode, "log": p.stdout + p.stderr,
-                "verdict": "pass" if p.returncode == 0 else "fail"}
+    def run(self, args: list[str], cwd: str | None = None, timeout: float = 600.0,
+            env: dict | None = None, interpret=None, collect: list[str] | None = None) -> Outcome:
+        return run_tool(self.spec.binary, list(args), tool=self.spec.key,
+                        action=self.spec.role, timeout=timeout, cwd=cwd, env=env,
+                        interpret=interpret, collect=collect)
