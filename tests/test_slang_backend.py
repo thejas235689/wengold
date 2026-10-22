@@ -161,3 +161,19 @@ def test_builder_regex_backend_still_works():
                         "  child u (.clk(clk));\nendmodule\n")}
     g = GraphBuilder().build_from_files(files, backend="regex")
     assert "top" in g.nodes
+
+
+@needs_slang
+def test_interfaces_count_as_definitions():
+    """An instantiation of an interface must not read as a missing module."""
+    files = {"iface.sv": "interface mem_interface; endinterface\n",
+             "child.sv": "module child (input logic clk); endmodule\n",
+             "top.sv": ("module top (input logic clk);\n"
+                        "  mem_interface u_if ();\n"
+                        "  child u_c (.clk(clk));\n"
+                        "endmodule\n")}
+    units = elaborate(files, include_dirs=["."], defines={})
+    assert "mem_interface" in units["iface.sv"].interfaces
+    g = GraphBuilder().build_from_files(files, backend="slang")
+    assert "mem_interface" in g.nodes
+    assert "top" not in g.unresolved_nodes()      # resolved, not missing

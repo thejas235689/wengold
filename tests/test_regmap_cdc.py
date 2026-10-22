@@ -141,3 +141,28 @@ def test_cdc_does_not_flag_parameters_genvars_or_memories():
         assert noise not in rep.unresolved, f"{noise} should not be reported unresolved"
     assert ("a_reg", "clk_wr_i", "clk_rd_i") in {
         (c.signal, c.from_domain, c.to_domain) for c in rep.crossings}
+
+
+# ---- regression: real-RTL noise found on CVA5 --------------------------
+def test_cdc_ignores_prose_in_comments():
+    src = ("module m (input logic clk);\n"
+           "  // This block will send a request and wait for an acknowledge\n"
+           "  /* If the buffer is full, the debugger may need to wait. */\n"
+           "  logic q;\n"
+           "  always_ff @(posedge clk) q <= 1'b1;\n"
+           "endmodule\n")
+    rep = analyse(src, "m")
+    assert rep.unresolved == []                 # prose is not a signal, nor is 1'b1
+    assert rep.domains == {"clk": ["q"]}
+
+
+def test_cdc_recognises_always_comb_and_blocking_writes():
+    src = ("module m (input logic clk, input logic a);\n"
+           "  logic q, comb;\n"
+           "  always_ff @(posedge clk) q <= a;\n"
+           "  always_comb comb = q & a;\n"
+           "  always_ff @(posedge clk) q <= comb;\n"
+           "endmodule\n")
+    rep = analyse(src, "m")
+    assert "comb" not in rep.unresolved          # resolved from q's domain
+    assert rep.crossings == []

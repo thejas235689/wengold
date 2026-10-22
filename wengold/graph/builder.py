@@ -76,9 +76,13 @@ class GraphBuilder:
         as well — so the kernel cannot return VALID downstream of either.
         """
         defined = {m for u in units.values() for m in u.modules}
+        defined |= {i for u in units.values() for i in u.interfaces}
         for path, unit in sorted(units.items()):
             for pkg in unit.packages:
                 self.graph.add_node(Node(id=pkg, kind=NodeKind.PACKAGE, path=path))
+            for iface in unit.interfaces:
+                self.graph.add_node(Node(id=iface, kind=NodeKind.RTL, path=path,
+                                         meta={"frontend": "slang", "unit": "interface"}))
             for mod in unit.modules:
                 self.graph.add_node(Node(id=mod, kind=NodeKind.RTL, path=path,
                                          meta={"frontend": "slang"}))

@@ -17,13 +17,21 @@ from dataclasses import dataclass, field
 from .model import EdgeKind, Node, NodeKind
 
 _ALWAYS = re.compile(r"\balways(?:_ff|_comb|_latch)?\s*@\s*\(([^)]*)\)")
+# `always_comb` / `always_latch` carry no sensitivity list
+_ALWAYS_PLAIN = re.compile(r"\balways(?:_comb|_latch)\b(?!\s*@)")
 _ASSIGN = re.compile(r"\bassign\s+(\w+)\s*=\s*([^;]+);")
 _WRITE = re.compile(r"(\w+)\s*<=")
+# a blocking assignment in a combinational block: `=` but not `==`, `<=`, `>=`
+_WRITE_BLOCKING = re.compile(r"(\w+)\s*=(?!=)")
 _IDENT = re.compile(r"[A-Za-z_]\w*")
 _PARAM = re.compile(r"\b(?:parameter|localparam)\b[^=;]*?\b(\w+)\s*=")
 _GENVAR = re.compile(r"\bgenvar\b\s+([\w,\s]+);")
 _MEMORY = re.compile(r"\b(\w+)\s*\[[^\]]*\]\s*\[")
 _ENUM_LITERAL = re.compile(r"^[A-Z][A-Z0-9_]*$")
+_COMMENT_BLOCK = re.compile(r"/\*.*?\*/", re.DOTALL)
+_COMMENT_LINE = re.compile(r"//[^\n]*")
+# a sized literal (1'b1, 8'hFF, 4'd9) is a value, not a signal name
+_SIZED_LITERAL = re.compile(r"\d*'[sS]?[bBoOdDhH][0-9a-fA-FxXzZ_]+")
 
 
 def _non_signals(text: str) -> set[str]:
@@ -100,23 +108,39 @@ def _clock_of(sens: str) -> str | None:
 
 
 def analyse(text: str, module: str) -> CdcReport:
+    # Comments are prose: they contain ordinary words that look like signals, so
+    # scanning them floods the unresolved list. Strip them first.
+    text = _COMMENT_BLOCK.sub(" ", text)
+    text = _COMMENT_LINE.sub(" ", text)
+    text = _SIZED_LITERAL.sub(" ", text)
     report = CdcReport(module=module)
     not_signals = _non_signals(text)
 
     written_by: dict[str, set[str]] = {}          # clock -> written signals
     read_by: dict[str, set[str]] = {}             # clock -> read signals
+    comb: dict[str, set[str]] = {}                # combinational target -> its reads
     for m in _ALWAYS.finditer(text):
         clock = _clock_of(m.group(1))
-        if clock is None:
-            continue
         body = _block_body(text, m.end())
-        written = set(_WRITE.findall(body))
         idents = {i for i in _IDENT.findall(body)
                   if i not in _KEYWORDS and i not in not_signals}
+        if clock is None:
+            # a combinational block: its targets are not clocked, but their value
+            # still comes from somewhere — record it so a signal driven here is
+            # not mistaken for one with no determinable domain
+            for target in set(_WRITE_BLOCKING.findall(body)) | set(_WRITE.findall(body)):
+                comb[target] = idents - {target}
+            continue
+        written = set(_WRITE.findall(body))
         written_by.setdefault(clock, set()).update(written)
         read_by.setdefault(clock, set()).update(idents - written - {clock})
 
-    comb: dict[str, set[str]] = {}
+    for m in _ALWAYS_PLAIN.finditer(text):
+        body = _block_body(text, m.end())
+        idents = {i for i in _IDENT.findall(body)
+                  if i not in _KEYWORDS and i not in not_signals}
+        for target in set(_WRITE_BLOCKING.findall(body)) | set(_WRITE.findall(body)):
+            comb[target] = idents - {target}
     for m in _ASSIGN.finditer(text):
         target = m.group(1)
         reads = {i for i in _IDENT.findall(m.group(2)) if i not in _KEYWORDS}

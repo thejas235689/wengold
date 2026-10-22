@@ -31,6 +31,7 @@ class SlangUnit:
     """What one source file declares, according to a real parse."""
     path: str
     modules: list[str] = field(default_factory=list)
+    interfaces: list[str] = field(default_factory=list)
     instantiations: list[tuple[str, str]] = field(default_factory=list)
     packages: list[str] = field(default_factory=list)
     imports: list[str] = field(default_factory=list)
@@ -41,6 +42,7 @@ class SlangUnit:
 
     def as_dict(self) -> dict:
         return {"path": self.path, "modules": self.modules,
+                "interfaces": self.interfaces,
                 "instantiations": [list(i) for i in self.instantiations],
                 "packages": self.packages, "imports": self.imports,
                 "parameters": [list(p) for p in self.parameters],
@@ -96,6 +98,12 @@ def extract(text: str, name: str = "source") -> SlangUnit:
             for inst in n.instances:
                 unit.instantiations.append(
                     (mod, _text(getattr(inst, "decl", None)) or "?"))
+        elif kind in (S.SyntaxKind.InterfaceDeclaration, S.SyntaxKind.ProgramDeclaration):
+            # an interface is a design unit an instantiation can bind to, so it
+            # counts as a definition — not a missing module
+            name = _text(getattr(n.header, "name", None))
+            if name:
+                unit.interfaces.append(name)
         elif kind == S.SyntaxKind.PackageDeclaration:
             name = _text(getattr(n.header, "name", None))
             if name:
