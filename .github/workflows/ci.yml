@@ -11,4 +11,8 @@ jobs:
       - uses: actions/setup-python@v5
         with: { python-version: "${{ matrix.python-version }}" }
       - run: python -m pip install -e ".[dev]"
+      # core suite — no optional backends, so the z3 tests skip
+      - run: pytest -q
+      # then with the symbolic backend, so the z3 engine is actually exercised
+      - run: python -m pip install ".[formal]"
       - run: pytest -q
