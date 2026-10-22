@@ -114,6 +114,71 @@ def show_contract() -> None:
           f"  ({dw.reason})")
 
 
+def show_formal() -> None:
+    """The formal loop: prove, find a counterexample, repair, prove again."""
+    from .formal import Property, prove as formal_prove
+
+    good = (
+        "module counter (input logic clk, input logic rst_n, input logic en);\n"
+        "    parameter MAX = 4;\n"
+        "    logic [2:0] count;\n"
+        "    always_ff @(posedge clk) begin\n"
+        "        if (!rst_n) count <= 0;\n"
+        "        else if (en) count <= (count == MAX) ? 0 : count + 1;\n"
+        "    end\nendmodule\n")
+    bad = good.replace("else if (en) count <= (count == MAX) ? 0 : count + 1;",
+                       "else if (en) count <= count + 1;")
+    prop = Property.safety("bound", "count <= MAX", clock="clk")
+
+    print("\n  formal verification loop\n")
+    r = formal_prove(good, [prop], engine="explicit")["results"][0]
+    print(f"    counter.sv      {r.status:>8}  {r.detail}")
+    r = formal_prove(bad, [prop], engine="explicit")["results"][0]
+    print(f"    counter_bad.sv  {r.status:>8}  {r.detail}")
+    steps = len(r.trace) if r.trace else 0
+    print(f"    counterexample length: {steps} step(s)")
+
+    def repair(text, failure):
+        return text.replace("else if (en) count <= count + 1;",
+                            "else if (en) count <= (count == MAX) ? 0 : count + 1;")
+
+    out = formal_prove(bad, [prop], engine="explicit", repair=repair, budget=3)
+    print(f"    after repair    {out['results'][0].status:>8}  "
+          f"(attempts {len(out['iterations'])}, repaired={out['repaired']})")
+    c = out["contracts"][0]
+    print(f"    contract        {c.claim}")
+    print(f"                    method={c.method.kind.value} "
+          f"status={c.evidence.proof_status} gaps={list(c.limits.gaps)}")
+
+
+def show_frontends() -> None:
+    """Register-map and clock-domain-crossing front-ends."""
+    from .graph.cdc import analyse as cdc_analyse
+    from .graph.regmap import parse_rdl
+
+    print("\n  front-ends\n")
+    rdl = ("addrmap sec_ctrl {\n"
+           "    reg { field { sw=rw; hw=r; } EN[0:0] = 0;"
+           " field { sw=r; hw=w; } STATE[3:1]; } ctrl @ 0x0;\n"
+           "    reg { field { sw=rw; hw=r; } KEY[31:0] = 0; } key @ 0x100;\n"
+           "};\n")
+    amap = parse_rdl(rdl)
+    print(f"    regmap  {amap.name}: " + ", ".join(
+        f"{r.name}@{hex(r.address)}({[f.name for f in r.fields]})"
+        for r in amap.registers))
+    rtl = ("module mixed_clocks (input logic clk_a, input logic clk_b, input logic d_in);\n"
+           "    logic [7:0] a_reg, b_reg, comb;\n"
+           "    always_ff @(posedge clk_a) begin a_reg <= d_in; end\n"
+           "    always_ff @(posedge clk_b) begin b_reg <= a_reg; end\n"
+           "    assign comb = a_reg + 1;\nendmodule\n")
+    rep = cdc_analyse(rtl, "mixed_clocks")
+    print(f"    cdc     domains={rep.domains}")
+    for c in rep.crossings:
+        print(f"            crossing {c.signal}: {c.from_domain} -> {c.to_domain} ({c.kind})")
+    if rep.unresolved:
+        print(f"            unresolved: {rep.unresolved} (module marked unresolved)")
+
+
 def main() -> None:
     graph = build_graph()
     if os.path.exists(LEDGER_PATH):
@@ -152,6 +217,8 @@ def main() -> None:
         print(f"    unsettled:  {report['unsettled']}  (no engine installed — reported, not assumed)")
 
     show_contract()
+    show_formal()
+    show_frontends()
 
     print("\n  self-verification of the invalidation logic ...")
     violations = invariants.fuzz(range(120), n_nodes=9, n_edges=16)

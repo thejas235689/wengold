@@ -4,11 +4,12 @@
 - **v0.2** — elaboration-based dependencies; conservative kernel with graph
   completeness; rerun propagation; reproducible evidence; working cocotb flow;
   reliable tool outcomes; hardened ledger with checkpoint; operational agents and
-  a working MCP server. ✅ *(this release)*
-- **v0.3** — register-map and CDC front-ends (SystemRDL, IP-XACT); Surelog and
-  Verible elaboration backends.
-- **v0.4** — formal loop (SymbiYosys + Z3) with counterexample-guided repair.
-- **v0.5** — regression farm, coverage closure, waiver register.
+  a working MCP server. ✅
+- **v0.3** — register-map and CDC front-ends (SystemRDL, IP-XACT). ✅
+- **v0.4** — formal loop with counterexample-guided repair: property IR, a bounded
+  RTL front-end, explicit-state and z3 engines, CEGAR. ✅ *(this release)*
+- **v0.5** — a Surelog/Verible elaboration backend; SymbiYosys as an external engine;
+  regression farm, coverage closure, waiver register.
 - **v1.0** — spec-to-signoff on the open toolchain, reproducible on Sky130.
 
 ## Non-goals

@@ -112,3 +112,38 @@ checks five invariants — no upgrade under added uncertainty, known changes
 invalidate consumers, no confidence from removed information, determinism, and
 withdrawal propagation — over generated graphs (`gengraph.py`) and against the
 reference. `invariants.fuzz()` returns zero violations.
+
+## Formal verification
+
+The property IR is written once and consumed by every backend: compiled to
+SystemVerilog assertions for SymbiYosys, and to the in-process engines.
+
+```
+Property (IR) ──┬─▶ SVA module        (sby / commercial formal)
+                ├─▶ explicit engine   (reachability fixpoint)
+                └─▶ z3 engine         (BMC + k-induction)
+```
+
+A bounded RTL front-end parses a documented subset into a transition function; the
+explicit engine explores the reachable state space and proves the property at a
+fixpoint, the z3 engine unrolls the transition relation and closes by k-induction.
+A run that neither proves nor finds a counterexample is **BOUNDED**, not a pass,
+and anything outside the subset is **UNKNOWN**.
+
+`formal/loop.py` wraps this in a counterexample-guided loop: check, diagnose,
+propose a repair, apply, re-check, bounded by a budget. Each property leaves a
+`Contract` whose method is `proof` only when it really was proven.
+
+## Register maps and clock domains
+
+`graph/regmap.py` parses SystemRDL and IP-XACT into one normalised address map
+(registers, fields, addresses, widths, `sw`/`hw` access, reset values), reports
+address collisions and overlapping fields, and adds register/field nodes with
+`drives` edges so a policy change propagates.
+
+`graph/cdc.py` finds the clock domains in a module, resolves which domain each
+signal's value comes from (including through combinational logic), and reports
+every signal read in one domain but written in another as a `cdc.*` node with
+`crosses` edges. Signals whose domain cannot be determined are reported, and the
+module is marked unresolved — so the kernel returns UNKNOWN downstream rather than
+trusting a stale result across a crossing.

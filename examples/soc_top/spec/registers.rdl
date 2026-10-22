@@ -1,4 +1,10 @@
-reg {
-    field { sw=rw; hw=r; } SEC_KEY[31:0] = 0;
-    field { sw=rw; hw=r; } SEC_EN[0:0] = 0;
-} sec_ctrl @ 0x00020000;
+// Security control block for the inference SoC.
+addrmap sec_ctrl {
+    reg {
+        field { sw=rw; hw=r; } SEC_EN[0:0]   = 0;
+        field { sw=r;  hw=w; } SEC_STATE[3:1];
+        field { sw=rw; hw=r; } SEC_KEY[31:16] = 0;
+    } ctrl @ 0x0000;
+    reg { field { sw=rw; hw=r; } KEY[31:0] = 0; } key @ 0x0100;
+    reg { field { sw=r;  hw=w; } COUNT[15:0]; } count @ 0x0104;
+};

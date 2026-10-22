@@ -122,6 +122,49 @@ small `DecisionRecord` that `verify_decision()` re-derives independently.
 - **Independent decision checking** — the decision record is validated by a
   separate implementation of the rule.
 
+
+## Formal verification
+
+A real proof loop, with no external tool required:
+
+- **Property IR** (`wengold/formal/ir.py`) — one description of a claim, compiled to
+  SystemVerilog assertions for SymbiYosys *and* consumed by the in-process engines.
+- **A bounded RTL front-end** (`wengold/formal/rtl_model.py`) — a documented
+  SystemVerilog subset (parameters, `assign`, clocked `always_ff` with non-blocking
+  assignments and `if`/`else`, the usual expression grammar) turned into an
+  executable transition function. Anything outside the subset raises
+  `UnsupportedConstruct`, and the property is reported UNKNOWN — never guessed.
+- **Two engines** (`wengold/formal/engine.py`):
+  - *explicit* — explicit-state reachability. Proves a property when it reaches a
+    fixpoint, reports BOUNDED if it stops early or the input space is incomplete.
+  - *z3* — symbolic BMC plus k-induction over bit-vectors (optional `z3-solver`).
+    k-induction proves the property for all reachable states when it closes.
+- **Counterexample-guided repair** (`wengold/formal/loop.py`) — check, diagnose,
+  propose a repair, apply it and check again, bounded by a budget. Each property
+  leaves a `Contract` whose method is `proof` only when it really was proven.
+
+```bash
+wengold formal examples/formal/counter.sv --property "count <= MAX" --reset rst_n --sva
+wengold formal examples/formal/counter_bad.sv --property "count <= MAX" --reset rst_n
+```
+
+## Register maps and clock domains
+
+- **SystemRDL and IP-XACT** (`wengold/graph/regmap.py`) parse into a normalised
+  address map of registers and fields — addresses, widths, `sw`/`hw` access, reset
+  values — and add register/field nodes to the graph. Address collisions and
+  overlapping fields are reported, not ignored.
+- **CDC detection** (`wengold/graph/cdc.py`) finds the clock domains in a module and
+  reports every signal read in one domain but written in another, directly or
+  through combinational logic. Where a signal's domain cannot be determined it says
+  so and marks the module unresolved, so the kernel refuses to call anything
+  downstream VALID.
+
+```bash
+wengold regmap examples/soc_top/spec/registers.rdl
+wengold cdc examples/cdc/mixed_clocks.sv
+```
+
 ## Verifying WENGOLD's own invalidation logic
 
 The kernel's reasoning is itself tested, not just its code paths. Five invariants
@@ -146,6 +189,9 @@ violations = invariants.fuzz(range(400))   # 0
 wengold index ./rtl                       # build the dependency graph
 wengold completeness ./rtl                # report unresolved nodes
 wengold classify ./rtl --changed sec_firewall --results results.json
+wengold formal ./counter.sv --property "count <= MAX" --sva
+wengold regmap ./registers.rdl            # SystemRDL or IP-XACT
+wengold cdc ./mixed_clocks.sv             # clock-domain crossings
 wengold serve                             # run the MCP server over stdio
 wengold demo                              # the bundled walkthrough
 ```
@@ -165,8 +211,9 @@ Palladium, Veloce, Vivado, Quartus, Yosys, vManager.
 
 ## Status
 
-v0.2. The graph, kernel and ledger are implemented and tested (69 tests); the
-agents run a real loop; the MCP server works. Analog and mixed-signal
+v0.4. The graph, kernel and ledger are implemented and tested (125 tests); the
+agents run a real loop; the MCP server works; the formal loop proves, finds
+counterexamples and repairs; the register-map and CDC front-ends are in. Analog and mixed-signal
 verification and physical signoff are out of scope. See
 [`docs/roadmap.md`](docs/roadmap.md).
 

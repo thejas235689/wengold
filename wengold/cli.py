@@ -74,6 +74,49 @@ def cmd_classify(args) -> int:
     return 0
 
 
+def cmd_formal(args) -> int:
+    from .formal import Property, prove
+    text = Path(args.file).read_text()
+    props = [Property.safety(f"p{i}", expr, clock=args.clock, reset=args.reset)
+             for i, expr in enumerate(args.property)]
+    out = prove(text, props, engine=args.engine, depth=args.depth, budget=args.budget)
+    for r in out["results"]:
+        print(f"  {r.status:>8}  {r.property:<10} {r.engine:<8} {r.detail}")
+    for c in out["contracts"]:
+        print(f"  contract: {c.claim}  [{c.method.kind.value}"
+              f"{', ' + ', '.join(c.limits.gaps) if c.limits.gaps else ''}]")
+    if out["counterexamples"]:
+        print(f"  counterexamples: {out['counterexamples']}")
+    if args.sva:
+        print(out["sva"])
+    return 0 if out["proved"] else 1
+
+
+def cmd_regmap(args) -> int:
+    from .graph.regmap import parse_ipxact, parse_rdl
+    text = Path(args.file).read_text()
+    amap = parse_ipxact(text) if args.file.endswith(".xml") else parse_rdl(text)
+    print(f"{amap.name}: {len(amap.registers)} register(s)")
+    for r in amap.registers:
+        fields = ", ".join(f"{f.name}[{f.msb}:{f.lsb}]{f.sw}" for f in r.fields)
+        print(f"  {hex(r.address):>10}  {r.name:<16} {fields}")
+    for issue in amap.check():
+        print(f"  ! {issue}")
+    return 0 if not amap.check() else 1
+
+
+def cmd_cdc(args) -> int:
+    from .graph.cdc import analyse
+    text = Path(args.file).read_text()
+    rep = analyse(text, Path(args.file).stem)
+    print(f"domains: {rep.domains}")
+    for c in rep.crossings:
+        print(f"  crossing {c.signal}: {c.from_domain} -> {c.to_domain} ({c.kind})")
+    if rep.unresolved:
+        print(f"  unresolved (no determinable domain): {rep.unresolved}")
+    return 0 if not rep.crossings else 1
+
+
 def cmd_serve(args) -> int:
     from .mcp.server import main as serve
     serve()
@@ -108,6 +151,26 @@ def main(argv=None) -> int:
     p.add_argument("--results", required=True)
     p.add_argument("--include", action="append", default=[])
     p.set_defaults(func=cmd_classify)
+
+    p = sub.add_parser("formal", help="prove properties against an RTL file")
+    p.add_argument("file")
+    p.add_argument("--property", action="append", required=True,
+                   help="an expression to prove (repeatable)")
+    p.add_argument("--clock", default="clk")
+    p.add_argument("--reset", default=None)
+    p.add_argument("--engine", default="auto", choices=["auto", "explicit", "z3"])
+    p.add_argument("--depth", type=int, default=12)
+    p.add_argument("--budget", type=int, default=3)
+    p.add_argument("--sva", action="store_true", help="also print the generated SVA")
+    p.set_defaults(func=cmd_formal)
+
+    p = sub.add_parser("regmap", help="parse a SystemRDL or IP-XACT register map")
+    p.add_argument("file")
+    p.set_defaults(func=cmd_regmap)
+
+    p = sub.add_parser("cdc", help="report clock-domain crossings in an RTL file")
+    p.add_argument("file")
+    p.set_defaults(func=cmd_cdc)
 
     p = sub.add_parser("serve", help="run the MCP server over stdio")
     p.set_defaults(func=cmd_serve)
