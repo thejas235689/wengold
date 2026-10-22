@@ -16,3 +16,6 @@ jobs:
       # then with the symbolic backend, so the z3 engine is actually exercised
       - run: python -m pip install ".[formal]"
       - run: pytest -q
+      # and with the real SystemVerilog front-end, so the slang backend is too
+      - run: python -m pip install ".[slang]"
+      - run: pytest -q

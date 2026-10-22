@@ -16,6 +16,8 @@ dependencies = []
 [project.optional-dependencies]
 open = ["cocotb>=1.8", "cocotb-coverage>=1.2"]
 formal = ["z3-solver>=4.12"]   # optional symbolic backend
+slang = ["pyslang>=9"]         # optional real SystemVerilog front-end
+all = ["z3-solver>=4.12", "pyslang>=9", "cocotb>=1.8"]
 dev  = ["pytest>=8.0", "pytest-cov"]
 
 [project.scripts]

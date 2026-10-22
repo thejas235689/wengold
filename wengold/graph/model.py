@@ -23,6 +23,7 @@ class NodeKind(str, Enum):
     RTL = "rtl"
     PACKAGE = "package"
     FILE = "file"
+    PARAM = "param"
     REGMAP = "regmap"
     TEST = "test"
     ASSERTION = "assertion"

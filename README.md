@@ -123,6 +123,31 @@ small `DecisionRecord` that `verify_decision()` re-derives independently.
   separate implementation of the rule.
 
 
+## Front-ends: how the graph is built
+
+`wengold index` has two backends and picks the best available:
+
+- **`slang`** — a real SystemVerilog front-end (`pyslang`). A preprocessor
+  resolves `` `include ``, `` `define `` and `` `ifdef `` against the project's
+  defines, and the source is then *parsed*: modules, hierarchy instantiations,
+  packages, imports and parameters come from an actual parse tree. This is what
+  makes the graph usable on a real codebase.
+- **`regex`** — a bounded elaborator, used when slang is not installed. It is a
+  fallback, not a parser: on real RTL it mistakes prose for instantiations and
+  cannot see through `` `ifdef ``.
+
+```bash
+wengold index ./hw/ip --include ./hw/ip/prim/rtl --backend slang --define SYNTH
+```
+
+On OpenTitan's `hw/ip` (2,024 files) the slang backend builds 2,549 nodes and
+12,101 edges in ~28 s with 91 unresolved (3.6%); the regex fallback leaves every
+`` `ifdef `` unresolved and invents dependencies from comments.
+
+Anything a file does not resolve — a parse error, or an instantiation of a module
+that is not in the file set — marks the module unresolved, and the kernel then
+refuses to call anything downstream VALID.
+
 ## Formal verification
 
 A real proof loop, with no external tool required:

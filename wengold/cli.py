@@ -43,7 +43,13 @@ def _build(args):
                 if f.is_file() and f.suffix.lower() in SRC_EXT:
                     files.setdefault(str(f), f.read_text(errors="replace"))
     incdirs += [str(Path(args.path) / d) for d in ("include", "inc", "rtl/include")]
-    return GraphBuilder().build_from_files(files, include_dirs=incdirs), files
+    defines = {}
+    for d in (getattr(args, "define", None) or []):
+        name, _, value = d.partition("=")
+        defines[name] = value or "1"
+    backend = getattr(args, "backend", "auto")
+    return (GraphBuilder().build_from_files(files, include_dirs=incdirs,
+                                            defines=defines, backend=backend), files)
 
 
 def cmd_index(args) -> int:
@@ -153,6 +159,9 @@ def main(argv=None) -> int:
     p = sub.add_parser("index", help="index a project into a dependency graph")
     p.add_argument("path", nargs="?", default=".")
     p.add_argument("--include", action="append", default=[])
+    p.add_argument("--define", action="append", default=[],
+                   help="a preprocessor define, NAME or NAME=VALUE (repeatable)")
+    p.add_argument("--backend", default="auto", choices=["auto", "slang", "regex"])
     p.add_argument("--out", default=".tof/index.json")
     p.set_defaults(func=cmd_index)
 

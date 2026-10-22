@@ -62,11 +62,12 @@ def test_unresolved_instantiation_is_reported():
 
 
 def test_build_from_files_marks_unresolved():
-    good = GraphBuilder().build_from_files(GOOD)
+    # these exercise the bounded (regex) elaborator specifically
+    good = GraphBuilder().build_from_files(GOOD, backend="regex")
     assert good.completeness()["complete"] is True
     assert good.unresolved_nodes() == set()
 
-    bad = GraphBuilder().build_from_files(BAD_INST)
+    bad = GraphBuilder().build_from_files(BAD_INST, backend="regex")
     assert bad.completeness()["complete"] is False
     assert "ghost" in bad.unresolved_nodes()
 

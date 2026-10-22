@@ -67,6 +67,48 @@ class GraphBuilder:
         for t in traces_to:
             self.graph.add_edge(req, t, EdgeKind.TRACES_TO)
 
+    # ---- slang-backed construction -----------------------------------
+    def build_from_slang(self, units: dict) -> DesignGraph:
+        """Add nodes and edges from real parses (see `slang_backend`).
+
+        A file with parse errors is marked unresolved, and an instantiation of a
+        module that is not defined in the file set is recorded as an UNKNOWN edge
+        as well — so the kernel cannot return VALID downstream of either.
+        """
+        defined = {m for u in units.values() for m in u.modules}
+        for path, unit in sorted(units.items()):
+            for pkg in unit.packages:
+                self.graph.add_node(Node(id=pkg, kind=NodeKind.PACKAGE, path=path))
+            for mod in unit.modules:
+                self.graph.add_node(Node(id=mod, kind=NodeKind.RTL, path=path,
+                                         meta={"frontend": "slang"}))
+                if unit.parse_errors:
+                    self.graph.mark_unresolved(
+                        mod, f"{unit.parse_errors} parse error(s) in {path}")
+                for pkg in unit.imports:
+                    self.graph.add_node(Node(id=pkg, kind=NodeKind.PACKAGE))
+                    self.graph.add_edge(pkg, mod, EdgeKind.IMPORTS)
+                for name, _value in unit.parameters:
+                    pid = f"param.{mod}.{name}"
+                    self.graph.add_node(Node(id=pid, kind=NodeKind.PARAM,
+                                             meta={"module": mod}))
+                    self.graph.add_edge(pid, mod, EdgeKind.PARAMETERIZES)
+                for inc in unit.includes:
+                    self.graph.add_node(Node(id=inc, kind=NodeKind.FILE, path=inc))
+                    self.graph.add_edge(inc, mod, EdgeKind.INCLUDES)
+                for child, inst in unit.instantiations:
+                    if child in defined:
+                        self.graph.add_edge(child, mod, EdgeKind.INSTANTIATES)
+                    else:
+                        self.graph.add_node(Node(id=child, kind=NodeKind.RTL))
+                        self.graph.add_edge(child, mod, EdgeKind.UNKNOWN)
+                        self.graph.mark_unresolved(
+                            mod, f"instantiation `{child}` has no definition in the file set")
+        for _path, unit in units.items():
+            for name in unit.unresolved:
+                self.graph.notes.append(f"unresolved include: {name}")
+        return self.graph
+
     def mark_uncertain(self, src: str, dst: str) -> None:
         """Record a dependency the builder could not resolve. The kernel treats
         any result downstream of it as UNKNOWN, never as a false pass."""
@@ -74,7 +116,22 @@ class GraphBuilder:
 
     # ---- elaboration-driven construction -----------------------------
     def build_from_files(self, files: dict[str, str],
-                         include_dirs: list[str] | None = None) -> DesignGraph:
+                         include_dirs: list[str] | None = None,
+                         defines: dict[str, str] | None = None,
+                         backend: str = "auto") -> DesignGraph:
+        """Build the graph. `backend` selects the front-end:
+
+        * ``slang`` — real parse via pyslang (preprocessor + CST)
+        * ``regex`` — the bounded elaborator (fallback)
+        * ``auto``  — slang when installed, else regex
+        """
+        if backend in ("auto", "slang"):
+            from .slang_backend import available, elaborate as slang_elaborate
+            if available():
+                return self.build_from_slang(
+                    slang_elaborate(files, include_dirs or [], defines or {}))
+            if backend == "slang":
+                raise RuntimeError("slang (pyslang) is not installed")
         elab = Elaborator(files, include_dirs).elaborate()
 
         # packages
