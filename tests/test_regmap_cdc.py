@@ -118,3 +118,26 @@ def test_cdc_marks_module_unresolved():
     assert "cdc.mixed.a_reg" in g.nodes
     assert g.nodes["cdc.mixed.a_reg"].meta["to"] == "clk_b"
     assert "mixed" in g.unresolved_nodes()     # d_in has no determinable domain
+
+
+# ---- regression: real-RTL noise found on OpenTitan ---------------------
+REALISH = """
+module fifo (input logic clk_wr_i, input logic clk_rd_i, input logic wdata_i);
+    parameter int unsigned Width = 8;
+    localparam int Depth = 4;
+    logic [Width-1:0] a_reg, b_reg;
+    logic [Width-1:0] storage [Depth];
+    genvar i;
+    always_ff @(posedge clk_wr_i) begin a_reg <= wdata_i; end
+    always_ff @(posedge clk_rd_i) begin b_reg <= a_reg; end
+endmodule
+"""
+
+
+def test_cdc_does_not_flag_parameters_genvars_or_memories():
+    rep = analyse(REALISH, "fifo")
+    assert rep.domains == {"clk_rd_i": ["b_reg"], "clk_wr_i": ["a_reg"]}
+    for noise in ("Width", "Depth", "i", "storage"):
+        assert noise not in rep.unresolved, f"{noise} should not be reported unresolved"
+    assert ("a_reg", "clk_wr_i", "clk_rd_i") in {
+        (c.signal, c.from_domain, c.to_domain) for c in rep.crossings}

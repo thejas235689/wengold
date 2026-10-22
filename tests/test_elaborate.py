@@ -82,3 +82,26 @@ def test_port_connections_are_not_instantiations():
     src = ("module t; dma u (.clk(clk), .rst_n(rst_n), .prot(3'b000), .deny(d));"
            " endmodule")
     assert extract_instantiations(src) == [("dma", "u")]
+
+
+# ---- regression: real-RTL noise found on OpenTitan ---------------------
+def test_comments_do_not_create_instantiations():
+    src = ('// Copyright lowRISC contributors. Licensed under the Apache License,\n'
+           '// distributed under the License is distributed on an "AS IS" BASIS.\n'
+           '/* This file is part of the project and will be used as asserted. */\n'
+           'module m; child u0 (); endmodule\n')
+    assert extract_instantiations(src) == [("child", "u0")]
+
+
+def test_macro_invocations_are_not_instantiations():
+    src = ('module m;\n'
+           '  `ASSERT_FOO(a, b)\n'
+           '  ASSERT_STATIC_LINT_ERROR(prim_fifo_sync)\n'
+           '  child u0 ();\n'
+           'endmodule\n')
+    assert extract_instantiations(src) == [("child", "u0")]
+
+
+def test_sva_vocabulary_is_not_instantiated():
+    src = "module m; property p; disable iff (!rst_n) 1'b1; endproperty endmodule"
+    assert extract_instantiations(src) == []

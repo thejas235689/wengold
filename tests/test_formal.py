@@ -179,3 +179,34 @@ def test_loop_reports_unknown_for_unparsable():
     out = prove(UNSUPPORTED, [Property.safety("x", "1'b1", clock="clk")])
     assert out["results"][0].status == "unknown"
     assert out["proved"] is False
+
+
+# ---- regression: preprocessor directives on real RTL -------------------
+def test_include_and_define_are_stripped():
+    src = ('`include "prim_assert.sv"\n'
+           '`define WIDTH 8\n'
+           '`timescale 1ns/1ps\n'
+           'module m (input logic clk);\n'
+           '  logic [7:0] q;\n'
+           '  always_ff @(posedge clk) q <= 8\'d1;\n'
+           'endmodule\n')
+    rtl = parse_module(src)
+    assert rtl.name == "m" and sorted(rtl.registered) == ["q"]
+
+
+def test_conditional_compilation_is_refused_not_guessed():
+    src = ('module m (input logic clk);\n'
+           '  logic q;\n'
+           '`ifdef FPV_ON\n'
+           '  always_ff @(posedge clk) q <= 1\'b1;\n'
+           '`endif\n'
+           'endmodule\n')
+    with pytest.raises(UnsupportedConstruct) as e:
+        parse_module(src)
+    assert "conditional compilation" in str(e.value)
+
+
+def test_macro_use_is_refused_not_guessed():
+    with pytest.raises(UnsupportedConstruct) as e:
+        parse_module("module m (input logic clk); `ASSERT_FOO(a) endmodule")
+    assert "macro use" in str(e.value)

@@ -33,6 +33,22 @@ PARAM_RE = re.compile(
 GENERATE_RE = re.compile(r'\b(generate|endgenerate)\b')
 GEN_LABEL_RE = re.compile(r'\b(?:for|if)\s*\([^)]*\)\s*(?::\s*(\w+))?')
 
+COMMENT_RE = re.compile(r"/\*.*?\*/", re.DOTALL)
+LINE_COMMENT_RE = re.compile(r"//[^\n]*")
+# A macro is conventionally ALL_CAPS_WITH_UNDERSCORES; those are not module types.
+MACRO_LIKE = re.compile(r"^[A-Z][A-Z0-9_]*$")
+
+
+def strip_comments(text: str) -> str:
+    """Remove comments before any extraction.
+
+    License headers and prose are full of things that look like instantiations
+    (``lowRISC contributors``), so extracting from commented text invents
+    dependencies that do not exist.
+    """
+    return LINE_COMMENT_RE.sub(" ", COMMENT_RE.sub(" ", text))
+
+
 # Gate-level primitives and Verilog keywords that must not be mistaken for a
 # module type in an instantiation.
 PRIMITIVES = {
@@ -52,6 +68,13 @@ KEYWORDS = {
     "nand", "nor", "xor", "xnor", "buf", "assert", "assume", "cover", "property",
     "endproperty", "sequence", "endsequence", "default", "genvar", "import",
     "export", "package", "virtual", "new", "this", "super", "static", "automatic",
+    # SVA / assertion vocabulary — `disable iff (...)` is not an instantiation
+    "disable", "iff", "property", "endproperty", "sequence", "endsequence",
+    "assert", "assume", "cover", "restrict", "strong", "weak", "throughout",
+    "within", "until", "s_eventually", "s_until", "nexttime", "accept_on",
+    "reject_on", "sync_accept_on", "sync_reject_on", "bind", "checker",
+    "endchecker", "clocking", "endclocking", "randcase", "constraint", "solve",
+    "before", "first_match", "matches", "intersect", "dist", "inside",
 }
 INST_RE = re.compile(
     r'\b([A-Za-z_]\w*)(?!\w)\s*'
@@ -147,6 +170,8 @@ def extract_instantiations(source: str) -> list[tuple[str, str]]:
             continue
         if mod[0].isdigit() or inst[0].isdigit():
             continue
+        if MACRO_LIKE.match(mod) or MACRO_LIKE.match(inst):
+            continue        # a macro invocation, not an instantiation
         if (mod, inst) in seen:
             continue
         seen.add((mod, inst))
@@ -189,7 +214,7 @@ class Elaborator:
         if path in _seen:
             return "", set(), [f"include cycle at {path}"]
         _seen = _seen | {path}
-        source = self.files.get(path, "")
+        source = strip_comments(self.files.get(path, ""))
         included: set[str] = set()
         unresolved: list[str] = []
         if not source:

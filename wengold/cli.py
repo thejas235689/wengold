@@ -22,10 +22,26 @@ def _collect(path: str) -> dict[str, str]:
     return files
 
 
+def _read(path: str) -> str:
+    p = Path(path)
+    if not p.is_file():
+        raise SystemExit(f"wengold: no such file: {path}")
+    return p.read_text(errors="replace")
+
+
 def _build(args):
     from .graph.builder import GraphBuilder
     files = _collect(args.path)
     incdirs = list(args.include or [])
+    # include directories are searched *and* added to the file set, the way a real
+    # flow passes +incdir+ together with its file list — otherwise every
+    # `include in the project is reported unresolved.
+    for d in incdirs:
+        p = Path(d)
+        if p.is_dir():
+            for f in sorted(p.rglob("*")):
+                if f.is_file() and f.suffix.lower() in SRC_EXT:
+                    files.setdefault(str(f), f.read_text(errors="replace"))
     incdirs += [str(Path(args.path) / d) for d in ("include", "inc", "rtl/include")]
     return GraphBuilder().build_from_files(files, include_dirs=incdirs), files
 
@@ -76,7 +92,7 @@ def cmd_classify(args) -> int:
 
 def cmd_formal(args) -> int:
     from .formal import Property, prove
-    text = Path(args.file).read_text()
+    text = _read(args.file)
     props = [Property.safety(f"p{i}", expr, clock=args.clock, reset=args.reset)
              for i, expr in enumerate(args.property)]
     out = prove(text, props, engine=args.engine, depth=args.depth, budget=args.budget)
@@ -94,7 +110,7 @@ def cmd_formal(args) -> int:
 
 def cmd_regmap(args) -> int:
     from .graph.regmap import parse_ipxact, parse_rdl
-    text = Path(args.file).read_text()
+    text = _read(args.file)
     amap = parse_ipxact(text) if args.file.endswith(".xml") else parse_rdl(text)
     print(f"{amap.name}: {len(amap.registers)} register(s)")
     for r in amap.registers:
@@ -107,7 +123,7 @@ def cmd_regmap(args) -> int:
 
 def cmd_cdc(args) -> int:
     from .graph.cdc import analyse
-    text = Path(args.file).read_text()
+    text = _read(args.file)
     rep = analyse(text, Path(args.file).stem)
     print(f"domains: {rep.domains}")
     for c in rep.crossings:

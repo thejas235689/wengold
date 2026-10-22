@@ -20,6 +20,24 @@ _ALWAYS = re.compile(r"\balways(?:_ff|_comb|_latch)?\s*@\s*\(([^)]*)\)")
 _ASSIGN = re.compile(r"\bassign\s+(\w+)\s*=\s*([^;]+);")
 _WRITE = re.compile(r"(\w+)\s*<=")
 _IDENT = re.compile(r"[A-Za-z_]\w*")
+_PARAM = re.compile(r"\b(?:parameter|localparam)\b[^=;]*?\b(\w+)\s*=")
+_GENVAR = re.compile(r"\bgenvar\b\s+([\w,\s]+);")
+_MEMORY = re.compile(r"\b(\w+)\s*\[[^\]]*\]\s*\[")
+_ENUM_LITERAL = re.compile(r"^[A-Z][A-Z0-9_]*$")
+
+
+def _non_signals(text: str) -> set[str]:
+    """Names that are not signals and must not be reported as domain-less.
+
+    On real RTL a naive scan flags parameters, genvars, memory arrays and enum
+    literals, which floods the unresolved list and makes every module look
+    unresolved.
+    """
+    names: set[str] = set(_PARAM.findall(text))
+    for group in _GENVAR.findall(text):
+        names.update(n.strip() for n in group.split(","))
+    names.update(_MEMORY.findall(text))
+    return names
 
 _KEYWORDS = {
     "begin", "end", "if", "else", "case", "casez", "casex", "endcase", "default",
@@ -83,6 +101,7 @@ def _clock_of(sens: str) -> str | None:
 
 def analyse(text: str, module: str) -> CdcReport:
     report = CdcReport(module=module)
+    not_signals = _non_signals(text)
 
     written_by: dict[str, set[str]] = {}          # clock -> written signals
     read_by: dict[str, set[str]] = {}             # clock -> read signals
@@ -92,7 +111,8 @@ def analyse(text: str, module: str) -> CdcReport:
             continue
         body = _block_body(text, m.end())
         written = set(_WRITE.findall(body))
-        idents = {i for i in _IDENT.findall(body) if i not in _KEYWORDS}
+        idents = {i for i in _IDENT.findall(body)
+                  if i not in _KEYWORDS and i not in not_signals}
         written_by.setdefault(clock, set()).update(written)
         read_by.setdefault(clock, set()).update(idents - written - {clock})
 
@@ -119,6 +139,8 @@ def analyse(text: str, module: str) -> CdcReport:
     unresolved: set[str] = set()
     for clock, reads in read_by.items():
         for sig in sorted(reads):
+            if sig in not_signals or _ENUM_LITERAL.match(sig):
+                continue
             src = domains_of(sig)
             if not src:
                 unresolved.add(sig)               # cannot tell where it comes from

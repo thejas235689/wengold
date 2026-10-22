@@ -33,8 +33,32 @@ TOKEN_RE = re.compile(r"""
   | (?P<comment>//[^\n]*|/\*.*?\*/)
   | (?P<num>\d*'[sS]?[bBoOdDhH][0-9a-fA-FxXzZ_]+|\d+)
   | (?P<id>[A-Za-z_]\w*)
-  | (?P<op><<=|>>=|===|!==|==|!=|<=|>=|<<|>>|&&|\|\||[-+*/%&|^~!<>=?:;,.()\[\]@#])
+  | (?P<op><<=|>>=|===|!==|==|!=|<=|>=|<<|>>|&&|\|\||[-+*/%&|^~!<>=?:;,.()\[\]@#`])
 """, re.VERBOSE | re.DOTALL)
+
+# Preprocessor directives. Real RTL starts with `include / `define, which carry no
+# behaviour of their own, so they are stripped. Conditional compilation *does*
+# change behaviour, so it is refused rather than silently taking one branch.
+_PP_STRIP = re.compile(
+    r"^\s*`(?:include|timescale|default_nettype|resetall|line|undef|celldefine|endcelldefine)"
+    r"[^\n]*\n?", re.MULTILINE)
+_PP_DEFINE = re.compile(r"^\s*`define\b[^\n]*(?:\\\n[^\n]*)*\n?", re.MULTILINE)
+_PP_COND = re.compile(r"^\s*`(?:ifdef|ifndef|elsif|else|endif)\b", re.MULTILINE)
+_PP_USE = re.compile(r"`\w+")
+
+
+def strip_preprocessor(text: str) -> str:
+    """Remove directive lines; refuse conditional compilation and macro uses."""
+    text = _PP_DEFINE.sub(" ", text)
+    text = _PP_STRIP.sub(" ", text)
+    if _PP_COND.search(text):
+        raise UnsupportedConstruct(
+            "conditional compilation (`ifdef/`ifndef) is not supported by the formal front-end")
+    leftover = _PP_USE.search(text)
+    if leftover:
+        raise UnsupportedConstruct(
+            f"macro use {leftover.group(0)!r} is not supported by the formal front-end")
+    return text
 
 _DIRECTIONS = {"input", "output", "inout"}
 _TYPES = {"logic", "wire", "reg", "bit", "int", "signed", "unsigned"}
@@ -45,7 +69,9 @@ class UnsupportedConstruct(Exception):
     """Raised when the source uses something outside the documented subset."""
 
 
-def tokenize(text: str) -> list[str]:
+def tokenize(text: str, preprocess: bool = True) -> list[str]:
+    if preprocess:
+        text = strip_preprocessor(text)
     text = re.sub(r"/\*.*?\*/", " ", text, flags=re.DOTALL)
     text = re.sub(r"//[^\n]*", " ", text)
     out, i = [], 0
