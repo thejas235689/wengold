@@ -19,7 +19,8 @@ class YosysAdapter:
 
     def synthesize(self, top: str, files: list[str], timeout: float = 600.0,
                    cwd: str | None = None, liberty: str | None = None) -> Outcome:
-        script = f"read_verilog {' '.join(files)}; synth -top {top}"
+        # SystemVerilog needs `-sv`; read_verilog defaults to Verilog-2005.
+        script = f"read_verilog -sv {' '.join(files)}; synth -top {top}"
         if liberty:
             script += f"; dfflibmap -liberty {liberty}; abc -liberty {liberty}"
         script += "; stat"

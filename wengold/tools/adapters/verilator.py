@@ -20,8 +20,10 @@ class VerilatorAdapter:
     def lint(self, top: str, files: list[str], timeout: float = 300.0,
              cwd: str | None = None, warnings_as_errors: bool = True) -> Outcome:
         argv = ["--lint-only", "-Wall", "--top-module", top]
-        if warnings_as_errors:
-            argv.append("-Werror")
+        # Verilator has no bare `-Werror` (warnings are fatal by default); the
+        # switch that exists is `-Wno-fatal`, so that is what turns it off.
+        if not warnings_as_errors:
+            argv.append("-Wno-fatal")
         argv += list(files)
         return run_tool(BIN, argv, tool="verilator", action="lint",
                         timeout=timeout, cwd=cwd,

@@ -176,8 +176,10 @@ def parse_cocotb_results(xml_path: str | Path) -> dict | None:
 
 
 def outcome_from_cocotb(counts: dict | None, fallback: ToolOutcome) -> ToolOutcome:
+    # No parsed results means nothing was proven. Never let that become a pass,
+    # however the caller's fallback was set — an exit code of 0 is not evidence.
     if not counts:
-        return fallback
+        return ToolOutcome.INCONCLUSIVE if fallback is ToolOutcome.PASS else fallback
     if counts["errors"]:
         return ToolOutcome.ERROR
     if counts["failures"]:

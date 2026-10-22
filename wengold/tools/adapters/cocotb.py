@@ -29,6 +29,14 @@ EXTRA_ARGS += --trace --trace-structs
 include $(shell cocotb-config --makefiles)/Makefile.sim
 """
 
+def _runner_available() -> bool:
+    try:
+        from cocotb_tools.runner import get_runner  # noqa: F401
+        return True
+    except Exception:
+        return False
+
+
 _SYNTHETIC_RESULTS = """\
 <?xml version="1.0" encoding="UTF-8"?>
 <testsuite name="cocotb" tests="{tests}" failures="{failures}" errors="0" skipped="0">
@@ -41,15 +49,16 @@ class CocotbAdapter:
     spec = SPEC
 
     def available(self) -> bool:
-        if shutil.which("make") is None:
-            return False
         try:
             import cocotb  # noqa: F401
-            has_cocotb = True
         except Exception:
-            has_cocotb = False
-        has_sim = any(shutil.which(s) for s in ("verilator", "iverilog"))
-        return has_cocotb or has_sim
+            return False
+        # cocotb 2.x can drive a simulator through its Python runner API, which
+        # needs no make; the older Makefile flow does.
+        if _runner_available():
+            return True
+        return (shutil.which("make") is not None
+                and any(shutil.which(s) for s in ("verilator", "iverilog")))
 
     def write_makefile(self, workdir: str, toplevel: str, module: str | None = None,
                        sources: list[str] | None = None, overwrite: bool = False) -> str:
@@ -69,7 +78,8 @@ class CocotbAdapter:
             seed: int | None = None, env: dict | None = None, dry_run: bool = False,
             results: str = "results.xml", tests: int = 1, failures: int = 0,
             collect: tuple[str, ...] = ("*.vcd", "*.fst", "results.xml", "*.log"),
-            extra_make_args: tuple[str, ...] = ()) -> Outcome:
+            extra_make_args: tuple[str, ...] = (),
+            sources: list[str] | None = None) -> Outcome:
         """Compile and run a cocotb testbench, returning an explicit Outcome.
 
         `dry_run` writes a synthetic results.xml and returns a deterministic
@@ -89,8 +99,12 @@ class CocotbAdapter:
                            spec={"counts": counts, "dry_run": True, "sim": sim})
 
         if shutil.which("make") is None:
+            if _runner_available() and sources:
+                return self._run_with_runner(wd, toplevel, module or toplevel, sim,
+                                             list(sources))
             return Outcome("cocotb", "run", ToolOutcome.TOOL_MISSING,
-                           spec={"binary": "make"})
+                           spec={"binary": "make",
+                                 "note": "no make; pass sources= to use the cocotb runner API"})
 
         env2 = dict(os.environ)
         env2.update({"SIM": sim, "TOPLEVEL": toplevel, "MODULE": module or toplevel})
@@ -112,3 +126,51 @@ class CocotbAdapter:
             base.outcome = ToolOutcome.INCONCLUSIVE
             base.spec.setdefault("note", "no results.xml parsed")
         return base
+
+    def _run_with_runner(self, wd: Path, toplevel: str, module: str, sim: str,
+                         sources: list[str]) -> Outcome:
+        """Drive the simulator through cocotb's Python runner API (no make)."""
+        import contextlib
+        import io
+
+        from cocotb_tools.runner import get_runner
+
+        buf = io.StringIO()
+        stage = "build"
+        results_path = None
+        exc_note = ""
+        env = dict(os.environ)
+        env["PYTHONPATH"] = os.pathsep.join(
+            [str(wd), env.get("PYTHONPATH", "")]).rstrip(os.pathsep)
+        try:
+            runner = get_runner(sim)
+            with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(buf):
+                runner.build(verilog_sources=sources, hdl_toplevel=toplevel,
+                             always=True, build_dir=str(wd / "sim_build"),
+                             timescale=("1ns", "1ps"))
+                stage = "test"
+                results_path = runner.test(test_module=module, hdl_toplevel=toplevel,
+                                           test_dir=str(wd), extra_env={"PYTHONPATH": env["PYTHONPATH"]})
+        except Exception as exc:            # a build error is not a test failure
+            outcome = ToolOutcome.ERROR if stage == "build" else ToolOutcome.FAIL
+            exc_note = f"{type(exc).__name__}: {exc}"
+            buf.write(f"\n[{stage} failed] {exc_note}\n")
+            return Outcome("cocotb", "run", outcome, rc=None, log=buf.getvalue(),
+                           spec={"sim": sim, "engine": "runner", "stage": stage,
+                                 "error": exc_note})
+
+        # The runner does NOT raise on a failed test outside pytest — it returns
+        # the results file. A run is a pass only if that file says so.
+        counts = parse_cocotb_results(results_path or (wd / "results.xml"))
+        log = buf.getvalue()
+        if counts:
+            outcome = outcome_from_cocotb(counts, ToolOutcome.INCONCLUSIVE)
+        elif "Traceback (most recent call last)" in log:
+            outcome = ToolOutcome.ERROR
+            exc_note = "simulator run raised; no results file"
+        else:
+            outcome = ToolOutcome.INCONCLUSIVE
+            exc_note = "no results file parsed"
+        return Outcome("cocotb", "run", outcome, rc=None, log=log,
+                       spec={"sim": sim, "engine": "runner", "stage": stage,
+                             "counts": counts, **({"error": exc_note} if exc_note else {})})
