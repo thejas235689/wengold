@@ -134,6 +134,28 @@ and anything outside the subset is **UNKNOWN**.
 propose a repair, apply, re-check, bounded by a budget. Each property leaves a
 `Contract` whose method is `proof` only when it really was proven.
 
+## Front-ends
+
+`graph/` reads source through one of two backends, chosen automatically:
+
+- **slang** (`graph/slang_backend.py`) — a real SystemVerilog front-end
+  (`pyslang`). Modules, hierarchy instantiations, interfaces, packages, imports
+  and parameters come from an actual parse tree, so the graph reflects what the
+  language says rather than what the text looks like.
+- **regex** (`graph/elaborate.py`) — the bounded elaborator, used when slang is
+  not installed. It is a fallback, not a parser.
+
+Both run behind `graph/preprocess.py`, a preprocessor that resolves `` `include ``
+against the include path, expands object-like `` `define `` macros, and evaluates
+`` `ifdef ``/`` `ifndef ``/`` `elsif ``/`` `else `` against the project's defines.
+Function-like macros are left alone rather than naively substituted — their
+bodies use `` `" `` and `` `` `` — and an unexpandable macro used as a statement is
+dropped whole, including a multi-line call.
+
+Anything a file does not resolve — a parse error, or an instantiation with no
+definition in the file set — marks the module unresolved, and the kernel then
+refuses to call anything downstream VALID.
+
 ## Register maps and clock domains
 
 `graph/regmap.py` parses SystemRDL and IP-XACT into one normalised address map
