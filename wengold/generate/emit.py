@@ -160,8 +160,22 @@ def _behaviour(spec: ModuleSpec) -> str:
     return "\n".join(out)
 
 
-def emit_rtl(spec: ModuleSpec, version: str = "0.5.1") -> str:
+def _version() -> str:
+    """The version that produced the file — read, never hardcoded.
+
+    The header is part of the artifact, so a stale constant in it makes the
+    generated file misreport which generator produced it.
+    """
+    try:
+        from .. import __version__
+        return __version__
+    except Exception:                      # pragma: no cover
+        return "unknown"
+
+
+def emit_rtl(spec: ModuleSpec, version: str | None = None) -> str:
     """The synthesizable SystemVerilog for this spec."""
+    version = version or _version()
     parts = [_HEADER.format(version=version, source=spec.source or "<spec>",
                             name=spec.name,
                             desc=f" -- {spec.desc}" if spec.desc else "")]
@@ -208,10 +222,11 @@ def _field_property(spec: ModuleSpec, reg: Register, fld: Field) -> list[str]:
     return out
 
 
-def emit_props(spec: ModuleSpec, version: str = "0.5.1") -> str:
+def emit_props(spec: ModuleSpec, version: str | None = None) -> str:
     """The assertions the spec implies, as a separate SystemVerilog file."""
     if not spec.has_registers:
         return ""
+    version = version or _version()
     lines = [_HEADER.format(version=version, source=spec.source or "<spec>",
                             name=f"{spec.name}_props",
                             desc=" -- properties implied by the spec"),
