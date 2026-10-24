@@ -1,0 +1,41 @@
+module: timer
+desc: A down-counter with a compare match, an enable and a latched interrupt.
+clock: clk_i
+reset: rst_ni
+
+parameters:
+  - {name: WIDTH, value: 16, desc: counter width}
+
+ports:
+  - {name: clk_i,     dir: input,  width: 1}
+  - {name: rst_ni,    dir: input,  width: 1}
+  - {name: tick_i,    dir: input,  width: 1}
+  - {name: match_o,   dir: output, width: 1}
+  - {name: busy_o,    dir: output, width: 1}
+
+registers:
+  - name: CTRL
+    addr: 0x0
+    desc: enable and reload value
+    fields:
+      - {name: EN,     bits: "0",    access: rw, reset: 0, desc: run the timer}
+      - {name: RELOAD, bits: "16:1", access: rw, reset: 9, desc: reload value}
+
+  - name: STATUS
+    addr: 0x4
+    desc: read-only count and match
+    fields:
+      - {name: COUNT, bits: "15:0",  access: ro, reset: 0}
+      - {name: MATCH, bits: "16",    access: ro, reset: 0}
+
+  - name: IRQ
+    addr: 0x8
+    desc: latched match, write-1-to-clear
+    fields:
+      - {name: PENDING, bits: "0", access: w1c, reset: 0}
+
+assigns:
+  - target: match_o
+    expr: "status_match_q"
+  - target: busy_o
+    expr: "ctrl_en_q"
