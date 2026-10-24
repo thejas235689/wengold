@@ -225,6 +225,33 @@ class ModuleSpec:
 
 
 # ---- loading ---------------------------------------------------------------
+_TOP_KEYS = {"module", "name", "desc", "clock", "reset", "parameters",
+             "ports", "registers", "assigns"}
+_KEY_SETS = {
+    "ports": {"name", "dir", "direction", "width"},
+    "parameters": {"name", "value", "desc"},
+    "registers": {"name", "addr", "width", "fields", "desc"},
+    "fields": {"name", "bits", "access", "reset", "desc"},
+    "assigns": {"target", "expr"},
+}
+
+
+def _check_keys(obj, where: str, allowed: set[str]) -> None:
+    """Refuse keys the spec format does not have.
+
+    Silently ignoring `fsm:` or `pipeline:` would let a spec author believe they
+    asked for something the generator cannot express, and hand back a module that
+    quietly omits it. What cannot be expressed is refused, with the reason.
+    """
+    unknown = sorted(set(obj) - allowed)
+    if unknown:
+        raise SpecError(
+            f"{where}: unsupported key(s) {unknown} — the spec format expresses "
+            f"{', '.join(sorted(allowed))} and nothing else. A design element the "
+            f"generator cannot emit (a state machine, a pipeline, an interface) "
+            f"is refused rather than silently dropped.")
+
+
 def _load_raw(path: Path):
     text = path.read_text(encoding="utf-8")
     if path.suffix.lower() in (".yaml", ".yml"):
@@ -248,22 +275,28 @@ def load_spec(path: str | Path) -> ModuleSpec:
     raw = _load_raw(p)
     if not isinstance(raw, dict):
         raise SpecError(f"{p.name}: the spec must be a mapping at the top level")
+    _check_keys(raw, f"{p.name}", _TOP_KEYS)
 
     ports = []
     for item in raw.get("ports", []):
+        _check_keys(item, f"{p.name}: ports", _KEY_SETS["ports"])
         ports.append(Port(name=item["name"],
                           direction=item.get("dir", item.get("direction", "input")),
                           width=int(item.get("width", 1))))
 
     params = []
     for item in raw.get("parameters", []):
+        _check_keys(item, f"{p.name}: parameters", _KEY_SETS["parameters"])
         params.append(Parameter(name=item["name"], value=int(item["value"]),
                                 desc=item.get("desc", "")))
 
     regs = []
     for r in raw.get("registers", []):
+        _check_keys(r, f"{p.name}: registers", _KEY_SETS["registers"])
         fields = []
         for f in r.get("fields", []):
+            _check_keys(f, f"{p.name}: register {r.get('name')} fields",
+                        _KEY_SETS["fields"])
             hi, lo = _bits_to_range(f["bits"])
             fields.append(Field(name=f["name"], hi=hi, lo=lo,
                                 access=f.get("access", "rw"),
@@ -276,6 +309,7 @@ def load_spec(path: str | Path) -> ModuleSpec:
     assigns = []
     for a in raw.get("assigns", []):
         if isinstance(a, dict):
+            _check_keys(a, f"{p.name}: assigns", _KEY_SETS["assigns"])
             assigns.append(Assign(target=a["target"], expr=a["expr"]))
         else:                                   # "state_o = en ? 1 : 0"
             target, _, expr = str(a).partition("=")
