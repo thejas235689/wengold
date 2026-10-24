@@ -101,10 +101,23 @@ def _block_body(text: str, start: int) -> str:
 
 
 def _clock_of(sens: str) -> str | None:
-    for m in re.finditer(r"\b(posedge|negedge)\s+(\w+)", sens):
-        return m.group(2)
-    m = re.search(r"(\w+)", sens)
-    return m.group(1) if m else None
+    """The clock of a clocked block, or None if the block is not clocked.
+
+    A sensitivity list with no edge trigger is level-sensitive or combinational
+    (Verilog-2001 `always @(a or b)`, `always @(*)`); its first identifier is a
+    signal, not a clock, and treating it as one invents a clock domain per
+    combinational block.
+    """
+    edges = re.findall(r"\b(?:posedge|negedge)\s+(\w+)", sens)
+    if not edges:
+        return None
+    clk_like = [e for e in edges if re.search(r"(?i)clk|clock", e)]
+    if clk_like:
+        return clk_like[0]
+    not_reset = [e for e in edges if not re.search(r"(?i)rst|reset", e)]
+    if not not_reset:
+        return None           # an edge-triggered reset only: no clock domain here
+    return not_reset[0]
 
 
 def analyse(text: str, module: str) -> CdcReport:
