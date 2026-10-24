@@ -184,6 +184,28 @@ def test_instantiation_is_attributed_to_its_own_module():
 
 
 @needs_slang
+def test_untaken_generate_branch_is_not_a_missing_module():
+    """`generate if (0)` is dead code, not a missing definition.
+
+    CV32E40P instantiates its PMP inside `if (PULP_SECURE && USE_PMP)` with both
+    localparams 0; reporting that as unresolved blames the file set for code no
+    build would elaborate.
+    """
+    def unit_for(use):
+        src = ("module leaf (input logic a); endmodule\n"
+               "module top (input logic a);\n"
+               f"  localparam USE = {use};\n"
+               "  generate if (USE) begin : g\n"
+               "    leaf u_leaf (.a(a));\n"
+               "  end endgenerate\n"
+               "endmodule\n")
+        return extract(src, "top.sv")
+
+    assert unit_for(0).instantiations == []          # not elaborated: not missing
+    assert ("top", "leaf", "u_leaf") in unit_for(1).instantiations
+
+
+@needs_slang
 def test_interfaces_count_as_definitions():
     """An instantiation of an interface must not read as a missing module."""
     files = {"iface.sv": "interface mem_interface; endinterface\n",
