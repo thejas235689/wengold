@@ -74,6 +74,10 @@ def test_no_results_is_never_a_pass():
 
 
 def test_cocotb_available_without_make_when_runner_present(monkeypatch):
+    # a stand-in for cocotb, so this does not depend on it being installed here
+    import sys
+    import types
+    monkeypatch.setitem(sys.modules, "cocotb", types.SimpleNamespace())
     monkeypatch.setattr(cocotb_mod, "_runner_available", lambda: True)
     monkeypatch.setattr(cocotb_mod.shutil, "which", lambda _n: None)   # no make, no sim
     assert cocotb_mod.CocotbAdapter().available() is True
