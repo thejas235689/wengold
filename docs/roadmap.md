@@ -30,9 +30,9 @@
 - **v0.9** — whole-project elaboration (one compilation unit rather than per file);
   a file set taken from the project's own build metadata (FuseSoC `.core`, `.f`
   filelists) instead of hand-passed include dirs; HJSON register maps.
-- **v1.0** — a Surelog/Verible elaboration backend; SymbiYosys as an external
+- **v1.1** — a Surelog/Verible elaboration backend; SymbiYosys as an external
   engine; regression farm, coverage closure, waiver register.
-- **v1.0** — spec-to-signoff on the open toolchain, reproducible on Sky130.
+- **v2.0** — spec-to-signoff on the open toolchain, reproducible on Sky130.
 
 ## Non-goals
 
