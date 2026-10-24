@@ -73,6 +73,30 @@ def test_spec_rejects_nonsense(tmp_path, bad, message):
     assert message in str(exc.value)
 
 
+def test_spec_refuses_what_it_cannot_express(tmp_path):
+    """A state machine is not in the format, so it is refused, not dropped.
+
+    Silently ignoring `fsm:` would hand back a module with no FSM in it and no
+    warning — the opposite of what the rest of WENGOLD does.
+    """
+    p = tmp_path / "fsm.yaml"
+    p.write_text("module: traffic\nports:\n  - {name: clk_i}\n"
+                 "fsm:\n  states: [IDLE, GRANT]\n")
+    with pytest.raises(SpecError) as exc:
+        load_spec(p)
+    assert "fsm" in str(exc.value)
+    assert "refused rather than silently dropped" in str(exc.value)
+
+
+def test_spec_refuses_an_unknown_field_key(tmp_path):
+    p = tmp_path / "f.yaml"
+    p.write_text("module: m\nports:\n  - {name: clk_i}\n  - {name: rst_ni}\n"
+                 "registers:\n  - name: R\n    addr: 0x0\n    fields:\n"
+                 "      - {name: F, bits: '0', enum: [A, B]}\n")
+    with pytest.raises(SpecError, match="unsupported key"):
+        load_spec(p)
+
+
 def test_spec_requires_the_clock_to_be_a_port(tmp_path):
     p = tmp_path / "bad.yaml"
     p.write_text("module: m\nclock: nope\nports:\n  - {name: rst_ni}\n")
