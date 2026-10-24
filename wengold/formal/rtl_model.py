@@ -45,10 +45,19 @@ _PP_STRIP = re.compile(
 _PP_DEFINE = re.compile(r"^\s*`define\b[^\n]*(?:\\\n[^\n]*)*\n?", re.MULTILINE)
 _PP_COND = re.compile(r"^\s*`(?:ifdef|ifndef|elsif|else|endif)\b", re.MULTILINE)
 _PP_USE = re.compile(r"`\w+")
+_COMMENT_BLOCK = re.compile(r"/\*.*?\*/", re.DOTALL)
+_COMMENT_LINE = re.compile(r"//[^\n]*")
 
 
 def strip_preprocessor(text: str) -> str:
-    """Remove directive lines; refuse conditional compilation and macro uses."""
+    """Remove directive lines; refuse conditional compilation and macro uses.
+
+    Comments go first. A backtick inside a comment is prose, not a macro use, and
+    scanning the raw text for `` ` `` rejects perfectly ordinary source (a
+    generated file that mentions `assign` in its header, for one).
+    """
+    text = _COMMENT_BLOCK.sub(" ", text)
+    text = _COMMENT_LINE.sub(" ", text)
     text = _PP_DEFINE.sub(" ", text)
     text = _PP_STRIP.sub(" ", text)
     if _PP_COND.search(text):
@@ -285,8 +294,13 @@ def _collect_lhs(stmts: list, out: set[str]) -> None:
             _collect_lhs(s[1], out)
 
 
-def _width_from_range(toks: list[str]) -> int:
-    """Parse `[msb:lsb]` from the front of toks; return width (1 if absent)."""
+def _width_from_range(toks: list[str], params: dict | None = None) -> int:
+    """Parse `[msb:lsb]` from the front of toks; return width (1 if absent).
+
+    The bounds are expressions, not just literals: `[WIDTH-1:0]` is how a
+    parameterised port is written, so they are evaluated against the module's
+    constants.
+    """
     if not toks or toks[0] != "[":
         return 1
     inner = []
@@ -295,31 +309,89 @@ def _width_from_range(toks: list[str]) -> int:
         inner.append(toks[i])
         i += 1
     if ":" in inner:
-        msb = int(inner[0])
-        lsb = int(inner[-1])
+        k = inner.index(":")
+        msb = eval_int(parse_expr(inner[:k]), {}, params or {})
+        lsb = eval_int(parse_expr(inner[k + 1:]), {}, params or {})
         return abs(msb - lsb) + 1
     return 1
 
 
-def _consume_range(toks: list[str], i: int) -> tuple[int, int]:
+def _consume_range(toks: list[str], i: int,
+                   params: dict | None = None) -> tuple[int, int]:
     if i < len(toks) and toks[i] == "[":
         j = i + 1
         while j < len(toks) and toks[j] != "]":
             j += 1
-        return _width_from_range(toks[i:j + 1]), j + 1
+        return _width_from_range(toks[i:j + 1], params), j + 1
     return 1, i
+
+
+def _bind_constants(toks: list[str]) -> tuple[list[str], dict[str, str]]:
+    """Replace `localparam`/`parameter` declarations by their values.
+
+    A constant declaration changes no behaviour, so it is bound rather than
+    refused: the name is replaced everywhere by its literal and the declaration
+    is dropped. That is what lets a parameterised, constant-using module -- the
+    shape any generator emits -- be modelled at all.
+    """
+    out: list[str] = []
+    binds: dict[str, str] = {}
+    i = 0
+    while i < len(toks):
+        if toks[i] in ("localparam", "parameter"):
+            j = i
+            seg: list[str] = []
+            # a body declaration ends at ';'; a header parameter ends at the
+            # ')' that closes its list, which must be left for the header scan
+            while j < len(toks) and toks[j] not in (";", ")"):
+                seg.append(toks[j])
+                j += 1
+            if "=" in seg:
+                k = seg.index("=")
+                name_tok = seg[k - 1]
+                value = seg[k + 1] if k + 1 < len(seg) else None
+                if value is not None and re.fullmatch(r"[A-Za-z_]\w*", name_tok):
+                    try:            # 4, 32'h0, 8'd12 -- whatever the literal is
+                        binds[name_tok] = eval_int(parse_expr([value]), {}, {})
+                    except Exception:
+                        pass        # not a constant we can resolve: leave it out
+            i = j + 1 if (j < len(toks) and toks[j] == ";") else j
+            continue
+        out.append(toks[i])
+        i += 1
+    return out, binds
 
 
 def parse_module(text: str) -> RtlModule:
     toks = tokenize(text)
+    toks, binds = _bind_constants(toks)
     if not toks or toks[0] != "module":
         raise UnsupportedConstruct("no module declaration found")
     name = toks[1]
     m = RtlModule(name=name)
+    # the constants are resolved by name wherever they are used, which is how
+    # widths and expressions already evaluate them
+    m.params = dict(binds)
+
+    # a parameter port list is emptied by the constant pass; skip what remains
+    i = 2
+    if i < len(toks) and toks[i] == "#":
+        i += 1
+        if i >= len(toks) or toks[i] != "(":
+            raise UnsupportedConstruct("malformed parameter port list")
+        depth = 0
+        while i < len(toks):
+            if toks[i] == "(":
+                depth += 1
+            elif toks[i] == ")":
+                depth -= 1
+                if depth == 0:
+                    i += 1
+                    break
+            i += 1
 
     # header ports
-    i = 2
-    if toks[i] != "(":
+    if i >= len(toks) or toks[i] != "(":
         raise UnsupportedConstruct("expected port list")
     depth, j = 1, i + 1
     header: list[str] = []
@@ -373,7 +445,7 @@ def _parse_decls_at(toks: list[str], i: int, m: RtlModule) -> int:
         i += 1
     while i < len(toks) and toks[i] in _TYPES:
         i += 1
-    width, i = _consume_range(toks, i)
+    width, i = _consume_range(toks, i, m.params)
     # names until ; or end
     while i < len(toks) and toks[i] != ";":
         name = toks[i]
@@ -495,12 +567,34 @@ def _parse_stmt(toks: list[str], i: int) -> tuple:
     if toks[j] == "=":
         raise UnsupportedConstruct("blocking assignment in a clocked block is not supported")
     lhs = toks[i:j]
-    if len(lhs) != 1 or not re.match(r"^[A-Za-z_]\w*$", lhs[0]):
-        raise UnsupportedConstruct("non-blocking assignment to a non-simple target")
+    target = _parse_target(lhs)
     k = j + 1
     while k < len(toks) and toks[k] != ";":
         k += 1
-    return ("nb", ("id", lhs[0]), parse_expr(toks[j + 1:k])), k + 1
+    return ("nb", target, parse_expr(toks[j + 1:k])), k + 1
+
+
+def _parse_target(lhs: list[str]):
+    """An assignment target: a whole signal, or a bit/slice of one.
+
+    Partial writes (`q[3:1] <= x;`) are how register fields are written in real
+    RTL, so the target carries the range and the update merges rather than
+    overwrites.
+    """
+    joined = "".join(lhs)
+    if re.fullmatch(r"[A-Za-z_]\w*", joined):
+        return ("id", joined)
+    m = re.fullmatch(r"([A-Za-z_]\w*)\[(\d+):(\d+)\]", joined)
+    if m:
+        hi, lo = int(m.group(2)), int(m.group(3))
+        if hi < lo:
+            raise UnsupportedConstruct("reversed slice in assignment target")
+        return ("slice", m.group(1), hi, lo)
+    m = re.fullmatch(r"([A-Za-z_]\w*)\[(\d+)\]", joined)
+    if m:
+        bit = int(m.group(2))
+        return ("slice", m.group(1), bit, bit)
+    raise UnsupportedConstruct("non-blocking assignment to a non-simple target")
 
 
 # ---------------------------------------------------------------- model
@@ -575,8 +669,19 @@ def _exec(stmts: list, env: dict, params: dict, nxt: dict, widths: dict) -> None
     for s in stmts:
         kind = s[0]
         if kind == "nb":
-            target = s[1][1]
-            nxt[target] = _mask(eval_int(s[2], env, params), widths.get(target, 32))
+            target = s[1]
+            value = eval_int(s[2], env, params)
+            if target[0] == "id":
+                name = target[1]
+                nxt[name] = _mask(value, widths.get(name, 32))
+            else:
+                # a partial write: keep the bits outside the slice
+                _, name, hi, lo = target
+                width = hi - lo + 1
+                mask = ((1 << width) - 1) << lo
+                base = nxt.get(name, env.get(name, 0))
+                merged = (base & ~mask) | ((value & ((1 << width) - 1)) << lo)
+                nxt[name] = _mask(merged, widths.get(name, 32))
         elif kind == "block":
             _exec(s[1], env, params, nxt, widths)
         elif kind == "if":
