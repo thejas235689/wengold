@@ -46,6 +46,7 @@ class Check:
 class Report:
     module: str
     checks: list[Check] = field(default_factory=list)
+    observations: list[str] = field(default_factory=list)
 
     @property
     def ok(self) -> bool:
@@ -60,7 +61,10 @@ class Report:
         head = f"{self.module}: {n - bad}/{n} checks passed"
         if bad:
             head += f" — {bad} FAILED"
-        return "\n".join([head] + [str(c) for c in self.checks])
+        lines = [head] + [str(c) for c in self.checks]
+        for o in self.observations:
+            lines.append(f"  note {o}")
+        return "\n".join(lines)
 
 
 def _walk(node):
@@ -218,6 +222,14 @@ def check(source: str, spec: ModuleSpec) -> Report:
                 rep.checks.append(Check(f"{r.name}.{f.name} read-only", not bad,
                                         "no write path" if not bad
                                         else f"written at [{f.bits}]"))
+                if not written:
+                    # correct, but worth saying: a read-only field nothing drives
+                    # is a constant. A spec that promised behaviour it did not
+                    # specify shows up here rather than as a silent zero.
+                    rep.observations.append(
+                        f"{r.name}.{f.name} is read-only and no logic writes "
+                        f"{r.name}, so it holds its reset value forever "
+                        f"(0x{f.reset:x})")
 
     driven = _driven_signals(source)
     for p in spec.all_ports:
