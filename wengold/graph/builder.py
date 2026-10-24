@@ -88,7 +88,10 @@ class GraphBuilder:
                                          meta={"frontend": "slang"}))
                 if unit.parse_errors:
                     self.graph.mark_unresolved(
-                        mod, f"{unit.parse_errors} parse error(s) in {path}")
+                        mod, f"{unit.parse_errors} parse error(s) in {path}",
+                        kind="parse_error", file=path,
+                        construct=", ".join(sorted({str(d.code) for d in unit.diagnostics[:3]}))
+                        if getattr(unit, "diagnostics", None) else "parse errors")
                 for pkg in unit.imports:
                     self.graph.add_node(Node(id=pkg, kind=NodeKind.PACKAGE))
                     self.graph.add_edge(pkg, mod, EdgeKind.IMPORTS)
@@ -100,8 +103,8 @@ class GraphBuilder:
                 for inc in unit.includes:
                     self.graph.add_node(Node(id=inc, kind=NodeKind.FILE, path=inc))
                     self.graph.add_edge(inc, mod, EdgeKind.INCLUDES)
-        for _path, unit in sorted(units.items()):
-            for owner, child, _inst in unit.instantiations:
+        for path, unit in sorted(units.items()):
+            for owner, child, inst in unit.instantiations:
                 if not owner or owner not in defined:
                     continue                     # not a module we indexed
                 if child in defined:
@@ -110,7 +113,10 @@ class GraphBuilder:
                     self.graph.add_node(Node(id=child, kind=NodeKind.RTL))
                     self.graph.add_edge(child, owner, EdgeKind.UNKNOWN)
                     self.graph.mark_unresolved(
-                        owner, f"instantiation `{child}` has no definition in the file set")
+                        owner,
+                        f"instantiation `{child}` has no definition in the file set",
+                        kind="missing_definition", file=path, subject=child,
+                        construct=f"hierarchy instantiation `{inst}`")
         for _path, unit in units.items():
             for name in unit.unresolved:
                 self.graph.notes.append(f"unresolved include: {name}")
