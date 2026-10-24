@@ -18,10 +18,16 @@
   against the spec; the formal subset widened to accept what generated RTL
   contains — parameter port lists, localparams, partial register writes,
   backticks in comments, parameterised widths. DONE (this release)
-- **v0.7** — whole-project elaboration (one compilation unit rather than per file);
+- **v0.7** — root-cause analysis: `wengold rootcause` explains why a node is
+  unresolved (the construct, the file, and whether the missing module comes from
+  a declared-but-unvendored dependency), why a result is invalidated (which
+  changes reach it, ranked, with the dependency path), and why a verdict is
+  unknown (the modelling gaps in its closure). Unresolved reasons are recorded
+  structured, not only as prose. ✅ *(this release)*
+- **v0.8** — whole-project elaboration (one compilation unit rather than per file);
   a file set taken from the project's own build metadata (FuseSoC `.core`, `.f`
   filelists) instead of hand-passed include dirs; HJSON register maps.
-- **v0.8** — a Surelog/Verible elaboration backend; SymbiYosys as an external
+- **v0.9** — a Surelog/Verible elaboration backend; SymbiYosys as an external
   engine; regression farm, coverage closure, waiver register.
 - **v1.0** — spec-to-signoff on the open toolchain, reproducible on Sky130.
 
