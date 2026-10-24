@@ -203,9 +203,12 @@ def _z3_expr(node, env: dict, params: dict, W: int):
         return z3.If(_z3_expr(node[1], env, params, W) != 0,
                      _z3_expr(node[2], env, params, W), _z3_expr(node[3], env, params, W))
     if k == "sel":
+        # every value in this encoding is W bits wide; a single-bit select must
+        # be zero-extended like a slice, or it meets W-bit constants at a
+        # different sort and z3 rejects the expression
         v = _z3_expr(node[1], env, params, W)
         i = _z3_expr(node[2], env, params, W)
-        return z3.Extract(0, 0, z3.LShR(v, i))
+        return z3.ZeroExt(W - 1, z3.Extract(0, 0, z3.LShR(v, i)))
     if k == "part":
         v = _z3_expr(node[1], env, params, W)
         lo = node[3][1]
