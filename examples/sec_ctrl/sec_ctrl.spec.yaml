@@ -1,0 +1,43 @@
+module: sec_ctrl
+desc: Security control block — mode, enable and status, with a read-only fault count.
+clock: clk_i
+reset: rst_ni
+
+parameters:
+  - {name: N_REGS, value: 3, desc: number of registers}
+
+ports:
+  - {name: clk_i,       dir: input,  width: 1}
+  - {name: rst_ni,      dir: input,  width: 1}
+  - {name: req_i,       dir: input,  width: 1}
+  - {name: fault_i,     dir: input,  width: 1}
+  - {name: state_o,     dir: output, width: 3}
+  - {name: alert_o,     dir: output, width: 1}
+
+registers:
+  - name: CTRL
+    addr: 0x0
+    desc: enable and mode
+    fields:
+      - {name: EN,    bits: "0",   access: rw, reset: 0, desc: enable}
+      - {name: MODE,  bits: "3:1", access: rw, reset: 3, desc: operating mode}
+      - {name: LOCK,  bits: "4",   access: rw, reset: 1, desc: lock the mode}
+
+  - name: STATUS
+    addr: 0x4
+    desc: read-only status
+    fields:
+      - {name: BUSY,   bits: "0",   access: ro, reset: 0}
+      - {name: FAULTS, bits: "7:4", access: ro, reset: 0}
+
+  - name: IRQ
+    addr: 0x8
+    desc: write-1-to-clear interrupt latch
+    fields:
+      - {name: PENDING, bits: "0", access: w1c, reset: 0}
+
+assigns:
+  - target: state_o
+    expr: "ctrl_en_q ? 3'd2 : (req_i ? 3'd1 : 3'd0)"
+  - target: alert_o
+    expr: "ctrl_lock_q | fault_i"
