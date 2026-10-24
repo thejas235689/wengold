@@ -184,6 +184,39 @@ def cmd_generate(args) -> int:
     return 0 if report.ok else 1
 
 
+def cmd_rootcause(args) -> int:
+    """Explain why something is unknown, unresolved or invalidated."""
+    from .rootcause import diagnose_node, diagnose_verdict
+
+    graph, _files = _build(args)
+    root = Path(args.path)
+    if root.is_file():
+        root = root.parent
+    status = 0
+
+    nodes = list(args.node)
+    if args.all_unresolved:
+        nodes += sorted(graph.unresolved_nodes())
+
+    for name in nodes:
+        diag = diagnose_node(graph, name, root)
+        print(diag.render())
+        print()
+        if diag.status == "unresolved":
+            status = 1
+
+    if args.result:
+        diag = diagnose_verdict(graph, args.result, args.depends, args.change)
+        print(diag.render())
+        if diag.status in ("unknown", "invalidated"):
+            status = status or 1
+
+    if not nodes and not args.result:
+        print("nothing asked: pass --node NAME, --all-unresolved, or --result ID")
+        return 2
+    return status
+
+
 def cmd_serve(args) -> int:
     from .mcp.server import main as serve
     serve()
@@ -249,6 +282,23 @@ def main(argv=None) -> int:
     p.add_argument("--no-check", action="store_true",
                    help="skip the conformance check (not recommended)")
     p.set_defaults(func=cmd_generate)
+
+    p = sub.add_parser("rootcause",
+                       help="explain why something is unknown, unresolved or invalidated")
+    p.add_argument("path", nargs="?", default=".")
+    p.add_argument("--include", action="append", default=[])
+    p.add_argument("--define", action="append", default=[])
+    p.add_argument("--backend", default="auto", choices=["auto", "slang", "regex"])
+    p.add_argument("--node", action="append", default=[],
+                   help="explain this node (repeatable)")
+    p.add_argument("--all-unresolved", action="store_true",
+                   help="explain every unresolved node")
+    p.add_argument("--result", help="a result id to explain")
+    p.add_argument("--depends", action="append", default=[],
+                   help="a dependency of that result (repeatable)")
+    p.add_argument("--change", action="append", default=[],
+                   help="a node that changed (repeatable)")
+    p.set_defaults(func=cmd_rootcause)
 
     p = sub.add_parser("serve", help="run the MCP server over stdio")
     p.set_defaults(func=cmd_serve)
