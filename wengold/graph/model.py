@@ -104,13 +104,29 @@ class DesignGraph:
     def add_edge(self, src: str, dst: str, kind: EdgeKind = EdgeKind.DRIVES) -> None:
         self.edges.append(Edge(src, dst, kind))
 
-    def mark_unresolved(self, node_id: str, reason: str = "") -> None:
-        """Record that a node's dependencies could not be fully resolved."""
+    def mark_unresolved(self, node_id: str, reason: str = "", *,
+                        kind: str | None = None, file: str | None = None,
+                        line: int | None = None, subject: str | None = None,
+                        construct: str | None = None) -> None:
+        """Record that a node's dependencies could not be fully resolved.
+
+        The reason is stored twice: as prose for a human reading the graph, and
+        structured (kind, file, line, subject, construct) so the cause can be
+        analysed rather than only printed.
+        """
         node = self.nodes.get(node_id)
         if node is not None:
             meta = dict(node.meta)
             if reason:
                 meta.setdefault("unresolved_reasons", []).append(reason)
+                meta.setdefault("unresolved", []).append({
+                    "kind": kind or "unresolved",
+                    "reason": reason,
+                    "file": file,
+                    "line": line,
+                    "subject": subject,
+                    "construct": construct,
+                })
             self.nodes[node_id] = Node(node.id, node.kind, node.path,
                                        node.content_hash, resolved=False, meta=meta)
         if reason:
