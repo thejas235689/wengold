@@ -24,10 +24,13 @@
   changes reach it, ranked, with the dependency path), and why a verdict is
   unknown (the modelling gaps in its closure). Unresolved reasons are recorded
   structured, not only as prose. ✅ *(this release)*
-- **v0.8** — whole-project elaboration (one compilation unit rather than per file);
+- **v0.8** — a project IDE: `wengold ide` writes one self-contained HTML file with
+  the file tree, the RTL, a line-level diff of the change, the blocks the change
+  puts in doubt, and the root cause and dependency path for each. ✅ *(this release)*
+- **v0.9** — whole-project elaboration (one compilation unit rather than per file);
   a file set taken from the project's own build metadata (FuseSoC `.core`, `.f`
   filelists) instead of hand-passed include dirs; HJSON register maps.
-- **v0.9** — a Surelog/Verible elaboration backend; SymbiYosys as an external
+- **v1.0** — a Surelog/Verible elaboration backend; SymbiYosys as an external
   engine; regression farm, coverage closure, waiver register.
 - **v1.0** — spec-to-signoff on the open toolchain, reproducible on Sky130.
 
