@@ -139,6 +139,51 @@ def cmd_cdc(args) -> int:
     return 0 if not rep.crossings else 1
 
 
+def cmd_generate(args) -> int:
+    """Spec in, SystemVerilog out — and then check the code against the spec."""
+    from .generate.emit import emit_map, emit_props, emit_rtl
+    from .generate.spec import SpecError, load_spec
+
+    try:
+        spec = load_spec(args.spec)
+    except SpecError as exc:
+        print(f"wengold: {exc}", file=sys.stderr)
+        return 2
+
+    rtl = emit_rtl(spec)
+    outdir = Path(args.out)
+    outdir.mkdir(parents=True, exist_ok=True)
+    rtl_path = outdir / f"{spec.name}.sv"
+    rtl_path.write_text(rtl)
+    written = [str(rtl_path)]
+
+    props = emit_props(spec)
+    if props:
+        props_path = outdir / f"{spec.name}_props.sv"
+        props_path.write_text(props)
+        written.append(str(props_path))
+
+    (outdir / f"{spec.name}.map.json").write_text(
+        json.dumps(emit_map(spec), indent=2) + "\n")
+    written.append(str(outdir / f"{spec.name}.map.json"))
+
+    print(f"generated {spec.name}: "
+          f"{len(spec.registers)} register(s), "
+          f"{sum(len(r.fields) for r in spec.registers)} field(s), "
+          f"{len(spec.all_ports)} port(s)")
+    for w in written:
+        print(f"  {w}")
+
+    if args.no_check:
+        return 0
+
+    from .generate.conform import check
+    report = check(rtl, spec)
+    print()
+    print(report.summary())
+    return 0 if report.ok else 1
+
+
 def cmd_serve(args) -> int:
     from .mcp.server import main as serve
     serve()
@@ -196,6 +241,14 @@ def main(argv=None) -> int:
     p = sub.add_parser("cdc", help="report clock-domain crossings in an RTL file")
     p.add_argument("file")
     p.set_defaults(func=cmd_cdc)
+
+    p = sub.add_parser("generate",
+                       help="generate SystemVerilog from a spec, then check it")
+    p.add_argument("spec", help="the spec (YAML or JSON)")
+    p.add_argument("--out", default="build", help="output directory")
+    p.add_argument("--no-check", action="store_true",
+                   help="skip the conformance check (not recommended)")
+    p.set_defaults(func=cmd_generate)
 
     p = sub.add_parser("serve", help="run the MCP server over stdio")
     p.set_defaults(func=cmd_serve)
