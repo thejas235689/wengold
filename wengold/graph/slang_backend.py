@@ -32,7 +32,7 @@ class SlangUnit:
     path: str
     modules: list[str] = field(default_factory=list)
     interfaces: list[str] = field(default_factory=list)
-    instantiations: list[tuple[str, str]] = field(default_factory=list)
+    instantiations: list[tuple[str, str, str]] = field(default_factory=list)
     packages: list[str] = field(default_factory=list)
     imports: list[str] = field(default_factory=list)
     parameters: list[tuple[str, str | None]] = field(default_factory=list)
@@ -58,6 +58,18 @@ def _walk(node):
                 yield from _walk(child)
     except TypeError:
         pass
+
+
+def _enclosing_unit(node) -> str | None:
+    """The name of the module/interface that contains `node`, via the parent chain."""
+    parent = getattr(node, "parent", None)
+    while parent is not None:
+        if parent.kind in (S.SyntaxKind.ModuleDeclaration,
+                           S.SyntaxKind.InterfaceDeclaration,
+                           S.SyntaxKind.ProgramDeclaration):
+            return _text(getattr(getattr(parent, "header", None), "name", None))
+        parent = getattr(parent, "parent", None)
+    return None
 
 
 def _text(node) -> str | None:
@@ -92,12 +104,18 @@ def extract(text: str, name: str = "source") -> SlangUnit:
                 unit.modules.append(name)
         elif kind == S.SyntaxKind.HierarchyInstantiation:
             try:
-                mod = n.type.valueText
+                child = n.type.valueText
             except Exception:
                 continue
+            # The instantiation belongs to the module that *contains* it, not to
+            # the file. A file may define several modules (and one Verilog file
+            # often does), so attributing every instantiation in a file to every
+            # module in it invents a hierarchy in which everything instantiates
+            # everything.
+            owner = _enclosing_unit(n)
             for inst in n.instances:
                 unit.instantiations.append(
-                    (mod, _text(getattr(inst, "decl", None)) or "?"))
+                    (owner or "", child, _text(getattr(inst, "decl", None)) or "?"))
         elif kind in (S.SyntaxKind.InterfaceDeclaration, S.SyntaxKind.ProgramDeclaration):
             # an interface is a design unit an instantiation can bind to, so it
             # counts as a definition — not a missing module
