@@ -10,6 +10,7 @@ slang is optional: `available()` is False without it and the caller falls back.
 """
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 
 from .preprocess import Preprocessor, make_resolver
@@ -60,6 +61,95 @@ def _walk(node):
         pass
 
 
+# ---- constant generate conditions -----------------------------------------
+_CONST = re.compile(r"\b(?:localparam|parameter)\b[^=;]*?\b(\w+)\s*=\s*([^,;)\n]+)")
+
+
+def _const_int(text: str) -> dict[str, int]:
+    """Best-effort constants from the source: `localparam NAME = <literal>`."""
+    out: dict[str, int] = {}
+    for m in _CONST.finditer(text):
+        raw = m.group(2).strip()
+        lit = re.fullmatch(r"(?:\d+)?'([hdb])?([0-9a-fA-F_]+)", raw)
+        if lit:
+            base = {"h": 16, "d": 10, "b": 2, None: 10}[lit.group(1)]
+            try:
+                out[m.group(1)] = int(lit.group(2).replace("_", ""), base)
+            except ValueError:
+                pass
+        elif raw.isdigit():
+            out[m.group(1)] = int(raw)
+    return out
+
+
+def _eval_cond(node, consts: dict[str, int]):
+    """Evaluate a generate condition, or None when it cannot be known statically."""
+    if node is None:
+        return None
+    kind = str(node.kind)
+    if kind.endswith("IdentifierName"):
+        tok = getattr(node, "identifier", None)
+        name = getattr(tok, "valueText", None)
+        return consts.get(name) if name is not None else None
+    if kind.endswith("LiteralExpression"):
+        tok = getattr(node, "literal", None)
+        return _const_int(f"x = {getattr(tok, 'valueText', '')}").get("x")
+    op = getattr(getattr(node, "operatorToken", None), "valueText", None)
+    left = getattr(node, "left", None)
+    right = getattr(node, "right", None)
+    if op is not None and left is not None and right is not None:
+        a = _eval_cond(left, consts)
+        b = _eval_cond(right, consts)
+        if a is None or b is None:
+            return None
+        table = {"&&": a and b, "||": a or b, "&": a & b, "|": a | b, "^": a ^ b,
+                 "==": int(a == b), "!=": int(a != b), "<": int(a < b),
+                 ">": int(a > b), "<=": int(a <= b), ">=": int(a >= b),
+                 "+": a + b, "-": a - b, "*": a * b}
+        return table.get(op)
+    operand = getattr(node, "operand", None)
+    if op is not None and operand is not None:
+        v = _eval_cond(operand, consts)
+        return None if v is None else {"!": int(not v), "~": ~v, "-": -v}.get(op)
+    inner = getattr(node, "expression", None)
+    if inner is not None:
+        return _eval_cond(inner, consts)
+    return None
+
+
+def _in_dead_generate(node, consts: dict[str, int]) -> bool:
+    """True when `node` sits in a generate branch that is statically not taken.
+
+    `generate if (PULP_SECURE && USE_PMP)` with both localparams 0 is dead code:
+    the module it instantiates is not missing, it is simply not elaborated. Not
+    evaluating the condition reports a missing definition for code no build would
+    ever include.
+    """
+    parent = getattr(node, "parent", None)
+    while parent is not None:
+        if str(parent.kind).endswith("IfGenerate"):
+            value = _eval_cond(getattr(parent, "condition", None), consts)
+            if value is not None:
+                block = getattr(parent, "block", None)
+                in_if = _contains(block, node)
+                if (value == 0 and in_if) or (value != 0 and not in_if):
+                    return True
+        parent = getattr(parent, "parent", None)
+    return False
+
+
+def _contains(ancestor, node) -> bool:
+    """Is `node` inside `ancestor`'s subtree?"""
+    if ancestor is None:
+        return False
+    cur = getattr(node, "parent", None)
+    while cur is not None:
+        if cur is ancestor:
+            return True
+        cur = getattr(cur, "parent", None)
+    return False
+
+
 def _enclosing_unit(node) -> str | None:
     """The name of the module/interface that contains `node`, via the parent chain."""
     parent = getattr(node, "parent", None)
@@ -96,6 +186,7 @@ def extract(text: str, name: str = "source") -> SlangUnit:
     unit = SlangUnit(path=name)
     tree = S.SyntaxTree.fromText(text, name=name)
     unit.parse_errors = len(tree.diagnostics)
+    consts = _const_int(text)
     for n in _walk(tree.root):
         kind = n.kind
         if kind == S.SyntaxKind.ModuleDeclaration:
@@ -112,6 +203,8 @@ def extract(text: str, name: str = "source") -> SlangUnit:
             # often does), so attributing every instantiation in a file to every
             # module in it invents a hierarchy in which everything instantiates
             # everything.
+            if _in_dead_generate(n, consts):
+                continue                    # an untaken generate branch: not missing
             owner = _enclosing_unit(n)
             for inst in n.instances:
                 unit.instantiations.append(
