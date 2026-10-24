@@ -217,6 +217,70 @@ def cmd_rootcause(args) -> int:
     return status
 
 
+def cmd_ide(args) -> int:
+    """Write a self-contained IDE for a project: files, RTL, change, pending."""
+    from . import __version__
+    from .graph.model import EdgeKind, NodeKind
+    from .ide import build
+    from .kernel.validity import Result
+
+    graph, _files = _build(args)
+    root = Path(args.path)
+    if root.is_file():
+        root = root.parent
+
+    changed_files = set(args.change or [])
+    befores: dict[str, str] = {}
+    for spec in (args.before or []):
+        rel, _, src = spec.partition("=")
+        try:
+            befores[rel] = Path(src).read_text(errors="replace")
+        except OSError as exc:
+            print(f"wengold: cannot read --before {src}: {exc}", file=sys.stderr)
+            return 2
+
+    # which blocks changed: the modules defined in the changed files, unless the
+    # caller names them explicitly
+    changes = set(args.change_block or [])
+    if not changes:
+        for nid, node in graph.nodes.items():
+            if node.kind is NodeKind.RTL and node.path \
+                    and str(node.path).replace("\\", "/") in changed_files:
+                changes.add(nid)
+
+    # a suite to reason over: one unit result per block, plus an integration
+    # result on the top of the hierarchy — a block nothing instantiates, with the
+    # deepest subtree under it
+    mods = sorted(n for n, d in graph.nodes.items() if d.kind is NodeKind.RTL)
+    roots = [m for m in mods
+             if not [e for e in graph.out_edges(m)
+                     if e.kind is EdgeKind.INSTANTIATES]]
+    top = max(roots, key=lambda m: len(graph.ancestors(m)), default=None)
+    results = [Result(f"unit_{m}", "sim", depends_on={m}) for m in mods]
+    if top:
+        results += [Result(f"integration_{top}", "sim", depends_on={top}),
+                    Result("signoff", "coverage", depends_on={top},
+                           depends_on_results={f"integration_{top}"})]
+
+    html = build(root, graph, changed_files, befores, results, changes,
+                 project=root.name, revision=args.revision, version=__version__)
+    out = Path(args.out)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(html, encoding="utf-8")
+
+    s = build.__globals__  # noqa: F841  (kept for clarity; summary printed below)
+    from .ide import collect
+    data = collect(root, graph, changed_files, befores, results, changes)
+    sm = data["summary"]
+    print(f"wrote {out}  ({out.stat().st_size // 1024} KB)")
+    print(f"  {sm['files']} file(s), {sm['blocks']} block(s), "
+          f"{sm['changed']} changed, {sm['pending']} pending, "
+          f"{sm['unresolved']} unresolved")
+    print(f"  suite: {len(results)} result(s) — one unit per block"
+          f"{f', plus integration on {top}' if top else ''}")
+    return 0
+
+
 def cmd_serve(args) -> int:
     from .mcp.server import main as serve
     serve()
@@ -299,6 +363,21 @@ def main(argv=None) -> int:
     p.add_argument("--change", action="append", default=[],
                    help="a node that changed (repeatable)")
     p.set_defaults(func=cmd_rootcause)
+
+    p = sub.add_parser("ide", help="write a self-contained IDE for a project")
+    p.add_argument("path", nargs="?", default=".")
+    p.add_argument("--include", action="append", default=[])
+    p.add_argument("--define", action="append", default=[])
+    p.add_argument("--backend", default="auto", choices=["auto", "slang", "regex"])
+    p.add_argument("--change", action="append", default=[],
+                   help="a file that changed, relative to the project (repeatable)")
+    p.add_argument("--before", action="append", default=[],
+                   help="REL=PATH giving the pre-change content of a file")
+    p.add_argument("--change-block", action="append", default=[],
+                   help="name a changed block explicitly (repeatable)")
+    p.add_argument("--revision", default="working copy")
+    p.add_argument("--out", default="wengold-ide.html")
+    p.set_defaults(func=cmd_ide)
 
     p = sub.add_parser("serve", help="run the MCP server over stdio")
     p.set_defaults(func=cmd_serve)
