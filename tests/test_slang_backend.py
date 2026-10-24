@@ -98,7 +98,7 @@ def test_extract_finds_modules_and_instantiations():
            "endmodule\n")
     unit = extract(src, "top.sv")
     assert set(unit.modules) == {"child", "top"}
-    assert ("child", "u_child") in unit.instantiations
+    assert ("top", "child", "u_child") in unit.instantiations
     assert unit.parse_errors == 0
 
 
@@ -129,7 +129,7 @@ def test_elaborate_over_a_file_set():
     units = elaborate(files, include_dirs=["."], defines={})
     top = units["top.sv"]
     assert top.modules == ["top"]
-    assert ("child", "u") in top.instantiations
+    assert ("top", "child", "u") in top.instantiations
     assert "defs.svh" in top.includes
     assert top.parse_errors == 0
 
@@ -161,6 +161,26 @@ def test_builder_regex_backend_still_works():
                         "  child u (.clk(clk));\nendmodule\n")}
     g = GraphBuilder().build_from_files(files, backend="regex")
     assert "top" in g.nodes
+
+
+@needs_slang
+def test_instantiation_is_attributed_to_its_own_module():
+    """Two modules in one file must not both claim the other's instantiations.
+
+    A Verilog file commonly defines several modules, and a file-level attribution
+    invents a hierarchy in which every module instantiates every other.
+    """
+    src = ("module leaf (input logic a, output logic y); assign y = a; endmodule\n"
+           "module uses_it (input logic a, output logic y);\n"
+           "  leaf u_leaf (.a(a), .y(y));\n"
+           "endmodule\n"
+           "module does_not (input logic a, output logic y);\n"
+           "  assign y = ~a;\n"
+           "endmodule\n")
+    unit = extract(src, "multi.v")
+    owners = {(o, c) for o, c, _i in unit.instantiations}
+    assert ("uses_it", "leaf") in owners
+    assert not any(o == "does_not" for o, _c in owners)
 
 
 @needs_slang
