@@ -229,12 +229,22 @@ def cmd_ide(args) -> int:
     if root.is_file():
         root = root.parent
 
-    changed_files = set(args.change or [])
+    def _rel(p) -> str:
+        """Paths in the graph may be absolute while --change is relative. Compare
+        in one space, or a changed block is silently never matched."""
+        path = Path(str(p))
+        try:
+            path = path.relative_to(root)
+        except ValueError:
+            pass
+        return str(path).replace("\\", "/")
+
+    changed_files = {_rel(c) for c in (args.change or [])}
     befores: dict[str, str] = {}
     for spec in (args.before or []):
         rel, _, src = spec.partition("=")
         try:
-            befores[rel] = Path(src).read_text(errors="replace")
+            befores[_rel(rel)] = Path(src).read_text(errors="replace")
         except OSError as exc:
             print(f"wengold: cannot read --before {src}: {exc}", file=sys.stderr)
             return 2
@@ -245,7 +255,7 @@ def cmd_ide(args) -> int:
     if not changes:
         for nid, node in graph.nodes.items():
             if node.kind is NodeKind.RTL and node.path \
-                    and str(node.path).replace("\\", "/") in changed_files:
+                    and _rel(node.path) in changed_files:
                 changes.add(nid)
 
     # a suite to reason over: one unit result per block, plus an integration
@@ -262,8 +272,39 @@ def cmd_ide(args) -> int:
                     Result("signoff", "coverage", depends_on={top},
                            depends_on_results={f"integration_{top}"})]
 
+    # a waveform, from a real source: a simulator's VCD, or the counterexample
+    # the formal engine already computes for a property that fails
+    wave = None
+    if args.vcd:
+        from .wave import from_vcd
+        try:
+            wave = from_vcd(args.vcd)
+            print(f"  waveform: {args.vcd} "
+                  f"({wave['cycles']} cycle(s), {len(wave['signals'])} signal(s))")
+        except OSError as exc:
+            print(f"wengold: cannot read --vcd {args.vcd}: {exc}", file=sys.stderr)
+            return 2
+    if args.property and args.wave_file:
+        from .wave import from_formal
+        wf = root / args.wave_file
+        try:
+            text = wf.read_text(errors="replace")
+        except OSError as exc:
+            print(f"wengold: cannot read --wave-file {args.wave_file}: {exc}",
+                  file=sys.stderr)
+            return 2
+        wave = from_formal(text, args.property, reset=args.reset,
+                           clock=args.clock, engine=args.wave_engine)
+        if wave is None:
+            print(f"  waveform: `{args.property}` did not fail on "
+                  f"{args.wave_file} — nothing to draw")
+        else:
+            print(f"  waveform: counterexample of `{args.property}` "
+                  f"({wave['cycles']} cycle(s))")
+
     html = build(root, graph, changed_files, befores, results, changes,
-                 project=root.name, revision=args.revision, version=__version__)
+                 project=root.name, revision=args.revision, version=__version__,
+                 wave=wave)
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(html, encoding="utf-8")
@@ -376,6 +417,14 @@ def main(argv=None) -> int:
     p.add_argument("--change-block", action="append", default=[],
                    help="name a changed block explicitly (repeatable)")
     p.add_argument("--revision", default="working copy")
+    p.add_argument("--vcd", help="draw a waveform from a simulator VCD dump")
+    p.add_argument("--wave-file",
+                   help="RTL file to run --property on for a counterexample wave")
+    p.add_argument("--property", help="the property to check for a waveform")
+    p.add_argument("--reset", default=None, help="reset signal for --property")
+    p.add_argument("--clock", default=None, help="clock signal for --property")
+    p.add_argument("--wave-engine", default="explicit",
+                   choices=["explicit", "z3"], help="engine for --property")
     p.add_argument("--out", default="wengold-ide.html")
     p.set_defaults(func=cmd_ide)
 
