@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from ..kernel.validity import Verdict
+from ..kernel.validity import Execution, Verdict
 
 __all__ = ["Thought", "Trace", "explain"]
 
@@ -104,9 +104,41 @@ def explain(ctx, result_id: str) -> Trace:
         else:
             bad = sorted(deps & set(ctx.unresolved))
             n += 1
-            thoughts.append(Thought(
-                n, f"{len(bad)} of its dependencies are unresolved in the graph, "
-                   f"so its currency cannot be decided", bad[:8]))
+            if bad:
+                thoughts.append(Thought(
+                    n, f"{len(bad)} of its dependencies are unresolved in the "
+                       f"graph, so its currency cannot be decided", bad[:8]))
+            else:
+                # the agent's own check looks only at DIRECT dependencies, but the
+                # kernel tests the whole upstream closure — on OpenTitan a result
+                # whose direct dependency resolved was still unknown because
+                # prim_flop sat deeper in its closure. Rather than re-derive the
+                # closure here (and get it subtly wrong), quote the kernel: it
+                # knows which condition fired and the trace must not contradict it.
+                kernel_reason = (getattr(ctx, "reasons", {}) or {}).get(result_id, "")
+                if "unresolved node" in kernel_reason:
+                    tail = kernel_reason.split(":", 1)[-1].strip()
+                    thoughts.append(Thought(
+                        n, "something unresolved sits in its dependency closure "
+                           f"({tail}), so its currency cannot be decided"))
+                elif "absent from the graph" in kernel_reason:
+                    tail = kernel_reason.split(":", 1)[-1].strip()
+                    thoughts.append(Thought(
+                        n, "it depends on node(s) the graph does not contain "
+                           f"({tail}), so information was lost and it cannot be "
+                           "called unaffected"))
+                elif getattr(ctx, "approximate", False):
+                    thoughts.append(Thought(
+                        n, "the graph was built without a full elaboration, so "
+                           "the kernel will not call it valid whatever is run"))
+                elif getattr(result, "execution", None) is Execution.NOT_RUN:
+                    thoughts.append(Thought(
+                        n, "it has never been executed, so there is no evidence "
+                           "for it — unknown, not valid", sorted(deps)[:8]))
+                else:
+                    thoughts.append(Thought(
+                        n, f"the kernel says: {kernel_reason or 'unknown'} — this "
+                           f"trace cannot add to that"))
     else:
         n += 1
         thoughts.append(Thought(
