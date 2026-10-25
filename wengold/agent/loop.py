@@ -39,7 +39,8 @@ __all__ = ["Agent", "AgentRun", "SimulatedRunner"]
 @dataclass
 class AgentRun:
     strategy: str
-    context: Context
+    context: Context                     # what the agent saw when it started
+    final_context: Context | None = None  # after any re-perception
     traces: list[Trace] = field(default_factory=list)
     plan: list[dict] = field(default_factory=list)
     outcomes: list[dict] = field(default_factory=list)
@@ -203,7 +204,9 @@ class Agent:
             run.settled = len(settled & set(ctx.todo))
             if not still:
                 run.reflections.append("goal met: no result needs new evidence")
-                ctx.todo = []
+                # do NOT clear ctx.todo: run.context points at this object, and
+                # clearing it made the report say "0 need new evidence" beside a
+                # plan with 14 steps
                 break
             if not progressed:
                 run.reflections.append(
@@ -212,7 +215,10 @@ class Agent:
                 break
             ctx = perceive(self.graph, self.results, changed)
             ctx.todo = still
-            run.context = ctx
+            # keep the opening context for the report: overwriting it made the
+            # perception line describe the *end* state ("0 need new evidence")
+            # next to a plan with 14 steps, which reads as a contradiction
+            run.final_context = ctx
             run.reflections.append(
                 f"iteration {it}: {len(still)} still open, re-planned")
 
