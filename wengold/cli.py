@@ -70,7 +70,9 @@ def cmd_index(args) -> int:
         print(f"  ! {issue}")
     # graph notes carry the things that change how the numbers should be read —
     # a silent fallback to the weak front-end, above all
-    for note in graph.notes[:5]:
+    for note in list(dict.fromkeys(graph.notes))[:5]:
+        # deduplicated: the same missing include is recorded once per unit that
+        # fails to resolve it, and this printed it six times in a row
         print(f"  !! {note}")
     return 0
 
