@@ -14,6 +14,41 @@ what the tags are for.
 
 ---
 
+## [0.24.0] — 2026-10-25
+
+### Added
+- **`cognition.py`** — a cognitive-ability scorecard for the agent. Each ability is
+  scored as **measured** (with a number), **failed** (measured, and it does not do
+  it), or **not measurable here** (with the reason). No "partial", no promises.
+
+### The scorecard
+
+| ability | status | score |
+| --- | --- | --- |
+| perception | measured | correct — 16 results, 0 unresolved |
+| attention | measured | 100% of the top third are the high-prior items |
+| memory | measured | two streams, round-trips |
+| reasoning | measured | 20/20 traces sound |
+| planning | measured | covers the whole open set |
+| metacognition | measured | **ECE 0.049 — well calibrated** |
+| learning | measured | priors move with evidence |
+| tool use | measured | 0/2 tools available (correctly reported, not assumed) |
+| language | measured | 100% on trained words, 0% on held-out vocabulary |
+| open-ended generation | **failed** | none of VAE/GAN/diffusion reaches the missing state |
+| social cognition | not measurable here | no peers and no users |
+| embodied control | not measurable here | no robot |
+| continual learning at scale | not measurable here | no corpus, no training compute |
+| neuromorphic / neuroevolution | not measurable here | not implemented, and the compute is not here |
+
+**10 of 14 abilities measurable; 1 measured and failed; 4 not testable in this
+environment.**
+
+### Not implemented, deliberately
+- Neuromorphic computing, neuroevolution, hybrid brain-inspired architectures,
+  catastrophic-forgetting research, and any AGI benchmark claim. The first four
+  need a simulator and compute a sandbox call cannot supply; the last would be a
+  claim this repository has no evidence for.
+
 ## [0.23.0] — 2026-10-25
 
 ### Added
