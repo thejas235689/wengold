@@ -27,7 +27,12 @@
 - **v0.8** — a project IDE: `wengold ide` writes one self-contained HTML file with
   the file tree, the RTL, a line-level diff of the change, the blocks the change
   puts in doubt, and the root cause and dependency path for each. ✅ *(this release)*
-- **v0.9** — whole-project elaboration (one compilation unit rather than per file);
+- **v0.9** — waveforms in the IDE: a failing property's counterexample is drawn
+  below the panes (the failing cycle marked), and a simulator's VCD renders the
+  same way. Two bugs fell out of it: the emitter wrote `import <module>::*;` in
+  the properties file, and that bogus package name overwrote the module's node in
+  the graph, silently dropping the block. ✅ *(this release)*
+- **v0.10** — whole-project elaboration (one compilation unit rather than per file);
   a file set taken from the project's own build metadata (FuseSoC `.core`, `.f`
   filelists) instead of hand-passed include dirs; HJSON register maps.
 - **v1.1** — a Surelog/Verible elaboration backend; SymbiYosys as an external
