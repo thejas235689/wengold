@@ -69,7 +69,15 @@
   validator, the conformance checker and the prover all accept the result, because
   they check the spec's internal consistency and not its correspondence to
   English. ✅ *(this release)*
-- **v0.17** — whole-project elaboration (one compilation unit rather than per file);
+- **v0.18** — the generative families, given a job and a yardstick: a transformer
+  with autoregressive decoding (already the encoder-decoder in `learn/`), plus a
+  VAE, a GAN and a diffusion model that generate **stimulus**. Scored against the
+  engine's own reachable-state set on a passcode design whose completing symbol is
+  absent from the corpus: **diffusion reaches the deep state 4.4x as often as
+  random; the VAE and the GAN land at or below random; none reproduces the
+  corpus.** The conclusion is that a generative model extends a pattern it was
+  shown and cannot invent what is missing from its data. ✅ *(this release)*
+- **v0.19** — whole-project elaboration (one compilation unit rather than per file);
   a file set taken from the project's own build metadata (FuseSoC `.core`, `.f`
   filelists) instead of hand-passed include dirs; HJSON register maps.
 - **v1.1** — a Surelog/Verible elaboration backend; SymbiYosys as an external
