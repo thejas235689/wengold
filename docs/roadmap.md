@@ -85,7 +85,14 @@
   the kernel's minimum evidence is already minimal and one check at the base
   cascades. The ordering problem is not a search problem, which is also why the
   earlier Q-learning lost to a two-line heuristic. ✅ *(this release)*
-- **v0.20** — whole-project elaboration (one compilation unit rather than per file);
+- **v0.20** — three agent patterns: **ReAct** (thought → action → observation, each
+  step chosen from the last observation), **test-time scaling** (beam search over
+  plan orderings, measured under check failures) and **multi-agent orchestration**
+  (planner → reviewer → executor, where the reviewer re-derives the obligations and
+  can refuse). Measured: beam beats greedy by **6–9%** and wins 11 of 12 at the
+  larger budget, while **best-of-32 random sampling is no better than greedy** —
+  structured search helps, brute force does not. ✅ *(this release)*
+- **v0.21** — whole-project elaboration (one compilation unit rather than per file);
   a file set taken from the project's own build metadata (FuseSoC `.core`, `.f`
   filelists) instead of hand-passed include dirs; HJSON register maps.
 - **v1.1** — a Surelog/Verible elaboration backend; SymbiYosys as an external
