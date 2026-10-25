@@ -2,12 +2,11 @@
 
 # WENGOLD
 
-**Workflow ENgine for Graph-Oriented Logic Design** — the open-source validity
-kernel for silicon verification.
+**Workflow ENgine for Graph-Oriented Logic Design** — an open validity kernel for
+silicon verification.
 
-WENGOLD is an open, terminal-native harness that lets AI agents verify a digital
-SoC end to end on an entirely open toolchain, and — the part nobody has open
-sourced — answers one question after every change:
+WENGOLD keeps a dependency graph of a design and answers one question after every
+change:
 
 > *Which of my previous verification results still hold?*
 
@@ -21,16 +20,15 @@ It does that with three things:
 
 Everything above is dual-licensed under MIT or Apache-2.0. Commercial tools plug
 in through adapters; the open stack (Verilator, Icarus, cocotb, Yosys,
-SymbiYosys, Z3, GTKWave) is first-class and works out of the box.
+SymbiYosys, Z3, GTKWave) is first-class.
 
 ## Why
 
-Verification is the largest cost in a chip program — 40–50% of the budget today,
-heading toward 60–70% of engineering hours. Most of it is *iteration*: a late
-change to RTL, a register map or a clock tree puts earlier results in doubt, so
-teams rerun whole regressions and re-close coverage they already closed. WENGOLD
-keeps the results that still hold and reruns only what the change could have
-affected.
+A late change to RTL, a register map or a clock tree puts earlier results in
+doubt, and the usual answer is to rerun the regression. Most of those reruns
+re-establish conclusions that the change could not have touched. WENGOLD keeps the
+results that still hold and reruns only what the change could have reached — and
+when it cannot tell, it says `unknown` rather than guessing.
 
 ## Install
 
@@ -38,14 +36,21 @@ affected.
 git clone https://github.com/thejas235689/wengold.git
 cd wengold
 python -m pip install -e ".[open]"     # open toolchain only
-python -m wengold.demo                  # run the bundled SoC walkthrough
+python -m wengold.cli --help
 ```
+
+`numpy` is required by `wengold learn` and `wengold spec-from-text` and by nothing
+else. The graph, the kernel, the front-ends and the CLI are standard library only.
 
 ## What is implemented
 
-- **Elaboration, not regex.** `wengold.graph.elaborate` resolves `include` chains,
-  `define` macros, `package`/`import`, `parameter`s, `generate` blocks and `.f`
-  file lists, and reports anything it cannot resolve.
+- **Elaboration, not regex.** `wengold.graph.elaborate` resolves `` `include ``
+  chains, `` `define `` macros, `package`/`import`, `parameter`s, `generate` blocks
+  and `.f` file lists, and reports anything it cannot resolve.
+- **A real SystemVerilog front-end** (`pyslang`) and a **VHDL front-end**, both
+  structural. `wengold index` picks the best available and **says so when it falls
+  back** — the bounded regex elaborator finds a fraction of the modules, and the
+  block count from it is an under-estimate, not the design.
 - **Conservative kernel.** The kernel returns `VALID` only when it can prove a
   result is unaffected. An empty dependency set, a dependency on an unresolved
   node, or a graph built without full elaboration all yield `UNKNOWN` — never a
@@ -55,28 +60,19 @@ python -m wengold.demo                  # run the bundled SoC walkthrough
 - **Reproducible evidence.** Every result is bound to the RTL, testbench,
   assertions and constraints it consumed, the tool, version, arguments, seed and
   working directory, and an environment fingerprint — as a single `repro` hash.
-- **A real simulation flow.** `CocotbAdapter.run()` builds the environment,
-  compiles and runs through the project Makefile, parses `results.xml` and
-  collects waveforms and logs.
 - **Honest tool outcomes.** Missing tool, timeout, crash, failed check and
   inconclusive proof are distinct; formal results are parsed from sby's own
   status, not its exit code.
-- **A hardened ledger.** Concurrent-write locking, sequence and chain
-  validation, malformed-record handling, and a trusted checkpoint that catches
-  truncation of trailing records.
-- **Operational agents.** Deterministic testbench and SVA generation, log-based
-  diagnosis, repair proposals with an apply path, and `Orchestrator.run_loop()`
-  that drives a complete classify → run → evidence → diagnose → repair loop.
-- **A working MCP server.** `python -m wengold.mcp.server` speaks JSON-RPC over
-  stdio so any MCP-capable agent can query the graph, classify results and append
-  to the ledger.
+- **A hardened ledger.** Concurrent-write locking, sequence and chain validation,
+  malformed-record handling, and a trusted checkpoint that catches truncation.
+- **A working MCP server.** `wengold serve` speaks JSON-RPC over stdio so any
+  MCP-capable agent can query the graph, classify results and append to the ledger.
 
 ## What a result establishes, and when it may be reused
 
 A stored "PASS" is ambiguous. Every result can carry a **contract** — what it
 claims, over what scope, by what method, under what assumptions, with what
-evidence, and within what limits — so the conclusion cannot be read more broadly
-than the check supports:
+evidence, and within what limits:
 
 ```python
 Contract(
@@ -100,28 +96,12 @@ Contract(
 
 A current simulation pass is limited evidence. A **waiver records an engineering
 decision and never becomes a technical pass** — `decide()` reports `reusable`
-(the technical decision) separately from `accepted_for_use` (reusable *or* waived).
+separately from `accepted_for_use`.
 
 **Reuse is an auditable decision.** `decide()` evaluates explicit obligations
 (evidence current, established at the required level, not rejected, contract in
 scope, assumptions discharged, supporting evidence not withdrawn) and exports a
-small `DecisionRecord` that `verify_decision()` re-derives independently.
-
-**Deeper capabilities, all implemented:**
-
-- **Typed dependencies** — compilation, elaboration, behavioral, assumption,
-  configuration and requirement dependencies, each with its own reassessment rule.
-- **Claim dependencies** — requirements trace to properties, tests and runs, so a
-  changed requirement invalidates a conclusion even when the RTL is unchanged.
-- **Composition contracts** — blocks carry assumptions and guarantees; integration
-  is checked so a proven block is not promoted into a proven subsystem.
-- **Configuration coverage** — results record the configuration they were
-  established over, and `Limits.covers()` says whether a given config is inside them.
-- **Evidence withdrawal** — a checker bug, bad assumption or tool issue retracts a
-  conclusion, and reuse of anything that leaned on it is re-assessed.
-- **Independent decision checking** — the decision record is validated by a
-  separate implementation of the rule.
-
+`DecisionRecord` that `verify_decision()` re-derives independently.
 
 ## Front-ends: how the graph is built
 
@@ -129,9 +109,8 @@ small `DecisionRecord` that `verify_decision()` re-derives independently.
 
 - **`slang`** — a real SystemVerilog front-end (`pyslang`). A preprocessor
   resolves `` `include ``, `` `define `` and `` `ifdef `` against the project's
-  defines, and the source is then *parsed*: modules, hierarchy instantiations,
-  packages, imports and parameters come from an actual parse tree. This is what
-  makes the graph usable on a real codebase.
+  defines, and the source is then *parsed*. This is what makes the graph usable on
+  a real codebase.
 - **`regex`** — a bounded elaborator, used when slang is not installed. It is a
   fallback, not a parser: on real RTL it mistakes prose for instantiations and
   cannot see through `` `ifdef ``.
@@ -139,10 +118,6 @@ small `DecisionRecord` that `verify_decision()` re-derives independently.
 ```bash
 wengold index ./hw/ip --include ./hw/ip/prim/rtl --backend slang --define SYNTH
 ```
-
-On OpenTitan's `hw/ip` (2,024 files) the slang backend builds 2,549 nodes and
-12,101 edges in ~28 s with 91 unresolved (3.6%); the regex fallback leaves every
-`` `ifdef `` unresolved and invents dependencies from comments.
 
 Anything a file does not resolve — a parse error, or an instantiation of a module
 that is not in the file set — marks the module unresolved, and the kernel then
@@ -159,43 +134,111 @@ A real proof loop, with no external tool required:
   assignments and `if`/`else`, the usual expression grammar) turned into an
   executable transition function. Anything outside the subset raises
   `UnsupportedConstruct`, and the property is reported UNKNOWN — never guessed.
-- **Two engines** (`wengold/formal/engine.py`):
-  - *explicit* — explicit-state reachability. Proves a property when it reaches a
-    fixpoint, reports BOUNDED if it stops early or the input space is incomplete.
-  - *z3* — symbolic BMC plus k-induction over bit-vectors (optional `z3-solver`).
-    k-induction proves the property for all reachable states when it closes.
+- **Two engines** (`wengold/formal/engine.py`): an *explicit* state-space engine and
+  a *z3* engine doing symbolic BMC plus k-induction over bit-vectors.
 - **Counterexample-guided repair** (`wengold/formal/loop.py`) — check, diagnose,
-  propose a repair, apply it and check again, bounded by a budget. Each property
-  leaves a `Contract` whose method is `proof` only when it really was proven.
+  propose a repair, apply it and check again, bounded by a budget.
 
 ```bash
 wengold formal examples/formal/counter.sv --property "count <= MAX" --reset rst_n --sva
-wengold formal examples/formal/counter_bad.sv --property "count <= MAX" --reset rst_n
 ```
+
+**The honest limit.** This front-end covers the subset above — register-level RTL.
+It does not accept a full core: on CV32E40P it covers 2 files of 125, and on
+OpenTitan 0 of 165. Everything outside the subset is reported UNKNOWN, which is why
+that limit is stated here rather than buried.
+
+## Root cause, waveforms and the IDE
+
+```bash
+wengold rootcause ./rtl --changed cv32e40p_alu    # name the unvendored dependency and the path to it
+wengold ide ./rtl --vcd wave.vcd                  # one self-contained HTML: tree, RTL, diff, waveform
+```
+
+`wengold rootcause` names the dependency that is not vendored, the causal path to
+the result it puts in doubt, and declines when no change reaches a result.
+
+`wengold ide` writes a single self-contained HTML page: file tree marked
+clean/changed/pending, RTL with line numbers, a unified diff, a block table
+(block | file | depends on | consumed by | cluster | verdict), and a **waveform
+panel** from a VCD or a formal counterexample, with the failing cycle marked.
 
 ## Register maps and clock domains
 
 - **SystemRDL and IP-XACT** (`wengold/graph/regmap.py`) parse into a normalised
-  address map of registers and fields — addresses, widths, `sw`/`hw` access, reset
-  values — and add register/field nodes to the graph. Address collisions and
-  overlapping fields are reported, not ignored.
-- **CDC detection** (`wengold/graph/cdc.py`) finds the clock domains in a module and
-  reports every signal read in one domain but written in another, directly or
-  through combinational logic. Where a signal's domain cannot be determined it says
-  so and marks the module unresolved, so the kernel refuses to call anything
-  downstream VALID.
+  address map of registers and fields and add register/field nodes to the graph.
+  Address collisions and overlapping fields are reported, not ignored.
+- **CDC detection** (`wengold/graph/cdc.py`) reports every signal read in one clock
+  domain but written in another. Where a domain cannot be determined it says so and
+  marks the module unresolved.
 
 ```bash
 wengold regmap examples/soc_top/spec/registers.rdl
 wengold cdc examples/cdc/mixed_clocks.sv
 ```
 
+## Machine learning, and what it is worth
+
+`wengold learn` ships five methods over the graph: clustering, supervised triage,
+Q-learning for check ordering, regression and DBSCAN. **They are not equal, and the
+tool says which is which** — every method prints its own honest reading.
+
+The one that earns its place is DBSCAN's outlier flag, which points at blocks whose
+dependency signature resembles nothing else. Tested against the kernel's own
+unresolved set with a permutation test (2,000 shuffles):
+
+| project | blocks | unresolved | flagged | hits | by chance | lift | p |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| cva6 | 458 | 32 | 33 | 16 | 2.31 | **6.94×** | **0.000** |
+| ibex | 345 | 17 | 28 | 8 | 1.38 | **5.80×** | **0.000** |
+| OpenTitan | 879 | 78 | 55 | 14 | 4.88 | **2.87×** | **0.000** |
+| cv32e40p | 154 | 8 | 7 | 1 | 0.36 | 2.75× | 0.300 |
+| neorv32 | 86 | 0 | 8 | 0 | 0.00 | — | 1.000 |
+
+On the projects with 17 or more unresolved blocks the flag is strongly enriched and
+cannot be chance. On small ones the test has no power to show anything, and the
+tool reports the p-value rather than the lift alone.
+
+**`wengold learn supervised` does not read your project.** It trains on generated
+register designs labelled by the real formal engine, and its features describe
+generated spec fields. The command says so when given a path.
+
+**RL loses to a two-line greedy heuristic** on every project tested, and prints
+that conclusion instead of hiding it.
+
+## Text to spec, and the checker that decides
+
+```bash
+wengold spec-from-text "a register r0 at address 4 with a read only field \
+  status at bits 3 to 0 , resets to zero"
+```
+
+```
+draft: register r0 @ 0x04, field status bits 3:0, ro, reset 0
+validation: accepted — access mode, bit range, alignment and reset all check out
+rtl       : drafted: 13/13 checks passed
+formal    : `r0_status_q == 0` -> proof  (k-induction closed at k=8)
+```
+
+A transformer and an LSTM are written out in `wengold/learn/` — scaled dot-product
+multi-head attention, encoder/decoder blocks, an LSTM with gates and a cell state —
+on a small reverse-mode autodiff tape, with **every backward pass checked against
+finite differences**. `--arch lstm` selects the other model.
+
+**The model drafts; the checker decides.** Measured honestly, on a generated
+grammar: **100% exact on unseen combinations** of trained words, **0% on held-out
+vocabulary**. It is a grammar reader, not a language model, and it refuses a
+sentence whose words are mostly unknown rather than decoding a spec out of noise.
+The transformer beats the LSTM by 100% to 5% with *less* training.
+
+The formal run verifies that *this spec* yields correct RTL. It cannot verify that
+the spec is what the sentence meant — and a misread sentence passes every
+downstream check, which is pinned in the tests.
+
 ## Verifying WENGOLD's own invalidation logic
 
-The kernel's reasoning is itself tested, not just its code paths. Five invariants
-are checked against generated graphs, mutation and an independent reference
-implementation (`wengold/kernel/reference.py`, which enumerates upstream paths
-rather than computing a closure):
+Five invariants are checked against generated graphs, mutation and an independent
+reference implementation (`wengold/kernel/reference.py`):
 
 1. Adding uncertainty must not upgrade an affected result to reusable.
 2. A known changed input must invalidate evidence that consumed it.
@@ -214,16 +257,19 @@ violations = invariants.fuzz(range(400))   # 0
 wengold index ./rtl                       # build the dependency graph
 wengold completeness ./rtl                # report unresolved nodes
 wengold classify ./rtl --changed sec_firewall --results results.json
+wengold rootcause ./rtl --changed cv32e40p_alu
 wengold formal ./counter.sv --property "count <= MAX" --sva
+wengold ide ./rtl --vcd wave.vcd
 wengold regmap ./registers.rdl            # SystemRDL or IP-XACT
 wengold cdc ./mixed_clocks.sv             # clock-domain crossings
+wengold learn dbscan ./rtl                # clustering, triage, RL, regression
+wengold spec-from-text "..." --arch transformer
 wengold serve                             # run the MCP server over stdio
-wengold demo                              # the bundled walkthrough
 ```
 
 ## Tool coverage
 
-WENGOLD drives the tools your team already uses, in three groups — see
+WENGOLD drives the tools a verification team already uses, in three groups — see
 [`wengold/tools/registry.py`](wengold/tools/registry.py):
 
 **01 · Simulation, debug and testbench** — VCS, Xcelium, Questa, Verilator,
@@ -234,13 +280,48 @@ Palladium, Veloce, Vivado, Quartus, Yosys, vManager.
 
 **03 · Around the flow** — Git, GitHub, GitLab, Jira, Slack, Tcl, Python, Make.
 
+## Measured on real projects
+
+Every number below came from running the tool on the project named. The full runs
+are in [`docs/measurements/`](docs/measurements/).
+
+| project | blocks | edges | unresolved | complete |
+| --- | --- | --- | --- | --- |
+| OpenTitan `hw/ip` | 879 | 10,743 | 78 | false |
+| cva6 | 458 | 3,260 | 32 | false |
+| ibex | 345 | 2,079 | 17 | false |
+| CV32E40P | 154 | 872 | 8 | false |
+| qeciphy_riverlane | 83 | 269 | 3 | false |
+| neorv32 | 86 | 1,262 | 0 | **true** |
+| lxp32-cpu (VHDL) | 34 | 163 | 0 | **true** |
+| minerva (generated) | 51 | 50 | 0 | **true** |
+
+Waveforms in those runs are real: modules were simulated with Icarus Verilog and
+the VCDs rendered by `wengold ide`. `tools/wave_harness.py` is the harness that
+does it — it generates a testbench from a module's own port list.
+
+**`complete: false` is the honest reading** for most of them: their file sets, as
+collected, do not contain everything they instantiate, so results downstream of
+those blocks are `unknown` by design.
+
+## What this does not do
+
+- **It does not verify a whole SoC end to end.** The formal front-end covers
+  register-level RTL (above). The graph, the kernel and the IDE work at core scale;
+  the prover does not.
+- **It has no design partner yet.** Every number here is self-assessed, measured on
+  public designs rather than on a team's real regression history.
+- **The z3 encoding is not differentially tested** against a reference on a corpus
+  of real files. The kernel's *invalidation* logic is fuzz-tested; the symbolic
+  encoding is covered by unit tests, which is weaker.
+- **Analog and mixed-signal verification and physical signoff** are out of scope.
+
 ## Status
 
-v0.4. The graph, kernel and ledger are implemented and tested (125 tests); the
-agents run a real loop; the MCP server works; the formal loop proves, finds
-counterexamples and repairs; the register-map and CDC front-ends are in. Analog and mixed-signal
-verification and physical signoff are out of scope. See
-[`docs/roadmap.md`](docs/roadmap.md).
+**v0.17.1 — 311 tests passing.** The graph, kernel, ledger, MCP server, formal
+loop, register-map and CDC front-ends, the VHDL front-end, root cause, the IDE with
+waveforms, the ML methods and the text-to-spec front-end are all implemented and
+tested. See [`docs/roadmap.md`](docs/roadmap.md).
 
 ## Documentation
 
@@ -248,6 +329,7 @@ verification and physical signoff are out of scope. See
 - [Open-core strategy](docs/WENGOLD-OpenCore-Strategy.pdf) — the model, the market and the boundary.
 - [Pitch deck](docs/WENGOLD-Pitch-Deck.html) — open it in any browser.
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) and [`docs/roadmap.md`](docs/roadmap.md) — short reference and plan.
+- [`docs/measurements/`](docs/measurements/) — the real-project runs behind the numbers above.
 
 ## License
 
