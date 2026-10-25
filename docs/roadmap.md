@@ -125,7 +125,17 @@
   decomposition (GoalAct, ReAcTree) are implemented and gain nothing reliable.
   PPO, CTDE, meta-DRL and internalised planning are deliberately **not**
   implemented, with the reasons written down. ✅ *(this release)*
-- **v0.22** — whole-project elaboration (one compilation unit rather than per file);
+- **v0.22** — a **swarm** scheduler: decentralised control, local interaction (slices
+  partitioned by IP, no scheduler object), and fault tolerance. The control
+  experiment killed the headline: the swarm's 18.8-vs-10.4 win over the central
+  planner on OpenTitan came entirely from **not halting on the first failure** —
+  a central planner that continues scores 18.5. What survives is resilience, and
+  measuring it showed the metric was wrong: under a check budget killing workers
+  changes nothing, because one survivor spends the whole budget. Under a round
+  budget, losing 2 of 4 workers costs ~22% and losing 3 costs ~34%. MARL/IPPO, NAS,
+  HyEvo/SAGE/SelfEvolve, GNN adaptation and A2A/ANP are **not** implemented, with
+  reasons recorded. ✅ *(this release)*
+- **v0.23** — whole-project elaboration (one compilation unit rather than per file);
   a file set taken from the project's own build metadata (FuseSoC `.core`, `.f`
   filelists) instead of hand-passed include dirs; HJSON register maps.
 - **v1.1** — a Surelog/Verible elaboration backend; SymbiYosys as an external
