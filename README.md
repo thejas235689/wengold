@@ -449,6 +449,30 @@ Human decisions — accept, waive, override, escalate — are written back into
 `Memory`, so the next run's priors reflect the person's call. Without the write-back
 it would be a log; with it, it is the loop.
 
+**The cognitive scorecard.** `evaluate()` scores the agent against a list of
+abilities and gives each one of three answers: a number, **failed**, or **not
+measurable here** with the reason. No "partial".
+
+| ability | status | score |
+| --- | --- | --- |
+| perception | measured | correct — 16 results, 0 unresolved |
+| attention | measured | 100% of the top third are the high-prior items |
+| memory | measured | two streams, round-trips |
+| reasoning | measured | 20/20 traces sound |
+| planning | measured | covers the whole open set |
+| metacognition | measured | **ECE 0.049 — well calibrated** |
+| learning | measured | priors move with evidence |
+| tool use | measured | 0/2 available — reported, not assumed |
+| language | measured | 100% trained, **0% held-out** |
+| open-ended generation | **failed** | no model reaches the missing state |
+| social cognition | not measurable here | no peers, no users |
+| embodied control | not measurable here | no robot |
+| continual learning | not measurable here | no corpus, no compute |
+| neuromorphic / neuroevolution | not measurable here | not implemented |
+
+**10 of 14 measurable; 1 measured and failed; 4 untestable here.** The failed row
+is the point of the exercise: a scorecard that only reports passes is a brochure.
+
 ### What is not here, and why
 
 | from the taxonomy | status |
