@@ -227,7 +227,10 @@ class DesignGraph:
     def completeness(self) -> dict:
         """A report the kernel and the CLI can act on."""
         unresolved = sorted(self.unresolved_nodes())
-        issues = list(self.notes)
+        # Deduplicate, preserving order. The same missing include is recorded once
+        # per unit that fails to resolve it, so wave_rerunner printed
+        # "unresolved include: uvm_macros.svh" six times in a row.
+        issues = list(dict.fromkeys(self.notes))
         # How much of the file set produced a design unit. A UVM class library has
         # almost no modules, so every file parses and nothing is unresolved while
         # the graph describes 5% of the repository — `complete` alone reads as
