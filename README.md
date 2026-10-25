@@ -285,9 +285,29 @@ per-check failure rate:
 heuristic by 6–9% and wins 11 of 12 at the larger budget. **Best-of-32 random
 sampling is no better than greedy** — drawing more orderings and keeping the best
 one recovers nothing, which is the difference between *scaling compute* and
-*scaling a search*. The gain is modest and I would not ship it on this evidence
-alone; it is reported because it is real and because the negative half (sampling
-does not work) is the more useful half.
+*scaling a search*.
+
+**Then I ran it on real designs, and the gain vanished.** On neorv32 (86 blocks,
+90 results, 14 invalidated) and picorv32 (31 blocks, 27 in doubt), beam search
+beats greedy by **exactly 0%** — it wins 0 of 8 seeds on both, and all three
+strategies tie at every budget:
+
+| budget | neorv32: cheapest / greedy / best_first | picorv32: same three |
+| --- | --- | --- |
+| 1 | 77.86 / 77.86 / 77.86 | 8.93 / 8.93 / 8.93 |
+| 3 | 79.84 / 79.84 / 79.84 | 10.25 / 10.25 / 10.25 |
+| 8 | 81.74 / 81.74 / 81.74 | 12.16 / 12.16 / 12.16 |
+
+**The reason is symmetry.** On these designs every invalidated simulation unblocks
+exactly one coverage result, at the same cost as every other. When the work is
+symmetric no ordering is better than any other, so there is nothing for a search
+to find. The all-or-nothing groups where beam won were a structure I built; these
+designs do not produce it.
+
+**So the honest reading is narrower than the table above:** structured search beats
+a structural heuristic *on asymmetric structures*, and gains nothing on the real
+designs tested here. I would not ship it, and the earlier number should not be
+quoted without this paragraph next to it.
 
 **Multi-agent orchestration** runs a planner, an executor and a **reviewer** — and
 the reviewer is the point. It does not read the planner's reasoning; it re-derives
