@@ -37,6 +37,7 @@ class Context:
     complete: bool
     unresolved: list[str]
     unresolved_count: int
+    approximate: bool = False    # graph built without a full elaboration
     tools: dict = field(default_factory=dict)     # name -> available?
     dependents: dict = field(default_factory=dict)  # result -> results that use it
     notes: list[str] = field(default_factory=list)
@@ -98,6 +99,7 @@ def perceive(graph, results, changed, tool_names=("cocotb", "symbiyosys")) -> Co
         changed=set(changed), results=by_id, verdicts=verdicts, reasons=reasons,
         todo=todo, complete=bool(report.get("complete")),
         unresolved=unresolved, unresolved_count=len(unresolved),
+        approximate=bool(getattr(graph, "approximate", False)),
         tools=_probe_tools(tool_names),
         dependents={k: set(v) for k, v in dependents.items()},
     )
