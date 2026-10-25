@@ -92,12 +92,19 @@ class Reviewer:
             problems.append(f"plan includes {len(extra)} result(s) that need no "
                             f"new evidence: {', '.join(extra[:4])}")
 
-        # a step may not rely on a tool the machine does not have
+        # a step may not rely on a tool the machine does not have. Reported once
+        # per tool, not once per step: on a real design every step needs the same
+        # missing tool, and eleven identical lines hide the point.
+        missing_tools: dict[str, list[int]] = {}
         for s in steps:
             tool = s.get("tool")
             if tool and ctx.tools.get(tool) is False:
-                problems.append(f"step {s['step']} ({s['result']}) needs {tool}, "
-                                f"which is not installed")
+                missing_tools.setdefault(tool, []).append(s["step"])
+        for tool, where in missing_tools.items():
+            problems.append(
+                f"{len(where)} step(s) need {tool}, which is not installed "
+                f"(steps {', '.join(str(w) for w in where[:6])}"
+                f"{'…' if len(where) > 6 else ''})")
 
         # a result may not be scheduled before something it depends on, when that
         # something is itself in the plan
