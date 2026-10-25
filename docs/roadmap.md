@@ -115,7 +115,17 @@
   perception line reported the *end* state beside the opening plan; a ReAct step
   budget of 40 truncated picorv32's run; and a budget check placed inside the loop
   without a break, which hung it. ✅ *(this release)*
-- **v0.21** — whole-project elaboration (one compilation unit rather than per file);
+- **v0.21** — belief, memory, MCTS and hierarchy, from the agentic taxonomy. A
+  POMDP belief over P(check passes), fed by a **dual-stream memory** (episodic runs,
+  semantic facts) persisted to disk. The finding: **value-of-information ordering
+  loses** to greedy by 4–8% because a failed check halts the run, while **inverting
+  the same belief — safest check first — beats greedy by up to 34.8%** and wins
+  10/10 at the larger budgets. That is the first component in the agent layer to
+  measurably beat the two-line heuristic. MCTS with UCB1 and hierarchical
+  decomposition (GoalAct, ReAcTree) are implemented and gain nothing reliable.
+  PPO, CTDE, meta-DRL and internalised planning are deliberately **not**
+  implemented, with the reasons written down. ✅ *(this release)*
+- **v0.22** — whole-project elaboration (one compilation unit rather than per file);
   a file set taken from the project's own build metadata (FuseSoC `.core`, `.f`
   filelists) instead of hand-passed include dirs; HJSON register maps.
 - **v1.1** — a Surelog/Verible elaboration backend; SymbiYosys as an external
