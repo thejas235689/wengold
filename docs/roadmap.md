@@ -32,7 +32,14 @@
   same way. Two bugs fell out of it: the emitter wrote `import <module>::*;` in
   the properties file, and that bogus package name overwrote the module's node in
   the graph, silently dropping the block. ✅ *(this release)*
-- **v0.10** — whole-project elaboration (one compilation unit rather than per file);
+- **v0.10** — machine learning, three methods with honest evaluations:
+  unsupervised clustering of blocks by dependency signature (and reuse candidates),
+  supervised failure prediction labelled by running the real formal engine, and
+  Q-learning for budgeted check ordering — which does **not** beat greedy-by-ratio
+  and says so. Found and fixed on the way: the z3 engine discarded the slice range
+  on a non-blocking assignment, so `q[3:0] <= e` became `q <= e` and it **proved
+  false properties** on any register block. ✅ *(this release)*
+- **v0.11** — whole-project elaboration (one compilation unit rather than per file);
   a file set taken from the project's own build metadata (FuseSoC `.core`, `.f`
   filelists) instead of hand-passed include dirs; HJSON register maps.
 - **v1.1** — a Surelog/Verible elaboration backend; SymbiYosys as an external
