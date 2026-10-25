@@ -1,5 +1,5 @@
 """WENGOLD — the open-source validity kernel for silicon verification."""
-__version__ = "0.20.1"
+__version__ = "0.20.2"
 
 from .graph.model import DesignGraph, Node, Edge, NodeKind, EdgeKind   # noqa: F401
 from .graph.builder import GraphBuilder                                # noqa: F401
