@@ -18,7 +18,9 @@ import numpy as np
 
 __all__ = ["Tensor", "matmul", "add", "add_bias", "scale", "softmax",
            "layer_norm", "relu", "transpose", "embedding", "cross_entropy",
-           "mean_rows", "mask_fill", "backward", "sgd_step"]
+           "mean_rows", "mask_fill", "backward", "sgd_step",
+           # needed by the LSTM
+           "sigmoid", "tanh", "mul", "slice_cols"]
 
 
 class Tensor:
@@ -200,6 +202,56 @@ def mask_fill(a: Tensor, keep, value: float = -1e9) -> Tensor:
     def _backward():
         if a.requires_grad:
             a.grad += np.where(keep_arr, node.grad, 0.0)
+
+    node._backward = _backward
+    return node
+
+
+def sigmoid(a: Tensor) -> Tensor:
+    s = 1.0 / (1.0 + np.exp(-np.clip(a.data, -60, 60)))
+    node = Tensor(s, a.requires_grad, (a,))
+
+    def _backward():
+        if a.requires_grad:
+            a.grad += node.grad * s * (1.0 - s)
+
+    node._backward = _backward
+    return node
+
+
+def tanh(a: Tensor) -> Tensor:
+    t = np.tanh(a.data)
+    node = Tensor(t, a.requires_grad, (a,))
+
+    def _backward():
+        if a.requires_grad:
+            a.grad += node.grad * (1.0 - t * t)
+
+    node._backward = _backward
+    return node
+
+
+def mul(a: Tensor, b: Tensor) -> Tensor:
+    """Elementwise product, same shape — the gate application in an LSTM."""
+    node = Tensor(a.data * b.data, a.requires_grad or b.requires_grad, (a, b))
+
+    def _backward():
+        if a.requires_grad:
+            a.grad += node.grad * b.data
+        if b.requires_grad:
+            b.grad += node.grad * a.data
+
+    node._backward = _backward
+    return node
+
+
+def slice_cols(a: Tensor, lo: int, hi: int) -> Tensor:
+    """Columns [lo, hi) — splitting one projection into four gates."""
+    node = Tensor(a.data[:, lo:hi], a.requires_grad, (a,))
+
+    def _backward():
+        if a.requires_grad:
+            a.grad[:, lo:hi] += node.grad
 
     node._backward = _backward
     return node
