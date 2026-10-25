@@ -358,6 +358,21 @@ check first — maximises expected progress before the halt:
 | picorv32 | 8 | 11.09 | 13.65 | **+23.1%** | **10/10** |
 | picorv32 | 12 | 11.41 | 15.38 | **+34.8%** | **10/10** |
 
+**And on OpenTitan it is far larger.** 1,849 HDL files, 879 blocks, 10,730 edges,
+2,553 nodes, 79 unresolved; 882 results of which 381 are unknown. Measured on
+results settled **from the open set** (the honest metric — counting 488 already-valid
+results against 394 open ones dilutes everything to +1.8%):
+
+| budget | greedy | safest first | VOI | gain | wins |
+| --- | --- | --- | --- | --- | --- |
+| 10 checks | 3.3 | 6.8 | 0.9 | **+107%** | 6/6 |
+| 25 checks | 3.4 | 10.9 | 1.0 | **+218%** | 6/6 |
+| 50 checks | 3.4 | 12.2 | 1.0 | **+255%** | 6/6 |
+
+Value-of-information collapses to **0.9 against greedy's 3.3** — it runs the
+flakiest check first and the run halts immediately. The theory said it would be
+wrong; on the largest design it is not merely wrong but catastrophic.
+
 Ten independent worlds per row, 200 rollouts each, a quarter of the checks flaky.
 This is the **first component in the agent layer that measurably beats the two-line
 heuristic** — and it beats it because of a signal no graph-shape heuristic can see:
