@@ -256,6 +256,58 @@ classification and the minimum evidence are the real kernel's. Whether a check
 environment — the command prints that limit rather than dressing a model up as a
 measurement.
 
+## ReAct, test-time search, and multiple agents
+
+```bash
+wengold agent ./rtl --mode react        # thought -> action -> observation
+wengold agent ./rtl --mode search       # test-time scaling
+wengold agent ./rtl --mode orchestrate  # planner -> reviewer -> executor
+```
+
+**ReAct** is a real interleaved loop, not the batch planner above: there is no
+up-front plan, and each step is chosen from the **last observation**. A failing
+check changes the next action from "continue" to "diagnose", and a pass changes it
+to "take what that unblocked".
+
+**Test-time scaling, measured.** Last release showed ordering does not matter when
+every check passes. It matters when checks **fail** — so that is where this is
+measured, on groups of simulations where a coverage result needs *all* of them (so
+spreading across groups is worth nothing). Twelve namings, 100 rollouts each, 15%
+per-check failure rate:
+
+| budget | greedy | beam search | best-of-32 random | beam vs greedy |
+| --- | --- | --- | --- | --- |
+| 3 checks | 2.21 | 2.41 | 2.21 | **+9.0%** (wins 4/12) |
+| 4 checks | 2.89 | 3.08 | 2.76 | **+6.6%** (wins 7/12) |
+| 6 checks | 3.79 | 4.07 | 3.74 | **+7.5%** (wins **11/12**) |
+
+**Structured search helps; brute force does not.** Beam search beats the structural
+heuristic by 6–9% and wins 11 of 12 at the larger budget. **Best-of-32 random
+sampling is no better than greedy** — drawing more orderings and keeping the best
+one recovers nothing, which is the difference between *scaling compute* and
+*scaling a search*. The gain is modest and I would not ship it on this evidence
+alone; it is reported because it is real and because the negative half (sampling
+does not work) is the more useful half.
+
+**Multi-agent orchestration** runs a planner, an executor and a **reviewer** — and
+the reviewer is the point. It does not read the planner's reasoning; it re-derives
+what the plan must satisfy from the context and checks it, then refuses to let a
+bad plan run:
+
+```
+planner  -> reviewer  plan proposed  (4 step(s))
+reviewer -> planner   REJECTED: step 1 (dma_sim) needs cocotb, which is not installed
+orchestra -> executor refusing to execute an unreviewed plan
+executed: False  revisions: 2  outcomes: 0
+```
+
+It catches three things a planner happily produces: a plan that **misses an open
+result**, a plan that relies on a **tool that is not installed**, and a plan that
+schedules a step **before something it depends on**. That is the same separation of
+duties the kernel applies to evidence, applied to the agent's own plan — and on
+this machine it stops every run before a single check is spent, which is correct:
+nothing here is installed.
+
 ## Generative models, and the one that earns its place
 
 Four families are in the tree: **transformer with autoregressive decoding** (the
