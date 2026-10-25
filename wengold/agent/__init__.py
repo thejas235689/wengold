@@ -3,6 +3,8 @@ from .adaptation import Bandit
 from .belief import (Belief, cheapest_safest, entropy, safest_first, voi,
                      voi_order)
 from .hierarchy import Goal, build_goals, goalact, milestones_done, reactree
+from .human import (HumanDecision, calibration, escalation_curve,
+                    record_decision, reliability_curve, should_escalate)
 from .loop import Agent, AgentRun, SimulatedRunner
 from .mcts import MCTSResult, mcts
 from .memory import Episode, Memory
@@ -31,4 +33,7 @@ __all__ = ["Agent", "AgentRun", "SimulatedRunner", "Bandit", "Context", "perceiv
            "mcts", "MCTSResult", "Goal", "build_goals", "goalact", "reactree",
            "milestones_done",
            # swarm
-           "Swarm", "SwarmRun", "Worker", "partition", "potential"]
+           "Swarm", "SwarmRun", "Worker", "partition", "potential",
+           # human interface
+           "calibration", "reliability_curve", "should_escalate",
+           "escalation_curve", "HumanDecision", "record_decision"]
