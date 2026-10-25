@@ -147,13 +147,25 @@ class GraphBuilder:
         * ``regex`` — the bounded elaborator (fallback)
         * ``auto``  — slang when installed, else regex
         """
-        if backend in ("auto", "slang"):
+        # Route by suffix, so a mixed project works: VHDL goes to the VHDL
+        # front-end, everything else to the SystemVerilog one, and both land in
+        # the same unit dict for `build_from_slang`.
+        vhdl = {p: t for p, t in files.items()
+                if p.lower().endswith((".vhd", ".vhdl"))}
+        sv = {p: t for p, t in files.items() if p not in vhdl}
+        units: dict = {}
+        if sv and backend in ("auto", "slang"):
             from .slang_backend import available, elaborate as slang_elaborate
             if available():
-                return self.build_from_slang(
-                    slang_elaborate(files, include_dirs or [], defines or {}))
-            if backend == "slang":
+                units.update(slang_elaborate(sv, include_dirs or [],
+                                             defines or {}))
+            elif backend == "slang":
                 raise RuntimeError("slang (pyslang) is not installed")
+        if vhdl:
+            from .vhdl_backend import elaborate as vhdl_elaborate
+            units.update(vhdl_elaborate(vhdl))
+        if units:
+            return self.build_from_slang(units)
         elab = Elaborator(files, include_dirs).elaborate()
 
         # packages
