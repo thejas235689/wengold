@@ -366,7 +366,8 @@ def cmd_learn(args) -> int:
         top = max(mods, key=lambda m: len(graph.ancestors(m)))
         suite = [Result(f"unit_{m}", "sim", depends_on={m}) for m in mods]
         suite.append(Result("integration", "sim", depends_on={top}))
-        insts = [i for i in (rl.instance_from_graph(graph, suite, {m}, seed=k)
+        insts = [i for i in (rl.instance_from_graph(graph, suite, {m}, seed=k,
+                                                   max_results=args.max_pending)
                              for k, m in enumerate(mods[:args.instances]))
                  if i.all_results >= 3]
         if len(insts) < 3:
@@ -412,12 +413,19 @@ def cmd_learn(args) -> int:
         print(f"      {cl.note}")
         print(f"      {', '.join(cl.members[:6])}"
               f"{' …' if len(cl.members) > 6 else ''}")
-    dups = near_duplicates(graph)
-    print(f"\nreuse candidates ({len(dups)} pairs occupying the same position):")
+    from .learn.unsupervised import neighbour_sets
+    dups = near_duplicates(graph, min_neighbours=args.min_neighbours)
+    print(f"\nreuse candidates ({len(dups)} pairs, each block with at least "
+          f"{args.min_neighbours} neighbour(s)):")
     for a, b, s in dups[:args.show]:
-        print(f"  {a}  ~  {b}   jaccard {s:.3f}")
+        na, nb = len(neighbour_sets(graph, a)), len(neighbour_sets(graph, b))
+        print(f"  {a}  ~  {b}   jaccard {s:.3f}   "
+              f"({min(na, nb)} shared neighbours)")
     if not dups:
         print("  none above the threshold")
+    elif len(dups) > 20 * args.show:
+        print(f"  {len(dups)} pairs is a lot — raise --min-neighbours to keep "
+              f"only the pairs that rest on more than one edge")
     return 0
 
 
@@ -536,9 +544,15 @@ def main(argv=None) -> int:
     p.add_argument("--backend", default="auto", choices=["auto", "slang", "regex"])
     p.add_argument("--k", type=int, default=None, help="cluster count (default: by silhouette)")
     p.add_argument("--show", type=int, default=8, help="reuse candidates to print")
+    p.add_argument("--min-neighbours", type=int, default=2,
+                   help="a reuse candidate must have at least this many "
+                        "neighbours (1 floods on a big design)")
     p.add_argument("--designs", type=int, default=16, help="designs to generate")
     p.add_argument("--episodes", type=int, default=2000)
     p.add_argument("--instances", type=int, default=30)
+    p.add_argument("--max-pending", type=int, default=40,
+                   help="sample the pending set down to this many checks "
+                        "(one change can put hundreds in doubt)")
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--save", help="write the trained model to this path")
     p.add_argument("--verbose", action="store_true")
