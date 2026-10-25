@@ -92,6 +92,15 @@
   can refuse). Measured: beam beats greedy by **6–9%** and wins 11 of 12 at the
   larger budget, while **best-of-32 random sampling is no better than greedy** —
   structured search helps, brute force does not. ✅ *(this release)*
+- **v0.20.1** — the agent layer checked against real designs (neorv32, picorv32),
+  which corrected the previous release's headline. **Beam search gains exactly 0%
+  on real projects** (0 of 8 seeds on both, all strategies tie at every budget),
+  because every invalidated simulation unblocks exactly one coverage result at the
+  same cost — symmetric work, so no ordering is better. The +6–9% was measured on
+  an all-or-nothing structure I built, and it does not transfer. Also fixed: the
+  perception line reported the *end* state beside the opening plan; a ReAct step
+  budget of 40 truncated picorv32's run; and a budget check placed inside the loop
+  without a break, which hung it. ✅ *(this release)*
 - **v0.21** — whole-project elaboration (one compilation unit rather than per file);
   a file set taken from the project's own build metadata (FuseSoC `.core`, `.f`
   filelists) instead of hand-passed include dirs; HJSON register maps.
