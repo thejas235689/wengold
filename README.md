@@ -328,6 +328,79 @@ duties the kernel applies to evidence, applied to the agent's own plan — and o
 this machine it stops every run before a single check is spent, which is correct:
 nothing here is installed.
 
+## Belief, memory, MCTS and hierarchy — and the first thing that actually wins
+
+```bash
+wengold agent ./rtl --mode stages     # the six stages, now memory-backed
+```
+
+Four components from the standard agentic taxonomy, each measured rather than
+demonstrated.
+
+**The POMDP belief is worth having, but not for the reason the textbook says.**
+`Belief` holds P(check passes) per open result; `Memory` supplies those priors from
+history, in two streams — episodic runs and semantic facts. Ranking checks by
+**value of information** (entropy per unit cost) is the textbook answer and it
+**loses to plain greedy by 4–8% here**, because VOI assumes a negative observation
+is information you can act on and keep going. In this flow a failed check **halts
+the run**, so putting the flakiest check first spends the budget discovering the
+thing most likely to stop you.
+
+Inverting the same belief works. Ordering by probability of passing — the safest
+check first — maximises expected progress before the halt:
+
+| project | budget | greedy | safest first | gain | wins |
+| --- | --- | --- | --- | --- | --- |
+| neorv32 | 4 | 79.55 | 80.28 | +0.9% | 6/10 |
+| neorv32 | 8 | 80.42 | 82.56 | +2.7% | 9/10 |
+| neorv32 | 12 | 80.77 | 83.88 | **+3.9%** | **10/10** |
+| picorv32 | 4 | 10.37 | 11.27 | +8.7% | 9/10 |
+| picorv32 | 8 | 11.09 | 13.65 | **+23.1%** | **10/10** |
+| picorv32 | 12 | 11.41 | 15.38 | **+34.8%** | **10/10** |
+
+Ten independent worlds per row, 200 rollouts each, a quarter of the checks flaky.
+This is the **first component in the agent layer that measurably beats the two-line
+heuristic** — and it beats it because of a signal no graph-shape heuristic can see:
+two results with identical dependency structure can differ tenfold in how likely
+they are to pass, and only history knows which.
+
+**MCTS with UCB1** (`mcts.py`) is implemented properly — selection, expansion,
+rollout, backpropagation, with `c=0` degenerating to pure exploitation so the
+exploration term's contribution is visible. On the real designs it **does not beat
+greedy** (79.08 vs 79.82 on neorv32; equal on picorv32). On a small synthetic world
+it sometimes does. Since the sign is structure-dependent, no test pins it either
+way — that is the mistake the beam-search number made in v0.20.0.
+
+**Hierarchical decomposition** (`hierarchy.py`) implements both shapes. *GoalAct* —
+a global milestone order with local execution — **beats flat planning on picorv32**
+(0.28 vs 0.00 milestones at budget 8) and **loses on neorv32** (1.42 vs 1.56).
+*ReAcTree* — the recursive variant — is **worse than GoalAct on both**, which is the
+honest answer: splitting a group and then checking its milestone spends a check on
+something that could not have settled yet.
+
+### What is not here, and why
+
+| from the taxonomy | status |
+| --- | --- |
+| POMDP belief, dual-stream memory | **implemented**, one of them measurably wins |
+| MCTS with UCB1 | **implemented**, no gain on real designs |
+| Hierarchical decomposition (GoalAct, ReAcTree) | **implemented**, mixed |
+| PPO / actor-critic | **not implemented** |
+| CTDE for multi-agent | **not implemented** |
+| DRL, meta-DRL | **not implemented** |
+| Internalised planning (o1-style RL fine-tuning) | **not implementable here** |
+
+**PPO** would be a fourth RL attempt at the ordering problem, and the first three
+lost to a two-line heuristic (Q-learning in v0.10.0, the bandit in v0.19.0, and now
+the belief signal beats them all by 35%). A policy that had to *learn* what the
+memory already knows is not obviously worth training. **CTDE and meta-DRL** need a
+population of tasks to generalise across; there is one machine and two designs.
+**Internalised planning** is not implementable at all in this environment: it means
+fine-tuning a language model's weights with RL, and there is no model, no corpus and
+no training compute here. Claiming otherwise would be the single most dishonest
+thing this repository could do — so the taxonomy is answered by a component that
+computes, not by one that is named.
+
 ## Generative models, and the one that earns its place
 
 Four families are in the tree: **transformer with autoregressive decoding** (the
