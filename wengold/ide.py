@@ -100,12 +100,23 @@ def collect(root: Path, graph, changed_files: set[str],
     changes = set(changes or ())
     changed_files = {str(c).replace("\\", "/") for c in changed_files}
 
-    # which module lives in which file, from the graph
+    # Which module lives in which file, from the graph. Paths are normalised
+    # against the root, because the graph may hold absolute paths while the file
+    # tree and the embedded sources are relative — and a block row whose path does
+    # not match cannot open its own source.
+    def rel_of(p) -> str:
+        path = Path(str(p))
+        try:
+            path = path.relative_to(root)
+        except ValueError:
+            pass
+        return str(path).replace("\\", "/")
+
     module_of: dict[str, str] = {}
     file_of: dict[str, str] = {}
     for nid, node in graph.nodes.items():
         if node.kind is NodeKind.RTL and node.path:
-            p = str(node.path).replace("\\", "/")
+            p = rel_of(node.path)
             file_of[nid] = p
             module_of.setdefault(p, nid)
 
@@ -181,21 +192,45 @@ def collect(root: Path, graph, changed_files: set[str],
             continue
         diffs[rel] = line_diff(before, after)
 
+    kind_count: dict[str, int] = {}
+    for d in graph.nodes.values():
+        kind_count[d.kind.value] = kind_count.get(d.kind.value, 0) + 1
     summary = {
         "files": len(files),
         "changed": sum(1 for f in files if f.status == "changed"),
         "pending": len(pending),
-        "blocks": len([n for n, d in graph.nodes.items()
-                       if d.kind is NodeKind.RTL]),
+        "blocks": kind_count.get("rtl", 0),
+        "packages": kind_count.get("package", 0),
+        "parameters": kind_count.get("param", 0),
+        "edges": len(graph.edges),
         "unresolved": len(graph.unresolved_nodes()),
+        "complete": bool(graph.completeness().get("complete")),
         "embedded": len(sources),
         "not_embedded": len(files) - len(sources),
     }
+    # the block table: every design unit, with what it depends on and what
+    # consumes it. Blocks only — parameters and packages are counted in the
+    # summary, not listed here, because they are not blocks.
+    pending_by_target = {p.target: p for p in pending}
+    block_rows = []
+    for nid in sorted(n for n, d in graph.nodes.items()
+                      if d.kind is NodeKind.RTL):
+        node = graph.nodes[nid]
+        p = pending_by_target.get(nid)
+        block_rows.append({
+            "name": nid,
+            "file": rel_of(node.path) if node.path else "",
+            "deps": len(graph.rtl_ancestors(nid)),
+            "consumers": len(graph.rtl_descendants(nid)),
+            "cluster": cluster_of.get(nid),
+            "verdict": p.verdict if p else "",
+        })
     return {
         "files": [f.__dict__ for f in files],
         "sources": sources,
         "diffs": diffs,
         "pending": [p.__dict__ for p in pending],
+        "blocks": block_rows,
         "summary": summary,
         "changed": sorted(changed_files),
         "wave": wave,
@@ -234,6 +269,33 @@ _TEMPLATE = """<!DOCTYPE html>
   #waveh .src {{ color:var(--grey); }}
   #waveh .fail {{ color:#FF8A4C; }}
   #wavesvg {{ display:block; }}
+  #summary {{ flex:none; border-top:1px solid var(--line); background:#0E0E10;
+              padding:8px 16px 10px; }}
+  #summary h2 {{ padding:0 0 6px; border:none; position:static; background:none; }}
+  #summary table {{ border-collapse:collapse; font-size:12px; }}
+  #summary th, #summary td {{ text-align:right; padding:2px 14px 2px 0;
+                              color:#A9A9B0; font-weight:400; }}
+  #summary th {{ color:var(--grey); font-size:10px; letter-spacing:.1em;
+                 text-transform:uppercase; }}
+  #summary td {{ color:#E8E8EA; }}
+  #summary tr:last-child td {{ color:#E8E8EA; }}
+  #summary td.no {{ color:var(--orange); }}
+  #summary td.yes {{ color:var(--green); }}
+  #blocks {{ flex:none; border-top:1px solid var(--line); background:#0E0E10;
+             max-height:30vh; overflow:auto; }}
+  #blocks table {{ border-collapse:collapse; width:100%; font-size:12px; }}
+  #blocks th {{ position:sticky; top:0; background:#0E0E10; z-index:2;
+                text-align:left; padding:5px 12px; color:var(--grey);
+                font-size:10px; letter-spacing:.1em; text-transform:uppercase;
+                border-bottom:1px solid var(--line); font-weight:400; }}
+  #blocks td {{ padding:3px 12px; color:#C9C9CF;
+                border-bottom:1px solid #191919; white-space:nowrap; }}
+  #blocks tr:hover td {{ background:#17171A; }}
+  #blocks tr.clickable {{ cursor:pointer; }}
+  #blocks td.n {{ text-align:right; color:#8E8E96; }}
+  #blocks td.b {{ color:#E8E8EA; }}
+  #blocks td.f {{ color:var(--grey); }}
+  #blocks td.v {{ color:#FFB27A; }}
   section {{ overflow:auto; border-right:1px solid var(--line); }}
   section:last-child {{ border-right:none; }}
   h2 {{ font-size:11px; letter-spacing:.12em; text-transform:uppercase;
@@ -320,6 +382,13 @@ _TEMPLATE = """<!DOCTYPE html>
   <div id="waveh"><b>Waveform</b><span class="src" id="wavesrc"></span>
     <span class="fail" id="wavefail"></span></div>
   <svg id="wavesvg" xmlns="http://www.w3.org/2000/svg"></svg>
+</section>
+<section id="summary">
+  <h2>What WENGOLD sees</h2>
+  <table id="sumtable"></table>
+</section>
+<section id="blocks">
+  <table id="blocktable"></table>
 </section>
 <footer>WENGOLD {version} &mdash; a block is listed pending only when the change
 reaches it; the cause and the dependency path are shown with it.
@@ -492,7 +561,49 @@ document.getElementById("filter").oninput = renderTree;
 for (const t of document.querySelectorAll(".tab"))
   t.onclick = () => {{ view = t.dataset.view; syncTabs(); renderCode(); }};
 
-renderTree(); renderCode(); renderPending(); renderWave(); syncTabs();
+function renderSummary() {{
+  // a block is a design unit — a module, an entity, an interface. Packages and
+  // parameters are separate kinds: things a block depends on, not blocks.
+  const s = D.summary;
+  const cols = [
+    ["blocks", s.blocks, ""],
+    ["packages", s.packages, ""],
+    ["parameters", s.parameters, ""],
+    ["edges", s.edges, ""],
+    ["unresolved", s.unresolved, s.unresolved ? "no" : ""],
+    ["complete", s.complete ? "true" : "false", s.complete ? "yes" : "no"],
+    ["files", s.files, ""],
+    ["changed", s.changed, ""],
+    ["pending", s.pending, s.pending ? "no" : ""],
+  ];
+  document.getElementById("sumtable").innerHTML =
+    "<tr>" + cols.map(c => `<th>${{c[0]}}</th>`).join("") + "</tr>" +
+    "<tr>" + cols.map(c => `<td class="${{c[2]}}">${{c[1]}}</td>`).join("") + "</tr>";
+}}
+
+function renderBlocks() {{
+  const rows = D.blocks || [];
+  const head = `<tr><th>block</th><th>file</th><th>depends on</th>`+
+               `<th>consumed by</th><th>cluster</th><th>verdict</th></tr>`;
+  document.getElementById("blocktable").innerHTML = head + rows.map((b, i) =>
+    `<tr class="${{b.file ? "clickable" : ""}}" data-i="${{i}}">`+
+    `<td class="b">${{esc(b.name)}}</td>`+
+    `<td class="f">${{esc(b.file)}}</td>`+
+    `<td class="n">${{b.deps}}</td>`+
+    `<td class="n">${{b.consumers}}</td>`+
+    `<td class="n">${{b.cluster === null || b.cluster === undefined ? "" : b.cluster}}</td>`+
+    `<td class="v">${{esc(b.verdict || "")}}</td></tr>`).join("");
+  for (const r of document.querySelectorAll("#blocktable tr.clickable"))
+    r.onclick = () => {{
+      const b = D.blocks[r.dataset.i];
+      if (b.file && D.sources[b.file] !== undefined) {{
+        sel = b.file; renderTree(); renderCode();
+      }}
+    }};
+}}
+
+renderTree(); renderCode(); renderPending(); renderWave(); renderSummary();
+renderBlocks(); syncTabs();
 </script>
 </body>
 </html>
