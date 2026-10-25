@@ -14,6 +14,22 @@ what the tags are for.
 
 ---
 
+## [0.24.1] — 2026-10-25
+
+### Fixed
+- **`complete: True` was reported on a repository the graph barely described.**
+  Running against `mballance/riscv-dv` — a UVM class library — produced 5 nodes from
+  89 files (4.5%) and still said `complete: True  unresolved: 0`. The flag was
+  literally honest and practically misleading.
+  `DesignGraph` now records its input file set, and `completeness()` reports
+  `files`, `contributing_files` and `file_coverage`, warning below 50%.
+
+| project | files | contributing | coverage | complete |
+| --- | --- | --- | --- | --- |
+| riscv-dv | 89 | 4 | 4.5% | True — now warns |
+| qeciphy | 178 | 90 | 50.6% | False |
+| neorv32 | 76 | 68 | 89.5% | True |
+
 ## [0.24.0] — 2026-10-25
 
 ### Added
