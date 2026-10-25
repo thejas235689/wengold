@@ -26,11 +26,14 @@ def build_vocab(pairs) -> list[str]:
     return vocab(pairs)
 
 
-def train_model(pairs, vocab_list, cfg: Config | None = None, epochs: int = 60,
-                lr: float = 0.05, seed: int = 0, log_every: int = 0):
-    """Teacher-forced training, one example at a time."""
-    cfg = cfg or Config()
-    model = Transformer(len(vocab_list), len(vocab_list), cfg, seed=seed)
+def fit(model, pairs, vocab_list, epochs: int = 60, lr: float = 0.05,
+        log_every: int = 0):
+    """Teacher-forced training for any model with this interface.
+
+    The transformer and the LSTM share `loss`, `params` and `generate`, so one
+    loop trains either — which is what makes the comparison between them
+    like-for-like rather than two scripts that differ in more than the model.
+    """
     params = model.params()
     history = []
     for epoch in range(epochs):
@@ -51,6 +54,13 @@ def train_model(pairs, vocab_list, cfg: Config | None = None, epochs: int = 60,
         if log_every and (epoch + 1) % log_every == 0:
             print(f"    epoch {epoch + 1:3}/{epochs}  mean loss {history[-1]:.3f}")
     return model, history
+
+
+def train_model(pairs, vocab_list, cfg: Config | None = None, epochs: int = 60,
+                lr: float = 0.05, seed: int = 0, log_every: int = 0):
+    """A transformer, trained."""
+    model = Transformer(len(vocab_list), len(vocab_list), cfg or Config(), seed=seed)
+    return fit(model, pairs, vocab_list, epochs=epochs, lr=lr, log_every=log_every)
 
 
 def evaluate(model, pairs, vocab_list) -> dict:
