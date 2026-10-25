@@ -20,7 +20,10 @@ __all__ = ["Tensor", "matmul", "add", "add_bias", "scale", "softmax",
            "layer_norm", "relu", "transpose", "embedding", "cross_entropy",
            "mean_rows", "mask_fill", "backward", "sgd_step",
            # needed by the LSTM
-           "sigmoid", "tanh", "mul", "slice_cols"]
+           "sigmoid", "tanh", "mul", "slice_cols",
+           # needed by the generative models
+           "binary_cross_entropy", "gaussian_kl", "concat_cols", "split_cols",
+           "reparameterise"]
 
 
 class Tensor:
@@ -243,6 +246,111 @@ def mul(a: Tensor, b: Tensor) -> Tensor:
 
     node._backward = _backward
     return node
+
+
+def binary_cross_entropy(logits: Tensor, targets) -> Tensor:
+    """Mean BCE from raw logits, in the numerically stable form.
+
+    Computed from logits rather than probabilities: `log(sigmoid(x))` on a
+    sigmoid output underflows to -inf as the model grows confident, which is
+    exactly when the gradient matters.
+    """
+    x = np.clip(logits.data, -60, 60)
+    y = np.asarray(targets, dtype=np.float64)
+    if y.ndim == 1:
+        y = y.reshape(-1, 1)
+    # softplus(x) - y*x, mean over every element
+    loss_val = float(np.mean(np.logaddexp(0.0, x) - y * x))
+    n = x.size
+    node = Tensor([[loss_val]], logits.requires_grad, (logits,))
+
+    def _backward():
+        if logits.requires_grad:
+            s = 1.0 / (1.0 + np.exp(-x))
+            logits.grad += (s - y) * (node.grad[0, 0] / n)
+
+    node._backward = _backward
+    return node
+
+
+def gaussian_kl(mu: Tensor, logvar: Tensor) -> Tensor:
+    """KL( N(mu, exp(logvar)) || N(0,1) ), summed over the columns.
+
+    A scalar loss term, with the analytic gradient — no need to route it through
+    the tape's elementwise ops.
+    """
+    m, lv = mu.data, logvar.data
+    kl = float(0.5 * np.sum(np.exp(lv) + m * m - 1.0 - lv))
+    node = Tensor([[kl]], mu.requires_grad or logvar.requires_grad, (mu, logvar))
+
+    def _backward():
+        g = node.grad[0, 0]
+        if mu.requires_grad:
+            mu.grad += g * m
+        if logvar.requires_grad:
+            logvar.grad += g * 0.5 * (np.exp(lv) - 1.0)
+
+    node._backward = _backward
+    return node
+
+
+def reparameterise(mu: Tensor, logvar: Tensor, eps: np.ndarray) -> Tensor:
+    """z = mu + exp(logvar/2) * eps — the VAE's sampling step, with gradients.
+
+    Written as an op because building it from `mul` and a hand-made tensor left no
+    path back to `logvar`: the gradient through the noise scaling is
+    dz/dlogvar = 0.5 * exp(logvar/2) * eps, and nothing in the elementwise ops
+    knows that.
+    """
+    std = np.exp(np.clip(logvar.data, -20, 20) / 2.0)
+    z = mu.data + std * eps
+    node = Tensor(z, mu.requires_grad or logvar.requires_grad, (mu, logvar))
+
+    def _backward():
+        g = node.grad
+        if mu.requires_grad:
+            mu.grad += g
+        if logvar.requires_grad:
+            logvar.grad += g * 0.5 * std * eps
+
+    node._backward = _backward
+    return node
+
+
+def concat_cols(tensors: list["Tensor"]) -> Tensor:
+    """Concatenate along columns, keeping the gradient path to each part."""
+    widths = [t.shape[1] for t in tensors]
+    node = Tensor(np.concatenate([t.data for t in tensors], axis=1),
+                  any(t.requires_grad for t in tensors), tuple(tensors))
+
+    def _backward():
+        lo = 0
+        for t, w in zip(tensors, widths):
+            if t.requires_grad:
+                t.grad += node.grad[:, lo:lo + w]
+            lo += w
+
+    node._backward = _backward
+    return node
+
+
+def split_cols(a: Tensor, widths: list[int]) -> list["Tensor"]:
+    """The inverse of `concat_cols`."""
+    parts, lo = [], 0
+    for w in widths:
+        parts.append(Tensor(a.data[:, lo:lo + w], a.requires_grad, (a,)))
+        lo += w
+
+    def _backward():
+        if not a.requires_grad:
+            return
+        lo = 0
+        for part, w in zip(parts, widths):
+            a.grad[:, lo:lo + w] += part.grad
+            lo += w
+    for part in parts:
+        part._backward = _backward
+    return parts
 
 
 def slice_cols(a: Tensor, lo: int, hi: int) -> Tensor:
