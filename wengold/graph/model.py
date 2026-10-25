@@ -196,6 +196,24 @@ class DesignGraph:
         self._des_cache[node_id] = seen
         return set(seen)
 
+    def _rtl_only(self, ids: set[str]) -> set[str]:
+        return {i for i in ids
+                if (n := self.nodes.get(i)) is not None and n.kind is NodeKind.RTL}
+
+    def rtl_ancestors(self, node_id: str) -> set[str]:
+        """Ancestors that are blocks.
+
+        `ancestors` follows every edge kind, so it also collects the PARAM and
+        PACKAGE nodes hanging off a block — 664 parameters on neorv32 alone. That
+        is right for the kernel (a parameter change does invalidate) and wrong
+        for "how many blocks sit below this one", which is what the display and
+        the ML features mean.
+        """
+        return self._rtl_only(self.ancestors(node_id))
+
+    def rtl_descendants(self, node_id: str) -> set[str]:
+        return self._rtl_only(self.descendants(node_id))
+
     def nodes_of(self, kind: NodeKind) -> Iterable[Node]:
         return (n for n in self.nodes.values() if n.kind == kind)
 
