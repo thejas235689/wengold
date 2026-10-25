@@ -2,6 +2,7 @@
 from .adaptation import Bandit
 from .belief import (Belief, cheapest_safest, entropy, safest_first, voi,
                      voi_order)
+from .cognition import Ability, Scorecard, evaluate
 from .hierarchy import Goal, build_goals, goalact, milestones_done, reactree
 from .human import (HumanDecision, calibration, escalation_curve,
                     record_decision, reliability_curve, should_escalate)
@@ -36,4 +37,6 @@ __all__ = ["Agent", "AgentRun", "SimulatedRunner", "Bandit", "Context", "perceiv
            "Swarm", "SwarmRun", "Worker", "partition", "potential",
            # human interface
            "calibration", "reliability_curve", "should_escalate",
-           "escalation_curve", "HumanDecision", "record_decision"]
+           "escalation_curve", "HumanDecision", "record_decision",
+           # cognitive scorecard
+           "evaluate", "Scorecard", "Ability"]
