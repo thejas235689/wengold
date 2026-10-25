@@ -75,14 +75,32 @@ def from_trace(trace: list, widths: dict[str, int] | None = None,
 # ---- VCD -------------------------------------------------------------------
 _VAR = re.compile(r"\$var\s+(\w+)\s+(\d+)\s+(\S+)\s+([^$]*?)\s*\$end")
 _SCALAR = re.compile(r"^([01xzXZ])(\S+)$")
+_SCOPE = re.compile(r"\$scope\s+\w+\s+(\S+)\s*\$end")
+_UPSCOPE = re.compile(r"\$upscope\s*\$end")
 
 
 def parse_vcd(text: str, limit: int = 4000) -> dict:
     """Parse a VCD dump into the waveform shape."""
+    # Track the scope stack. A dump of `tb` and its children declares the same
+    # net twice (`tb.q` and `tb.u.q`); keying on the leaf name alone reported two
+    # signals both called `q`, which is indistinguishable in the waveform.
     ids: dict[str, tuple[str, int]] = {}
-    for m in _VAR.finditer(text):
-        _kind, width, ident, name = m.groups()
-        ids[ident] = (name.strip().split()[0], int(width))
+    scope: list[str] = []
+    for line in text.splitlines():
+        m = _VAR.search(line)
+        if m:
+            _kind, width, ident, name = m.groups()
+            leaf = name.strip().split()[0]
+            full = ".".join(scope + [leaf]) if scope else leaf
+            ids[ident] = (full, int(width))
+            continue
+        s = _SCOPE.search(line)
+        if s:
+            scope.append(s.group(1))
+            continue
+        if _UPSCOPE.search(line):
+            if scope:
+                scope.pop()
     body = text.split("$enddefinitions", 1)
     if len(body) < 2:
         return {"source": "vcd", "clock": None, "fail_at": None, "cycles": 0,
@@ -137,6 +155,9 @@ def parse_vcd(text: str, limit: int = 4000) -> dict:
 
     names = [ids[i][0] for i in ids]
     clock = next((n for n in names if re.search(r"(?i)clk|clock", n)), None)
+    if clock is None:
+        clock = next((n for n in names if re.search(r"(?i)clk|clock", n.split(".")[-1])),
+                     None)
     signals = []
     for ident, (name, width) in ids.items():
         values = [value_at(ident, t) for t, _ in history]
