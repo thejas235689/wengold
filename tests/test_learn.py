@@ -126,9 +126,25 @@ def test_near_duplicates_finds_a_genuine_pair(tmp_path):
     g = _graph({"leaf.sv": "module leaf; endmodule\n",
                 "x.sv": "module x; leaf u (); endmodule\n",
                 "y.sv": "module y; leaf u (); endmodule\n"}, tmp_path)
-    dups = near_duplicates(g, threshold=0.5)
+    dups = near_duplicates(g, threshold=0.5, min_neighbours=1)
     pairs = {(a, b) for a, b, _s in dups}
     assert ("x", "y") in pairs or ("y", "x") in pairs
+
+
+def test_a_single_edge_is_not_enough_by_default(tmp_path):
+    """Two blocks that each have one edge pair up whenever they share it. On
+    OpenTitan that produced 2,112 pairs, 91% of them resting on one connection,
+    so the default requires two."""
+    root = tmp_path
+    (root / "leaf.sv").write_text("module leaf; endmodule\n")
+    (root / "x.sv").write_text("module x; leaf u (); endmodule\n")
+    (root / "y.sv").write_text("module y; leaf u (); endmodule\n")
+    g = GraphBuilder().build_from_files(
+        {str(root / r): (root / r).read_text()
+         for r in ("leaf.sv", "x.sv", "y.sv")},
+        include_dirs=[str(root)], backend="slang")
+    assert near_duplicates(g, threshold=0.5) == []
+    assert near_duplicates(g, threshold=0.5, min_neighbours=1) != []
 
 
 @needs_slang
