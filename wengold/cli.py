@@ -390,6 +390,13 @@ def cmd_learn(args) -> int:
         print(f"examples: {len(ex)}  fail: {pos}  hold: {len(ex) - pos} "
               f"({pos / len(ex):.0%} fail)")
         print("labels: the formal engine, run on each generated design")
+        # The path argument is accepted and ignored: this trains on designs it
+        # generates, not on the project named. Saying so is the difference between
+        # a demo and a claim about the user's design.
+        if args.path and args.path not in (".", ""):
+            print(f"  !! this trains on {args.designs} generated register designs — "
+                  f"it does NOT read {args.path}. Its features describe generated "
+                  f"spec fields and do not apply to a real core.")
         model, tr, te = train_eval(ex, seed=args.seed)
         base = majority_baseline(ex)
         print(f"  majority-class baseline : {base:.3f}")
