@@ -39,6 +39,12 @@
   and says so. Found and fixed on the way: the z3 engine discarded the slice range
   on a non-blocking assignment, so `q[3:0] <= e` became `q <= e` and it **proved
   false properties** on any register block. ✅ *(this release)*
+- **v0.11** — scale and speed: OpenTitan `hw/ip` indexed end to end (1,857 files,
+  2,561 nodes, 10,748 edges, 884 blocks, 78 unresolved, 26 s), with the ML run
+  against it. **A 97× performance fix**: `in_edges` scanned the whole edge list, so
+  41,527 calls against 10,710 edges was 21.8 s of a 22.4 s run; adjacency maps and
+  a memoised ancestor/descendant cache took one RL instance from 29 s to 0.30 s.
+  `rebuild_index()` added for code that mutates `edges` directly. ✅ *(this release)*
 - **v0.12** — a VHDL front-end: entities, architectures, instantiations, packages
   and `use` clauses, so a VHDL design indexes at all. neorv32 (68 VHDL files, no
   SystemVerilog) gives 86 blocks / 1,262 edges / 0 unresolved. Structural only —
@@ -47,6 +53,11 @@
   nodes as blocks (664 parameters against 86 blocks on neorv32), so
   "depends on N blocks" and the clustering features were measuring parameters.
   ✅ *(this release)*
+- **v0.13** — the IDE grows up: a summary row (blocks / packages / parameters /
+  edges / unresolved / complete / files / changed / pending) and a block table
+  (block | file | depends on | consumed by | cluster | verdict) that is clickable
+  through to the source. Fixed: block rows carried absolute graph paths while the
+  tree and sources were relative, so a click did nothing. ✅ *(this release)*
 - **v0.14** — regression and DBSCAN. Linear regression, CART, a random forest and
   gradient boosting (the mechanism behind XGBoost/LightGBM, not those libraries),
   scored against each other and a mean baseline on an exact kernel-computed label;
@@ -69,6 +80,9 @@
   validator, the conformance checker and the prover all accept the result, because
   they check the spec's internal consistency and not its correspondence to
   English. ✅ *(this release)*
+- **v0.17** — the accumulated v0.15–v0.16 work and whole-project elaboration
+  groundwork, folded into the v0.17.1 release rather than described separately.
+  ✅ *(this release)*
 - **v0.18** — the generative families, given a job and a yardstick: a transformer
   with autoregressive decoding (already the encoder-decoder in `learn/`), plus a
   VAE, a GAN and a diffusion model that generate **stimulus**. Scored against the
