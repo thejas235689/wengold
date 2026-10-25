@@ -7,7 +7,7 @@ import os
 import sys
 from pathlib import Path
 
-SRC_EXT = {".sv", ".svh", ".v", ".vh", ".rdl", ".f"}
+SRC_EXT = {".sv", ".svh", ".v", ".vh", ".rdl", ".f", ".vhd", ".vhdl"}
 
 
 def _collect(path: str) -> dict[str, str]:
@@ -413,14 +413,14 @@ def cmd_learn(args) -> int:
         print(f"      {cl.note}")
         print(f"      {', '.join(cl.members[:6])}"
               f"{' …' if len(cl.members) > 6 else ''}")
-    from .learn.unsupervised import neighbour_sets
+    from .learn.unsupervised import dependency_signature
     dups = near_duplicates(graph, min_neighbours=args.min_neighbours)
     print(f"\nreuse candidates ({len(dups)} pairs, each block with at least "
           f"{args.min_neighbours} neighbour(s)):")
     for a, b, s in dups[:args.show]:
-        na, nb = len(neighbour_sets(graph, a)), len(neighbour_sets(graph, b))
+        na, nb = len(dependency_signature(graph, a)), len(dependency_signature(graph, b))
         print(f"  {a}  ~  {b}   jaccard {s:.3f}   "
-              f"({min(na, nb)} shared neighbours)")
+              f"({min(na, nb)} deps each)")
     if not dups:
         print("  none above the threshold")
     elif len(dups) > 20 * args.show:
