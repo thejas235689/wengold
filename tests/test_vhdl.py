@@ -122,6 +122,30 @@ def test_a_mixed_vhdl_and_verilog_project_indexes_both(tmp_path):
     assert kinds.get("leaf") == "rtl" and kinds.get("top") == "rtl"
 
 
+def test_one_vhdl_file_does_not_drop_all_the_systemverilog(tmp_path, monkeypatch):
+    """A mixed project must index both sides.
+
+    cva6 has one .vhd file and 477 .sv files. When the SystemVerilog front-end was
+    unavailable, that single VHDL unit made the unit dict non-empty and the
+    builder returned early — dropping every SystemVerilog file. cva6 indexed to
+    4 blocks instead of 458, and the number looked plausible enough to pass.
+    """
+    (tmp_path / "one.vhd").write_text(
+        "entity stray is\nend entity;\narchitecture rtl of stray is\nbegin\nend;\n")
+    for i in range(4):
+        (tmp_path / f"m{i}.sv").write_text(f"module m{i}; endmodule\n")
+    files = {p.name: p.read_text() for p in tmp_path.iterdir()}
+
+    import wengold.graph.slang_backend as sb
+    monkeypatch.setattr(sb, "available", lambda: False)
+    g = GraphBuilder().build_from_files(files, backend="auto")
+    kinds = {n: d.kind.value for n, d in g.nodes.items()}
+    assert kinds.get("stray") == "rtl", "the VHDL entity must be indexed"
+    for i in range(4):
+        assert kinds.get(f"m{i}") == "rtl", f"m{i} was dropped"
+    assert any("fell back" in n for n in g.notes), "the fallback must be announced"
+
+
 def test_an_instantiation_of_an_unknown_entity_is_unresolved():
     src = TOP.replace("work.leaf", "work.not_in_the_file_set")
     files = {"top.vhd": src}
