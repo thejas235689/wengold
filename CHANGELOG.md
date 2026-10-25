@@ -14,6 +14,15 @@ what the tags are for.
 
 ---
 
+## [0.24.2] — 2026-10-25
+
+### Fixed
+- **The same graph note was printed once per design unit.** Running against
+  `PeterMonsson/wave_rerunner` printed `unresolved include: uvm_macros.svh` six
+  times in a row, because the note is recorded once per unit that fails to resolve
+  it. Notes are now deduplicated in `completeness()` and in the CLI's note printer
+  — the latter was reading the raw `graph.notes` and bypassed the first fix.
+
 ## [0.24.1] — 2026-10-25
 
 ### Fixed
