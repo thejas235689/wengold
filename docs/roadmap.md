@@ -54,7 +54,14 @@
   resembles nothing else. CNNs and Transformers are deliberately **not** added —
   no image data, and a transformer belongs at a spec front-end that WENGOLD would
   then have to check rather than reimplement. ✅ *(this release)*
-- **v0.15** — whole-project elaboration (one compilation unit rather than per file);
+- **v0.15** — a transformer, written out: multi-head attention, encoder/decoder
+  blocks and learned positional embeddings on a small reverse-mode autodiff tape,
+  with **every backward pass verified against finite differences**. It reads a
+  sentence into a register spec — `wengold spec-from-text` — and the spec is then
+  checked by the parser, the validator, the conformance checker and the engine:
+  the model drafts, the checker decides. Measured honestly: 100% exact on unseen
+  combinations of trained words, 0% on held-out vocabulary. ✅ *(this release)*
+- **v0.16** — whole-project elaboration (one compilation unit rather than per file);
   a file set taken from the project's own build metadata (FuseSoC `.core`, `.f`
   filelists) instead of hand-passed include dirs; HJSON register maps.
 - **v1.1** — a Surelog/Verible elaboration backend; SymbiYosys as an external
