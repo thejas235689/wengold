@@ -182,3 +182,35 @@ def test_the_orchestra_executes_an_accepted_plan():
     assert result["executed"] is True
     assert result["outcomes"]
     assert any(h.frm == "reviewer" and h.to == "executor" for h in result["handoffs"])
+
+
+def test_search_has_nothing_to_find_when_the_results_are_symmetric():
+    """The real-project finding, pinned.
+
+    On neorv32 and picorv32 every invalidated simulation unblocks exactly one
+    coverage result at the same cost, so every ordering settles the same set and
+    beam search gains exactly nothing. The +6-9% measured on all-or-nothing groups
+    does not transfer here, and this test records that rather than letting the
+    earlier number stand unqualified.
+    """
+    from wengold.agent.planning import cheapest, greedy
+
+    # symmetric: 6 independent sims, each unblocking exactly one coverage result
+    g = DesignGraph()
+    ids = [f"m{i}" for i in range(6)]
+    for n in ids:
+        g.add_node(Node(id=n, kind=NodeKind.RTL))
+    g.rebuild_index()
+    results = [Result(f"{n}_sim", "sim", depends_on={n}) for n in ids]
+    for n in ids:
+        results.append(Result(f"{n}_cov", "coverage", depends_on={n},
+                              depends_on_results={f"{n}_sim"}))
+    ctx = perceive(g, results, set(ids))
+
+    sc = lambda o: score_order(ctx, o[:4], 0.15, 100)  # noqa: E731
+    scores = {name: sc(fn(ctx, ctx.todo))
+              for name, fn in (("cheapest", cheapest), ("greedy", greedy),
+                               ("best_first", __import__(
+                                   "wengold.agent.planning", fromlist=["best_first"]
+                               ).best_first))}
+    assert len(set(scores.values())) == 1, f"ordering now matters: {scores}"
