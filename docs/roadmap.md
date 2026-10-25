@@ -39,7 +39,15 @@
   and says so. Found and fixed on the way: the z3 engine discarded the slice range
   on a non-blocking assignment, so `q[3:0] <= e` became `q <= e` and it **proved
   false properties** on any register block. ✅ *(this release)*
-- **v0.11** — whole-project elaboration (one compilation unit rather than per file);
+- **v0.12** — a VHDL front-end: entities, architectures, instantiations, packages
+  and `use` clauses, so a VHDL design indexes at all. neorv32 (68 VHDL files, no
+  SystemVerilog) gives 86 blocks / 1,262 edges / 0 unresolved. Structural only —
+  no ports, no signal references. Also fixed: the IDE's file filter did not know
+  about `.vhd`, so it showed 8 files of 76, and the ML features counted PARAM
+  nodes as blocks (664 parameters against 86 blocks on neorv32), so
+  "depends on N blocks" and the clustering features were measuring parameters.
+  ✅ *(this release)*
+- **v0.13** — whole-project elaboration (one compilation unit rather than per file);
   a file set taken from the project's own build metadata (FuseSoC `.core`, `.f`
   filelists) instead of hand-passed include dirs; HJSON register maps.
 - **v1.1** — a Surelog/Verible elaboration backend; SymbiYosys as an external
