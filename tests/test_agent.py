@@ -87,6 +87,49 @@ def test_the_trace_cites_the_nodes_it_rests_on():
     assert any(t.because for t in trace.thoughts), "steps must carry evidence"
 
 
+def test_an_unknown_result_with_no_unresolved_deps_names_the_real_reason():
+    """Regression from running OpenTitan.
+
+    381 of its results are unknown, and the trace explained each one as "0 of its
+    dependencies are unresolved in the graph, so its currency cannot be decided" —
+    a non-explanation, and false besides. A result that has never been executed is
+    unknown because there is no evidence, not because the graph is incomplete.
+    """
+    g, results, names = _layered()
+    # an approximate graph (no full elaboration) makes the kernel refuse VALID
+    g.approximate = True
+    results.append(Result("never_run", "sim", depends_on={names[1][0]}))
+    ctx = perceive(g, results, {names[0][0]})
+    assert ctx.verdicts["never_run"] is Verdict.UNKNOWN
+    trace = explain(ctx, "never_run").render()
+    assert "0 of its dependencies are unresolved" not in trace
+
+
+def test_no_unknown_trace_contradicts_the_kernel():
+    """The invariant, which is stronger than any one case.
+
+    On OpenTitan the trace explained 381 unknown results as "0 of its dependencies
+    are unresolved, so its currency cannot be decided" — the count was zero, so the
+    clause explained nothing, and the real cause was an unresolved node deeper in
+    the closure. The agent must never state a reason the kernel's own reason does
+    not support.
+    """
+    g, results, names = _layered()
+    g.approximate = True
+    ctx = perceive(g, results, {names[0][0]})
+    for rid, v in ctx.verdicts.items():
+        if v is not Verdict.UNKNOWN:
+            continue
+        text = explain(ctx, rid).render()
+        assert "0 of its dependencies are unresolved" not in text, rid
+        reason = (ctx.reasons or {}).get(rid, "")
+        if reason:
+            # the trace must be traceable to the kernel's own statement
+            assert ("never been executed" in text or "without a full elaboration" in text
+                    or "dependency closure" in text or "does not contain" in text
+                    or reason.split(":")[-1].strip() in text), (rid, reason, text)
+
+
 def test_the_trace_is_a_prompt_an_llm_could_use():
     g, results, names = _layered()
     ctx = perceive(g, results, {names[0][0]})
