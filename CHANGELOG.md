@@ -14,6 +14,28 @@ what the tags are for.
 
 ---
 
+## [0.21.1] — 2026-10-25
+
+### Run on OpenTitan (1,849 HDL files, 879 blocks, 10,730 edges)
+- 2,553 nodes, 79 unresolved, 505 issues; 882 results — 488 valid, 13 invalidated,
+  **381 unknown**, 394 need new evidence.
+- **Safest-first wins again, and by far more**: measured on results settled from the
+  open set, +107% at budget 10, +218% at 25, **+255% at 50**, winning 6/6 worlds.
+  Value-of-information ordering collapses to 0.9 against greedy's 3.3 — it runs the
+  flakiest check first and the run halts immediately.
+
+### Fixed
+- **The reasoning trace contradicted itself on 381 results.** Each unknown result
+  was explained as "0 of its dependencies are unresolved in the graph, so its
+  currency cannot be decided" — a count of zero explaining nothing. The agent's
+  check looked only at *direct* dependencies, but the kernel tests the whole
+  upstream closure: `adc_ctrl_core_sim` was unknown because `prim_flop` and
+  `prim_sync_reqack` sat deeper in its closure. The trace now quotes the kernel's
+  own reason instead of re-deriving it, and a test asserts no unknown trace states
+  something the kernel does not support.
+- `Context` now carries `approximate`, so a graph built without a full elaboration
+  is named as the reason rather than silently folded into a wrong one.
+
 ## [0.21.0] — 2026-10-25
 
 ### Added
