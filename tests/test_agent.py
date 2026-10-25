@@ -105,6 +105,24 @@ def test_an_unknown_result_with_no_unresolved_deps_names_the_real_reason():
     assert "0 of its dependencies are unresolved" not in trace
 
 
+def test_a_transitively_invalidated_trace_names_the_path():
+    """Regression from Anvil-Pro.
+
+    `Top_sim` was invalidated because `Top` instantiates `ReorderBuffer`, which
+    changed — no direct dependency, so the trace's own check found nothing and it
+    printed "the kernel invalidated it, but no changed node ... is named — this
+    trace cannot explain it". Honest, and useless: the kernel had already computed
+    the path. Same bug as the UNKNOWN branch, same fix.
+    """
+    g, results, names = _layered()
+    ctx = perceive(g, results, {names[0][0]})
+    # names[1][0] instantiates names[0][0], so it is invalidated only transitively
+    trace = explain(ctx, f"{names[1][0]}_sim").render()
+    if ctx.verdicts.get(f"{names[1][0]}_sim") is Verdict.INVALIDATED:
+        assert "cannot explain it" not in trace, trace
+        assert "hierarchy" in trace or "propagates" in trace or "consumed" in trace
+
+
 def test_no_unknown_trace_contradicts_the_kernel():
     """The invariant, which is stronger than any one case.
 
