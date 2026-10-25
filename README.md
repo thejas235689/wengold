@@ -420,6 +420,35 @@ Graceful degradation, never collapse — and a central planner killed mid-run se
 nothing further by construction. That is real, and it is the only part of the swarm
 claim that survives contact with a measurement.
 
+**Calibration, escalation, and the human interface.** Everything above states
+probabilities — `belief.py` says P(this check passes) = 0.92, and every planner acts
+on it. **Nothing had checked whether that number is true.** On OpenTitan, over 395
+results:
+
+**ECE = 0.046 — well calibrated.** The 0.8–1.0 bin predicts 0.95 and observes 0.94
+across 270 results. The worst bin is 0.0–0.2, predicting 0.15 and observing 0.41:
+the model is **too pessimistic about the flakiest checks** — the safe direction, but
+still an error worth naming.
+
+That calibration is what makes escalation meaningful. The Moravec split, made
+operational: the machine counts (dependents, cost, history) and a person is asked
+only where the machine is genuinely unsure or where being wrong is dear.
+
+| threshold | checks sent to a human | failures caught | precision |
+| --- | --- | --- | --- |
+| 0.0 | 6% | 17% | 59% |
+| 0.2 | 24% | 54% | 44% |
+| 0.4 | 52% | 80% | 30% |
+
+**Augmentation has a price and it is payable in human attention.** A policy that
+escalates everything catches every failure and is useless; one that escalates
+nothing is the status quo. That table is the honest curve between them, and it is
+the first number here a design team could take to a resourcing conversation.
+
+Human decisions — accept, waive, override, escalate — are written back into
+`Memory`, so the next run's priors reflect the person's call. Without the write-back
+it would be a log; with it, it is the loop.
+
 ### What is not here, and why
 
 | from the taxonomy | status |
