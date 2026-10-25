@@ -230,7 +230,10 @@ def emit_props(spec: ModuleSpec, version: str | None = None) -> str:
     lines = [_HEADER.format(version=version, source=spec.source or "<spec>",
                             name=f"{spec.name}_props",
                             desc=" -- properties implied by the spec"),
-             f"module {spec.name}_props import {spec.name}::*; (\n"
+             # NOT `import {name}::*` — {name} is a module, not a package, and an
+             # import of a module name is invalid SV. It also collided with the
+             # module node in the graph and silently dropped the block.
+             f"module {spec.name}_props (\n"
              f"{_ports(spec)}\n);",
              "",
              f"    // bound to {spec.name} by name; see the conformance report.",
