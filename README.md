@@ -204,7 +204,43 @@ register designs labelled by the real formal engine, and its features describe
 generated spec fields. The command says so when given a path.
 
 **RL loses to a two-line greedy heuristic** on every project tested, and prints
-that conclusion instead of hiding it.
+that conclusion instead of hiding it. The generative models are scored the same
+way — see the section below.
+
+## Generative models, and the one that earns its place
+
+Four families are in the tree: **transformer with autoregressive decoding** (the
+encoder-decoder in `wengold/learn/transformer.py`), a **VAE**, a **GAN** and a
+**diffusion model**. The last three have one job — generate *stimulus* — and one
+yardstick, because a generative model that cannot be scored is a demo:
+
+```bash
+wengold learn generative --instances 300 --epochs 150
+```
+
+The design is a passcode chain. The corpus reaches stage 2 and never stage 3, and
+the symbol that would finish it (`9`) appears **nowhere** in the data. Ground
+truth is the engine's own reachable-state set, enumerated by breadth-first search
+over the parsed transition function — not a coverage proxy.
+
+| model | states reached | reached stage 2 | unlocked |
+| --- | --- | --- | --- |
+| corpus (the data itself) | 3/7 | 95% | 0% |
+| random sampling | 5/7 | 5% | 0.7% |
+| VAE | 6/7 | 3.7% | 0.3% |
+| GAN | 5/7 | 3.7% | 1.3% |
+| **diffusion** | 5/7 | **22%** | 0.7% |
+
+**Diffusion is the only one that works**: it reaches the deep state **4.4×** as
+often as random sampling. The **VAE and the GAN land at or below random** — at
+this size they learn nothing usable, and the tool says so instead of reporting a
+loss curve and calling it success. **None of them reproduces the corpus** (95%):
+all three are far weaker than the data they were shown.
+
+And nobody unlocks. Every unlock rate — including random's — sits at 0.3–1.3%,
+which is bits landing on `9` by chance, not a model discovering the completion.
+The honest conclusion is the useful one: **a generative model can extend a pattern
+it was shown, and cannot invent the thing that is missing from its corpus.**
 
 ## Text to spec, and the checker that decides
 
