@@ -596,6 +596,53 @@ def cmd_serve(args) -> int:
     return 0
 
 
+def cmd_agent(args) -> int:
+    """Perceive → reason → plan → act → reflect → adapt, over the real kernel."""
+    from .agent import Agent, Bandit
+    from .agent.loop import SimulatedRunner
+    from .graph.model import NodeKind
+    from .kernel.validity import Result
+
+    graph, _files = _build(args)
+    blocks = sorted(n for n, d in graph.nodes.items()
+                    if d.kind is NodeKind.RTL)
+    if not blocks:
+        print("wengold: no RTL blocks in the graph")
+        return 1
+    # one simulation per block, and a coverage result summarising each third of
+    # them — enough structure that the ordering question is real
+    results = [Result(f"{b}_sim", "sim", depends_on={b}) for b in blocks]
+    third = max(1, len(blocks) // 3)
+    for i in range(0, len(blocks), third):
+        group = blocks[i:i + third]
+        results.append(Result(
+            f"cov_{i}", "coverage", depends_on=set(group),
+            depends_on_results={f"{b}_sim" for b in group}))
+
+    changed = set(args.change or []) or {blocks[0]}
+    print(f"agent over {len(blocks)} blocks, {len(results)} results")
+    print(f"changed: {', '.join(sorted(changed))}\n")
+
+    bandit = Bandit(seed=args.seed)
+    agent = Agent(graph, results, bandit=bandit, seed=args.seed)
+    for ep in range(max(1, args.episodes)):
+        run = agent.run(changed, SimulatedRunner(), strategy=args.strategy,
+                        adaptive=(args.strategy is None), budget=args.budget)
+        if ep == 0:
+            print(run.render())
+            print()
+    print("adaptation:" if args.strategy is None else "adaptation (one arm):")
+    print(bandit.render())
+    print("\n  Five stages are wired to real data: the graph, the kernel's verdicts,"
+          "\n  the tool probes and the ledger. Two honest limits are printed rather"
+          "\n  than hidden:")
+    print("  - whether a check *settles* a result is modelled, because no"
+          "\n    simulator or prover is installed here")
+    print("  - planning order buys nothing on this structure: the kernel's minimum"
+          "\n    evidence is already minimal and settling the base cascades")
+    return 0
+
+
 def cmd_demo(args) -> int:
     from .demo import main as demo
     demo()
@@ -742,6 +789,23 @@ def main(argv=None) -> int:
 
     p = sub.add_parser("serve", help="run the MCP server over stdio")
     p.set_defaults(func=cmd_serve)
+
+    p = sub.add_parser("agent", help="perceive, reason, plan, act, reflect, adapt")
+    p.add_argument("path", nargs="?", default=".")
+    p.add_argument("--include", action="append", default=[])
+    p.add_argument("--define", action="append", default=[])
+    p.add_argument("--backend", default="auto", choices=["auto", "slang", "regex"])
+    p.add_argument("--change", action="append", default=[],
+                   help="a node that changed (default: the first block)")
+    p.add_argument("--strategy", default=None,
+                   choices=["cheapest", "greedy", "best_first"],
+                   help="fix a planning strategy instead of learning one")
+    p.add_argument("--budget", type=int, default=None,
+                   help="cap the number of checks")
+    p.add_argument("--episodes", type=int, default=6,
+                   help="runs to let the bandit adapt over")
+    p.add_argument("--seed", type=int, default=0)
+    p.set_defaults(func=cmd_agent)
 
     p = sub.add_parser("demo", help="run the bundled SoC walkthrough")
     p.set_defaults(func=cmd_demo)
