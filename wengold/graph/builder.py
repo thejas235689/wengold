@@ -93,6 +93,15 @@ class GraphBuilder:
                         construct=", ".join(sorted({str(d.code) for d in unit.diagnostics[:3]}))
                         if getattr(unit, "diagnostics", None) else "parse errors")
                 for pkg in unit.imports:
+                    if pkg in defined:
+                        # `import X::*` where X is a module is not a package
+                        # import. Adding it as one would overwrite the module's
+                        # node — and a block silently disappearing from the graph
+                        # is worse than a missing edge.
+                        self.graph.notes.append(
+                            f"{mod}: `import {pkg}::*` names a module, not a "
+                            f"package — ignored")
+                        continue
                     self.graph.add_node(Node(id=pkg, kind=NodeKind.PACKAGE))
                     self.graph.add_edge(pkg, mod, EdgeKind.IMPORTS)
                 for name, _value in unit.parameters:
