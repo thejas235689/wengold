@@ -393,6 +393,33 @@ a global milestone order with local execution — **beats flat planning on picor
 honest answer: splitting a group and then checking its milestone spends a check on
 something that could not have settled yet.
 
+**A swarm, and the control experiment that killed its headline.** `swarm.py`
+partitions the open set by IP, gives each worker a slice it alone acts on, and has
+no scheduler object — `Swarm.step()` asks every living worker for its own move.
+
+The first measurement looked like a win: **18.8 results settled vs the central
+planner's 10.4** on OpenTitan at 20 checks. It was not decentralisation. A central
+planner that simply **does not halt on the first failure** scores **18.5**. The
+entire gain was the failure policy — one line, not an architecture — and the swarm
+is marginally *worse* once that is matched.
+
+The one property that is genuinely its own is surviving loss, and measuring it
+taught me something about the metric. Under a **check** budget, killing workers
+changes nothing: one survivor spends the whole budget itself, and 0, 2 or 3 dead
+workers all settled 28.0. A swarm's resilience is a statement about **time**, not
+work. Under a **round** budget — one check per living worker per round — losing 2
+of 4 workers costs ~22% of output and losing 3 costs ~34%:
+
+| rounds | 0 killed | 2 killed | 3 killed |
+| --- | --- | --- | --- |
+| 5 | 18.2 | 14.8 | 12.8 |
+| 10 | 37.2 | 27.8 | 23.0 |
+| 15 | 55.2 | 43.0 | 36.2 |
+
+Graceful degradation, never collapse — and a central planner killed mid-run settles
+nothing further by construction. That is real, and it is the only part of the swarm
+claim that survives contact with a measurement.
+
 ### What is not here, and why
 
 | from the taxonomy | status |
@@ -404,6 +431,10 @@ something that could not have settled yet.
 | CTDE for multi-agent | **not implemented** |
 | DRL, meta-DRL | **not implemented** |
 | Internalised planning (o1-style RL fine-tuning) | **not implementable here** |
+| Swarm: decentralised, local, fault-tolerant | **implemented**, resilience only |
+| MARL / IPPO | **not implemented** |
+| NAS, HyEvo, SAGE, SelfEvolve, GNN adaptation | **not implemented** |
+| A2A / ANP protocols | **not implementable here** (no peers) |
 
 **PPO** would be a fourth RL attempt at the ordering problem, and the first three
 lost to a two-line heuristic (Q-learning in v0.10.0, the bandit in v0.19.0, and now
