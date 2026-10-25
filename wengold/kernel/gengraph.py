@@ -68,6 +68,7 @@ def clone_graph(graph: DesignGraph) -> DesignGraph:
     g = DesignGraph()
     g.nodes = dict(graph.nodes)
     g.edges = list(graph.edges)
+    g.rebuild_index()          # `edges` was assigned directly, so the index is stale
     g.approximate = graph.approximate
     g.notes = list(graph.notes)
     return g
