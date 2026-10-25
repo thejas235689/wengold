@@ -150,6 +150,10 @@ class GraphBuilder:
         # Route by suffix, so a mixed project works: VHDL goes to the VHDL
         # front-end, everything else to the SystemVerilog one, and both land in
         # the same unit dict for `build_from_slang`.
+        # Record what we were asked to read, so completeness() can report how
+        # much of it produced a design unit rather than only whether what it
+        # found resolved.
+        self.graph.file_set = set(files)
         vhdl = {p: t for p, t in files.items()
                 if p.lower().endswith((".vhd", ".vhdl"))}
         sv = {p: t for p, t in files.items() if p not in vhdl}
