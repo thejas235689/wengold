@@ -113,6 +113,9 @@ def edge_removal_hazard(graph: DesignGraph, results: list[Result],
         for i, e in enumerate(graph.edges):
             g2 = clone_graph(graph)
             g2.edges.pop(i)
+            # the graph indexes its edges, so a direct mutation of the list must
+            # be followed by a rebuild — otherwise the clone still sees the edge
+            g2.rebuild_index()
             after = rank(classify(g2, r, changed).verdict)
             if after > base:
                 out.append(Violation(
