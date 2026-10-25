@@ -84,9 +84,24 @@ def explain(ctx, result_id: str) -> Trace:
                 n, f"it summarises {len(via)} result(s) that are themselves "
                    f"invalidated, so it cannot still hold", via[:8]))
         else:
-            thoughts.append(Thought(
-                n, "the kernel invalidated it, but no changed node or invalidated "
-                   "result is named — this trace cannot explain it"))
+            # Invalidated *transitively*: the change reaches it through the
+            # hierarchy, not through a direct dependency. `Top` depends on
+            # `ReorderBuffer` only via instantiation, so `deps & changed` is empty
+            # while the kernel's closure is not. Quote the kernel rather than
+            # saying "cannot explain it" — the same fix as the UNKNOWN branch in
+            # v0.21.1, because it is the same mistake: the agent checks direct
+            # edges, the kernel checks the closure.
+            kernel_reason = (getattr(ctx, "reasons", {}) or {}).get(result_id, "")
+            if "propagates" in kernel_reason:
+                tail = kernel_reason.split("via", 1)[-1].strip()
+                thoughts.append(Thought(
+                    n, f"the change reaches it through the hierarchy via {tail}",
+                    [t.strip(" []'") for t in tail.strip("[]").split(",")][:8]))
+            else:
+                why = kernel_reason or "no reason recorded"
+                thoughts.append(Thought(
+                    n, f"the kernel invalidated it: {why} — this trace cannot "
+                       f"add to that"))
         downstream = ctx.dependents.get(result_id, set())
         if downstream:
             n += 1
