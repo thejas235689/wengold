@@ -61,7 +61,15 @@
   checked by the parser, the validator, the conformance checker and the engine:
   the model drafts, the checker decides. Measured honestly: 100% exact on unseen
   combinations of trained words, 0% on held-out vocabulary. ✅ *(this release)*
-- **v0.16** — whole-project elaboration (one compilation unit rather than per file);
+- **v0.16** — an LSTM encoder-decoder, at the same interface as the transformer so
+  the two are compared on one corpus, one split and one metric. The LSTM was given
+  *more* training and reaches 5% exact against the transformer's 100% — the
+  fixed-size bottleneck that attention was invented to fix. The under-trained LSTM
+  also demonstrates the front-end's honest limit: it misreads a sentence, and the
+  validator, the conformance checker and the prover all accept the result, because
+  they check the spec's internal consistency and not its correspondence to
+  English. ✅ *(this release)*
+- **v0.17** — whole-project elaboration (one compilation unit rather than per file);
   a file set taken from the project's own build metadata (FuseSoC `.core`, `.f`
   filelists) instead of hand-passed include dirs; HJSON register maps.
 - **v1.1** — a Surelog/Verible elaboration backend; SymbiYosys as an external
