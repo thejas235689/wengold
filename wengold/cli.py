@@ -600,6 +600,7 @@ def cmd_agent(args) -> int:
     """Perceive → reason → plan → act → reflect → adapt, over the real kernel."""
     from .agent import Agent, Bandit
     from .agent.loop import SimulatedRunner
+    from .agent.perception import perceive
     from .graph.model import NodeKind
     from .kernel.validity import Result
 
@@ -622,6 +623,35 @@ def cmd_agent(args) -> int:
     changed = set(args.change or []) or {blocks[0]}
     print(f"agent over {len(blocks)} blocks, {len(results)} results")
     print(f"changed: {', '.join(sorted(changed))}\n")
+
+    if args.mode == "react":
+        from .agent.react import react
+        ctx = perceive(graph, results, changed)
+        run = react(ctx, SimulatedRunner())
+        print(run.render())
+        return 0
+    if args.mode == "search":
+        from .agent.search import best_of_k, score_order, scaling_curve, single
+        ctx = perceive(graph, results, changed)
+        print("  test-time scaling under a 15% per-check failure rate\n")
+        print("     k   settled   (mean over 100 rollouts)")
+        for row in scaling_curve(ctx, ks=(1, 2, 4, 8, 16), failure_p=0.15,
+                                 trials=100, seed=args.seed):
+            print(f"  {row['k']:>4}   {row['settled']:>7.2f}")
+        print("\n  'k' is how many orders were tried; k=1 is the plain greedy order.")
+        print("  If the settled count does not rise with k, the search found nothing")
+        print("  — which is the honest answer when one check settles everything.")
+        return 0
+    if args.mode == "orchestrate":
+        from .agent.orchestra import Orchestra
+        ctx = perceive(graph, results, changed)
+        result = Orchestra().run(ctx, SimulatedRunner())
+        print(Orchestra.render(result))
+        if not result["executed"]:
+            print("\n  The reviewer refused to execute. That is the point of having")
+            print("  one: a plan that relies on a tool the machine does not have is")
+            print("  stopped before a check is spent, not discovered at run time.")
+        return 0
 
     bandit = Bandit(seed=args.seed)
     agent = Agent(graph, results, bandit=bandit, seed=args.seed)
@@ -802,6 +832,11 @@ def main(argv=None) -> int:
                    help="fix a planning strategy instead of learning one")
     p.add_argument("--budget", type=int, default=None,
                    help="cap the number of checks")
+    p.add_argument("--mode", default="stages",
+                   choices=["stages", "react", "search", "orchestrate"],
+                   help="stages: perceive→reason→plan→act→reflect→adapt; "
+                        "react: thought/action/observation loop; "
+                        "search: test-time scaling; orchestrate: planner/reviewer/executor")
     p.add_argument("--episodes", type=int, default=6,
                    help="runs to let the bandit adapt over")
     p.add_argument("--seed", type=int, default=0)
