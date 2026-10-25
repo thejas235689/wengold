@@ -74,8 +74,16 @@ def _next_target(ctx, settled: set[str], tried: set[str]) -> str | None:
     return None
 
 
-def react(ctx, runner, diagnose=None, max_steps: int = 40) -> ReActRun:
-    """Think, act, observe — each thought chosen from the previous observation."""
+def react(ctx, runner, diagnose=None, max_steps: int | None = None) -> ReActRun:
+    """Think, act, observe — each thought chosen from the previous observation.
+
+    `max_steps` defaults to three steps per open result plus slack, because a fixed
+    cap of 40 truncated picorv32's run: 27 results in doubt, two or three steps
+    each, and the loop stopped with work left. A cap that does not scale with the
+    work is a silent failure.
+    """
+    if max_steps is None:
+        max_steps = 3 * len(ctx.todo) + 10
     run = ReActRun()
     settled = set(ctx.by_verdict(Verdict.VALID))
     tried: set[str] = set()
@@ -135,6 +143,15 @@ def react(ctx, runner, diagnose=None, max_steps: int = 40) -> ReActRun:
                 n, "it failed, so continuing would spend checks on results that "
                    "rest on a broken one — diagnose first",
                 "diagnose", target, diag, [target]))
+
+    # after the loop, not inside it: inserted at loop level without a break this
+    # appended a step on every pass and hung picorv32's run
+    if not run.done and len(run.steps) >= max_steps:
+        run.steps.append(Step(
+            len(run.steps) + 1,
+            f"the step budget of {max_steps} ran out with "
+            f"{len([r for r in ctx.todo if r not in settled])} result(s) still open",
+            "stop", None, "not finished — the budget, not the work, ended it"))
 
     run.settled = settled
     return run
