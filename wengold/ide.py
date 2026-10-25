@@ -54,6 +54,7 @@ class PendingBlock:
     line: int | None
     cause: str
     target: str = ""             # the block the result is about
+    cluster: int | None = None   # the dependency-signature cluster
     path_chain: list[str] = field(default_factory=list)
     certainty: str = "proven"
 
@@ -104,6 +105,16 @@ def collect(root: Path, graph, changed_files: set[str],
             file_of[nid] = p
             module_of.setdefault(p, nid)
 
+    # cluster the blocks once, so the pending set can be grouped by signature
+    cluster_of: dict[str, int] = {}
+    try:
+        from .learn.unsupervised import cluster_blocks
+        for cl in cluster_blocks(graph)[0]:
+            for m in cl.members:
+                cluster_of[m] = cl.label
+    except Exception:                      # clustering is never load-bearing
+        pass
+
     # pending blocks: the results the change puts in doubt
     pending: list[PendingBlock] = []
     pending_files: set[str] = set()
@@ -128,7 +139,7 @@ def collect(root: Path, graph, changed_files: set[str],
             pending.append(PendingBlock(
                 name=r.id, verdict=diag.status,
                 file=file_of.get(target), line=None, cause=cause, target=target,
-                path_chain=chain,
+                cluster=cluster_of.get(target), path_chain=chain,
                 certainty=diag.causes[0].certainty if diag.causes else "proven"))
             if file_of.get(target):
                 pending_files.add(file_of[target])
@@ -379,7 +390,8 @@ function renderPending() {{
   el.innerHTML = D.pending.map((p, i) =>
     `<div class="block" data-i="${{i}}"><b>${{esc(p.name)}}</b>`+
     `<span class="v ${{p.verdict}}">${{p.verdict}}</span>`+
-    `<div class="certainty">block: ${{esc(p.target || p.name)}}</div>`+
+    `<div class="certainty">block: ${{esc(p.target || p.name)}}`+
+    `${{p.cluster !== null && p.cluster !== undefined ? " &middot; cluster " + p.cluster : ""}}</div>`+
     `<div class="why">${{esc(p.cause)}}</div>`+
     (p.path_chain && p.path_chain.length>1
       ? `<div class="chain">${{p.path_chain.map(esc).join(" &rarr; ")}}</div>` : "")+
