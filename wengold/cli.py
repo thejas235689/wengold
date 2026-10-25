@@ -327,8 +327,10 @@ def cmd_spec_from_text(args) -> int:
     from .spec_frontend import (check_pipeline, draft_spec, load_or_train,
                                 validate)
 
-    model, vocab_list = load_or_train(args.model, verbose=True)
+    path = args.model or f".wengold/spec-model-{args.arch}.json"
+    model, vocab_list = load_or_train(path, verbose=True, arch=args.arch)
     d = draft_spec(args.text, model, vocab_list)
+    print(f"model: {args.arch}")
     print(f"in   : {args.text}")
     if not d.ok:
         print(f"draft: unreadable — {d.error}")
@@ -652,7 +654,11 @@ def main(argv=None) -> int:
                        help="draft a register spec from a sentence, and check it")
     p.add_argument("text", help="the sentence to read")
     p.add_argument("--module", default="drafted")
-    p.add_argument("--model", default=".wengold/spec-model.json")
+    p.add_argument("--arch", default="transformer",
+                   choices=["transformer", "lstm"],
+                   help="which seq2seq model reads the sentence")
+    p.add_argument("--model", default=None,
+                   help="model file (default: .wengold/spec-model-<arch>.json)")
     p.add_argument("--out", help="write the emitted RTL here")
     p.set_defaults(func=cmd_spec_from_text)
 
