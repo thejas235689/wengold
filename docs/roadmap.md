@@ -77,7 +77,15 @@
   random; the VAE and the GAN land at or below random; none reproduces the
   corpus.** The conclusion is that a generative model extends a pattern it was
   shown and cannot invent what is missing from its data. ✅ *(this release)*
-- **v0.19** — whole-project elaboration (one compilation unit rather than per file);
+- **v0.19** — the agent layer: perceive, reason, plan, act, reflect, adapt. Every
+  stage is wired to real data (the graph, the kernel's verdicts, a live tool probe,
+  the ledger), and the reasoning trace is generated from the graph so it cannot
+  assert what the graph does not support. The honest finding: **planning order buys
+  nothing** — three strategies settle identical numbers at every budget, because
+  the kernel's minimum evidence is already minimal and one check at the base
+  cascades. The ordering problem is not a search problem, which is also why the
+  earlier Q-learning lost to a two-line heuristic. ✅ *(this release)*
+- **v0.20** — whole-project elaboration (one compilation unit rather than per file);
   a file set taken from the project's own build metadata (FuseSoC `.core`, `.f`
   filelists) instead of hand-passed include dirs; HJSON register maps.
 - **v1.1** — a Surelog/Verible elaboration backend; SymbiYosys as an external
