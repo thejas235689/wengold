@@ -14,6 +14,27 @@ what the tags are for.
 
 ---
 
+## [0.24.3] — 2026-10-25
+
+### Fixed
+- **The reasoning trace could not explain transitive invalidation.** Running against
+  `Priyanshumishra77/Anvil-Pro`, `Top_sim` was invalidated because `Top` instantiates
+  `ReorderBuffer` — not a direct dependency — and the trace printed "the kernel
+  invalidated it, but no changed node or invalidated result is named — this trace
+  cannot explain it". The kernel had already computed `change propagates into result
+  via ['ReorderBuffer']`. The trace now quotes it.
+
+  This is the **third** instance of one bug class: the agent inspects direct
+  dependencies while the kernel inspects the upstream closure (INVALIDATED v0.19.0,
+  UNKNOWN v0.21.1, transitive INVALIDATED here). The rule it implies: any agent
+  component that re-derives a kernel verdict will eventually disagree with it.
+
+### Reported, not fixed
+- **22 duplicated edge pairs** in the same graph (107 edges, 78 distinct) from
+  multiple instantiation sites of one module. Arguably correct — three instances is
+  three facts — and deduplicating would destroy the only instance-count signal the
+  graph carries. A design decision, left recorded rather than silently changed.
+
 ## [0.24.2] — 2026-10-25
 
 ### Fixed
