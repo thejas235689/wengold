@@ -68,6 +68,10 @@ def cmd_index(args) -> int:
     print(f"complete: {report['complete']}  unresolved: {len(report['unresolved'])}")
     for issue in report["issues"][:10]:
         print(f"  ! {issue}")
+    # graph notes carry the things that change how the numbers should be read —
+    # a silent fallback to the weak front-end, above all
+    for note in graph.notes[:5]:
+        print(f"  !! {note}")
     return 0
 
 
