@@ -68,8 +68,12 @@ def test_collect_marks_changed_pending_and_clean(tmp_path):
     assert status["other.sv"] == "clean"
     assert data["summary"]["changed"] == 1
     # a change to leaf puts leaf, mid and top in doubt — not `other`
-    names = {p["name"] for p in data["pending"]}
-    assert names == {"leaf", "mid", "top"}
+    targets = {p["target"] for p in data["pending"]}
+    assert targets == {"leaf", "mid", "top"}
+    # each entry is named by the RESULT, so three results on one block read as
+    # three lines rather than three identical headings
+    assert {p["name"] for p in data["pending"]} == {"unit_leaf", "unit_mid",
+                                                   "unit_top"}
 
 
 @needs_slang
@@ -85,11 +89,11 @@ def test_a_pending_block_carries_the_causal_chain(tmp_path):
     results = [Result(f"unit_{m}", "sim", depends_on={m})
                for m in ("leaf", "mid", "top")]
     data = collect(root, g, {"leaf.sv"}, {}, results, {"leaf"})
-    by_name = {p["name"]: p for p in data["pending"]}
-    assert by_name["top"]["verdict"] == "invalidated"
-    assert by_name["top"]["path_chain"] == ["leaf", "mid", "top"]
-    assert "2 level(s)" in by_name["top"]["cause"]
-    assert by_name["leaf"]["certainty"] == "proven"
+    by_target = {p["target"]: p for p in data["pending"]}
+    assert by_target["top"]["verdict"] == "invalidated"
+    assert by_target["top"]["path_chain"] == ["leaf", "mid", "top"]
+    assert "2 level(s)" in by_target["top"]["cause"]
+    assert by_target["leaf"]["certainty"] == "proven"
 
 
 @needs_slang
@@ -102,7 +106,7 @@ def test_nothing_is_pending_when_no_change_reaches_it(tmp_path):
     results = [Result("unit_a", "sim", depends_on={"a"}),
                Result("unit_b", "sim", depends_on={"b"})]
     data = collect(root, g, {"a.sv"}, {}, results, {"a"})
-    assert {p["name"] for p in data["pending"]} == {"a"}
+    assert {p["target"] for p in data["pending"]} == {"a"}
 
 
 # ---- the artifact ----------------------------------------------------------
