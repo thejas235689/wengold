@@ -14,6 +14,35 @@ what the tags are for.
 
 ---
 
+## [0.23.0] — 2026-10-25
+
+### Added
+- **`human.py`** — the human interface: calibration, escalation, and a decision
+  record that feeds back into memory.
+  - `calibration` / `reliability_curve` — expected calibration error of the
+    belief's stated probabilities against observed outcomes.
+  - `should_escalate` / `escalation_curve` — the Moravec split made operational:
+    escalate on genuine uncertainty or high cost, and measure the price in human
+    attention.
+  - `HumanDecision` / `record_decision` — accept, waive, override, escalate; written
+    back into `Memory` so the next run's priors reflect the human's call.
+
+### Results — the first trust measurement
+- **OpenTitan, 395 results: ECE = 0.046, well calibrated.** The 0.8–1.0 bin is
+  excellent (predicted 0.95, observed 0.94, n=270). The worst bin is 0.0–0.2
+  (predicted 0.15, observed 0.41) — the model is **too pessimistic about the
+  flakiest checks**, which is the safe direction but still a real error.
+- **Escalation buys failures at a price**: threshold 0.2 sends **24%** of checks to
+  a human and catches **54%** of failures; threshold 0.4 sends **52%** and catches
+  **80%**. The curve is the honest answer to "how much human attention does this
+  cost", and it is the first number in this repository a design team could take to
+  a resourcing conversation.
+
+### Fixed
+- A test now documents a live hazard: `pass_rate(r) or 0.5` turns a legitimate
+  **0.0** ("always fails") into 0.5, because 0.0 is falsy — silently erasing the
+  strongest evidence memory can hold.
+
 ## [0.22.0] — 2026-10-25
 
 ### Added
