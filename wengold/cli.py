@@ -322,6 +322,105 @@ def cmd_ide(args) -> int:
     return 0
 
 
+def cmd_learn(args) -> int:
+    """Three methods, three jobs the exact code cannot do on its own."""
+    from .graph.model import NodeKind
+
+    if args.task == "supervised":
+        from .learn.supervised import (FEATURE_KEYS, build_dataset,
+                                       majority_baseline, precision_at_k,
+                                       train_eval)
+        ex = build_dataset(n_designs=args.designs, seed=args.seed,
+                           verbose=args.verbose)
+        if not ex:
+            print("wengold: no labelled examples could be produced")
+            return 1
+        pos = sum(e.label for e in ex)
+        print(f"examples: {len(ex)}  fail: {pos}  hold: {len(ex) - pos} "
+              f"({pos / len(ex):.0%} fail)")
+        print("labels: the formal engine, run on each generated design")
+        model, tr, te = train_eval(ex, seed=args.seed)
+        base = majority_baseline(ex)
+        print(f"  majority-class baseline : {base:.3f}")
+        print(f"  train                   : {tr.render()}")
+        print(f"  held out (by design)    : {te.render()}")
+        k = max(1, len(ex) // 10)
+        print(f"  precision@{k} (triage)     : "
+              f"{precision_at_k(model, ex, k):.3f}")
+        print("  note: the features make this close to a rule — the score says the"
+              "\n        rule is learnable, not that the model is clever.")
+        if args.save:
+            model.save(args.save)
+            print(f"  saved model -> {args.save}  ({len(FEATURE_KEYS)} features)")
+        return 0
+
+    if args.task == "rl":
+        from .kernel.validity import Result
+        from .learn import rl
+        graph, _files = _build(args)
+        mods = sorted(n for n, d in graph.nodes.items()
+                      if d.kind is NodeKind.RTL)
+        if len(mods) < 3:
+            print("wengold: need a project with several blocks")
+            return 1
+        top = max(mods, key=lambda m: len(graph.ancestors(m)))
+        suite = [Result(f"unit_{m}", "sim", depends_on={m}) for m in mods]
+        suite.append(Result("integration", "sim", depends_on={top}))
+        insts = [i for i in (rl.instance_from_graph(graph, suite, {m}, seed=k)
+                             for k, m in enumerate(mods[:args.instances]))
+                 if i.all_results >= 3]
+        if len(insts) < 3:
+            print("wengold: not enough pending sets to learn from")
+            return 1
+        cut = len(insts) * 2 // 3
+        train_set, test_set = insts[:cut], insts[cut:]
+        print(f"instances: {len(insts)}  (train {len(train_set)}, test "
+              f"{len(test_set)})")
+        print(f"  {insts[0].note}")
+        agent = rl.train(train_set, episodes=args.episodes, seed=args.seed)
+        print(f"\n  {'policy':<16}{'mean cost':>11}{'settled':>10}")
+        print("  " + "-" * 37)
+        rows = [("random", rl.evaluate(rl.random_policy, test_set)),
+                ("cheapest first", rl.evaluate(rl.cheapest_first, test_set)),
+                ("greedy ratio", rl.evaluate(rl.greedy_ratio, test_set)),
+                ("RL (learned)", rl.evaluate(None, test_set, agent=agent))]
+        for name, res in rows:
+            print(f"  {name:<16}{res['mean_cost']:>11.2f}"
+                  f"{res['mean_settled']:>9.0%}")
+        best = max(rows, key=lambda t: (t[1]["mean_settled"], -t[1]["mean_cost"]))
+        print(f"\n  best on this problem: {best[0]}")
+        if best[0] != "RL (learned)":
+            print("  The learned policy does not beat the simple heuristic here.")
+            print("  Greedy-by-ratio is already near-optimal for this reward, so")
+            print("  the honest recommendation is to use it, not the model.")
+        return 0
+
+    # cluster (default)
+    from .learn.unsupervised import cluster_blocks, near_duplicates
+    graph, _files = _build(args)
+    clusters, c = cluster_blocks(graph, k=args.k)
+    if not clusters:
+        print("wengold: no RTL blocks in the graph")
+        return 1
+    blocks = sum(len(cl.members) for cl in clusters)
+    print(f"blocks: {blocks}   k: {c.k}   silhouette: {c.silhouette:.3f}")
+    print("  silhouette is the separation of the clusters; 0 means the split is")
+    print("  arbitrary, so anything near it should not be believed.\n")
+    for cl in clusters:
+        print(f"  cluster {cl.label}  ({len(cl.members)} blocks)  "
+              f"distinctive: {', '.join(cl.distinctive)}")
+        print(f"      {cl.note}")
+        print(f"      {', '.join(cl.members[:6])}"
+              f"{' …' if len(cl.members) > 6 else ''}")
+    dups = near_duplicates(graph)
+    print(f"\nreuse candidates ({len(dups)} pairs occupying the same position):")
+    for a, b, s in dups[:args.show]:
+        print(f"  {a}  ~  {b}   jaccard {s:.3f}")
+    if not dups:
+        print("  none above the threshold")
+    return 0
+
+
 def cmd_serve(args) -> int:
     from .mcp.server import main as serve
     serve()
@@ -427,6 +526,23 @@ def main(argv=None) -> int:
                    choices=["explicit", "z3"], help="engine for --property")
     p.add_argument("--out", default="wengold-ide.html")
     p.set_defaults(func=cmd_ide)
+
+    p = sub.add_parser("learn", help="machine learning over the graph")
+    p.add_argument("task", nargs="?", default="cluster",
+                   choices=["cluster", "supervised", "rl"])
+    p.add_argument("path", nargs="?", default=".")
+    p.add_argument("--include", action="append", default=[])
+    p.add_argument("--define", action="append", default=[])
+    p.add_argument("--backend", default="auto", choices=["auto", "slang", "regex"])
+    p.add_argument("--k", type=int, default=None, help="cluster count (default: by silhouette)")
+    p.add_argument("--show", type=int, default=8, help="reuse candidates to print")
+    p.add_argument("--designs", type=int, default=16, help="designs to generate")
+    p.add_argument("--episodes", type=int, default=2000)
+    p.add_argument("--instances", type=int, default=30)
+    p.add_argument("--seed", type=int, default=0)
+    p.add_argument("--save", help="write the trained model to this path")
+    p.add_argument("--verbose", action="store_true")
+    p.set_defaults(func=cmd_learn)
 
     p = sub.add_parser("serve", help="run the MCP server over stdio")
     p.set_defaults(func=cmd_serve)
