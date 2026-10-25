@@ -207,6 +207,55 @@ generated spec fields. The command says so when given a path.
 that conclusion instead of hiding it. The generative models are scored the same
 way — see the section below.
 
+## The agent layer: six stages, and the one that has nothing to win
+
+```bash
+wengold agent ./rtl --change sec_firewall --episodes 6
+```
+
+An agent that acts on a verification flow needs six things. All six are here, and
+each is wired to real data rather than to a prompt:
+
+| stage | what it does | what it reads |
+| --- | --- | --- |
+| **Perceive** | assemble the context | the graph, its completeness, the unresolved nodes, the kernel's verdicts, and **a live probe of which tools are installed** |
+| **Reason** | a chain of thought per result | the nodes and results each claim rests on — every step is checkable against the graph |
+| **Plan** | order the minimum new evidence | three strategies, compared rather than assumed |
+| **Act** | execute the plan | the same runner the orchestrator uses, so a missing tool is `tool_missing`, never a pass |
+| **Reflect** | compare outcome to goal, revise | re-perceives after each iteration and **stops when an iteration settles nothing** |
+| **Adapt** | learn which strategy to use | a UCB bandit over the strategies, rewarded by results settled per check |
+
+**The reasoning trace cannot say what the graph does not support.** It is generated
+from the graph, not recalled — so when a coverage result was invalidated *through a
+result it summarises*, the first version printed "the change touches 0 nodes, so it
+cannot hold", which is a contradiction. That is fixed: it now names the invalidated
+results, and when it genuinely cannot explain a verdict it says so instead of
+inventing a reason.
+
+**The honest negative result: planning has nothing to win here.** Three strategies
+— cheapest-first, greedy-by-ratio, and best-first with re-scoring after every pick
+— settle **identical** numbers of results at every budget:
+
+| changed | budget 1 | budget 2 | budget 3 | budget 4 |
+| --- | --- | --- | --- | --- |
+| 1 block | 17 (all three) | 17 | 17 | 17 |
+| 3 blocks | 0 (all three) | 0 | 19 | 19 |
+
+One check at the base of the dependency tree cascades: settling the base settles
+what rests on it, so almost any order reaches the same place. The kernel's minimum
+evidence is already minimal. **The ordering problem is not a search problem** — which
+is also why the earlier Q-learning attempt lost to a two-line heuristic. The bandit
+reports a tie rather than inventing a preference, and a test pins that.
+
+Where ordering *does* matter is when checks fail, and that is reflection's job: a
+failing check stops the iteration rather than retrying the same plan.
+
+**What is modelled and what is measured.** The dependency structure, the
+classification and the minimum evidence are the real kernel's. Whether a check
+*settles* a result is modelled, because no simulator or prover is installed in this
+environment — the command prints that limit rather than dressing a model up as a
+measurement.
+
 ## Generative models, and the one that earns its place
 
 Four families are in the tree: **transformer with autoregressive decoding** (the
