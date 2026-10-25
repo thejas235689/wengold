@@ -163,36 +163,33 @@ def _describe(graph, members: list[str]) -> str:
     return "; ".join(bits) or "mixed position in the hierarchy"
 
 
-def neighbour_sets(graph, node: str) -> set[str]:
-    """Every block this one is connected to, either way.
+def dependency_signature(graph, node: str) -> set[str]:
+    """The blocks this one instantiates, transitively.
 
-    The feature vector is a summary; for "is this the same position in the
-    graph" the neighbours themselves are the right thing to compare. Two blocks
-    that instantiate the same set of modules and are instantiated by the same set
-    are genuinely interchangeable for reuse.
+    This is the reuse question — "does this block build the same thing out of the
+    same parts?" — and it is deliberately *not* the full neighbour set. Including
+    the parent makes every sibling pair look identical: on neorv32 that reported
+    `neorv32_cfs ~ neorv32_sys_clock` at Jaccard 1.0, two unrelated peripherals
+    that merely happen to be instantiated by the same `neorv32_top`.
     """
-    return (graph.ancestors(node) | graph.descendants(node)
-            | {e.dst for e in graph.out_edges(node)}
-            | {e.src for e in graph.in_edges(node)}) - {node}
+    return graph.rtl_ancestors(node) - {node}
 
 
 def near_duplicates(graph, threshold: float = 0.8,
                     min_neighbours: int = 2) -> list[tuple[str, str, float]]:
-    """Block pairs occupying the same position in the graph.
+    """Block pairs that build the same thing out of the same parts.
 
-    Jaccard over the neighbour sets, not cosine over the feature vector: with
+    Jaccard over the *dependency* sets. Not cosine over the feature vector — with
     summary features every isolated block has the same all-zero vector, so cosine
-    reports unrelated modules as identical. Requiring real neighbours removes
-    that degenerate case rather than papering over it.
+    reports unrelated modules as identical — and not over the full neighbour set,
+    which reports siblings as identical.
 
     `min_neighbours` matters more than it looks. On OpenTitan at a minimum of 1,
-    two blocks that each have a single edge pair up whenever they share that
-    edge — 2,112 pairs, 91% of them resting on one connection. At 3, 195 pairs
-    remain and they are the real ones (`TIEHIx1 ~ TIELOx1`,
-    `i3c_dword_collector ~ i3c_dword_splitter`).
+    two blocks that each depend on a single module pair up whenever they share
+    it: 2,112 pairs, 91% resting on one connection. At 2 it is 196.
     """
     blocks = sorted(n for n, d in graph.nodes.items() if d.kind is NodeKind.RTL)
-    sets = {b: neighbour_sets(graph, b) for b in blocks}
+    sets = {b: dependency_signature(graph, b) for b in blocks}
     eligible = [b for b in blocks if len(sets[b]) >= min_neighbours]
     out = []
     for i in range(len(eligible)):
