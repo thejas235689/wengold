@@ -61,31 +61,55 @@ class Draft:
 
 
 def load_or_train(path: Path | str = MODEL_PATH, epochs: int = 40,
-                  examples: int = 300, verbose: bool = False):
+                  examples: int = 300, verbose: bool = False,
+                  arch: str = "transformer"):
     """Load the model and its vocabulary, training both if there is none.
 
-    Training takes about two minutes, so it is cached next to the project rather
-    than repeated. The corpus is generated, so this is reproducible — and the
-    vocabulary is saved with the model, because a model whose token ids no longer
-    match the vocabulary decodes to noise.
+    Two architectures, one interface. `arch` picks which, and both are trained by
+    the same loop on the same corpus — which is the only way the comparison
+    between them means anything.
+
+    Training takes about two minutes (the transformer) or four (the LSTM), so it
+    is cached rather than repeated. The corpus is generated, so this is
+    reproducible — and the vocabulary is saved with the model, because a model
+    whose token ids no longer match the vocabulary decodes to noise.
     """
     import json
 
     path = Path(path)
     vocab_path = path.with_suffix(path.suffix + ".vocab.json")
     if path.exists() and vocab_path.exists():
-        return Transformer.load(path), json.loads(vocab_path.read_text())
+        return _load(path, vocab_path)
     pairs = make_pairs(examples, seed=0)
     vocab_list = build_vocab(pairs + make_pairs(60, seed=0) +
                              make_pairs(60, seed=0, holdout=True))
     if verbose:
-        print(f"  training the spec model on {len(pairs)} examples "
-              f"(about two minutes, once)...")
-    model, _hist = train_model(pairs, vocab_list, Config(), epochs=epochs, seed=0)
+        minutes = "about two minutes" if arch == "transformer" else "about four"
+        print(f"  training the {arch} spec model on {len(pairs)} examples "
+              f"({minutes}, once)...")
+    if arch == "lstm":
+        from .learn.rnn import LSTMSeq2Seq, RNNConfig
+        from .learn.spec_model import fit
+        model = LSTMSeq2Seq(len(vocab_list), len(vocab_list), RNNConfig(), seed=0)
+    else:
+        from .learn.spec_model import fit
+        model = Transformer(len(vocab_list), len(vocab_list), Config(), seed=0)
+    fit(model, pairs, vocab_list, epochs=epochs, lr=0.05)
     path.parent.mkdir(parents=True, exist_ok=True)
     model.save(path)
     vocab_path.write_text(json.dumps(vocab_list))
     return model, vocab_list
+
+
+def _load(path: Path, vocab_path: Path):
+    """Load whichever architecture the file holds."""
+    import json
+
+    head = json.loads(path.read_text())
+    if head.get("kind") == "lstm":
+        from .learn.rnn import LSTMSeq2Seq
+        return LSTMSeq2Seq.load(path), json.loads(vocab_path.read_text())
+    return Transformer.load(path), json.loads(vocab_path.read_text())
 
 
 def draft_spec(text: str, model, vocab_list) -> Draft:
