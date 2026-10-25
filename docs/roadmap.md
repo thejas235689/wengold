@@ -47,7 +47,14 @@
   nodes as blocks (664 parameters against 86 blocks on neorv32), so
   "depends on N blocks" and the clustering features were measuring parameters.
   ✅ *(this release)*
-- **v0.13** — whole-project elaboration (one compilation unit rather than per file);
+- **v0.14** — regression and DBSCAN. Linear regression, CART, a random forest and
+  gradient boosting (the mechanism behind XGBoost/LightGBM, not those libraries),
+  scored against each other and a mean baseline on an exact kernel-computed label;
+  and DBSCAN, whose real use here is naming blocks whose dependency signature
+  resembles nothing else. CNNs and Transformers are deliberately **not** added —
+  no image data, and a transformer belongs at a spec front-end that WENGOLD would
+  then have to check rather than reimplement. ✅ *(this release)*
+- **v0.15** — whole-project elaboration (one compilation unit rather than per file);
   a file set taken from the project's own build metadata (FuseSoC `.core`, `.f`
   filelists) instead of hand-passed include dirs; HJSON register maps.
 - **v1.1** — a Surelog/Verible elaboration backend; SymbiYosys as an external
