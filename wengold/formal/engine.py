@@ -218,10 +218,17 @@ def _z3_expr(node, env: dict, params: dict, W: int):
 
 
 def _sym_assigns(stmts: list, conds: list, env: dict, params: dict, W: int):
+    """Symbolic non-blocking assignments: (conditions, target, value).
+
+    The *target* is passed through whole. Unpacking it to a bare name — which
+    this did — throws away the slice range, so `q[3:1] <= e` became `q <= e` and
+    the transition relation was wrong. A wrong transition relation can prove a
+    property that is false, which is the one thing this tool must never do.
+    """
     out = []
     for s in stmts:
         if s[0] == "nb":
-            out.append((conds, s[1][1], _z3_expr(s[2], env, params, W)))
+            out.append((conds, s[1], _z3_expr(s[2], env, params, W)))
         elif s[0] == "block":
             out += _sym_assigns(s[1], conds, env, params, W)
         elif s[0] == "if":
@@ -278,8 +285,22 @@ def z3_check(model: Model, props: list[Property], depth: int = 12,
             assigns += _sym_assigns(stmts, [], env, rtl.params, W)
         nxt = {}
         for conds, target, val in reversed(assigns):
-            prev = nxt.get(target, s[i].get(target, z3.BitVecVal(0, W)))
-            nxt[target] = z3.If(_cond_expr(conds, W), val, prev)
+            if isinstance(target, tuple) and target[0] == "slice":
+                # a partial write: keep the bits outside the slice, and merge into
+                # the value accumulated so far so two slices of one register under
+                # different conditions both apply
+                _, name, hi, lo = target
+                width = hi - lo + 1
+                mask = ((1 << width) - 1) << lo
+                keep = z3.BitVecVal(~mask & ((1 << W) - 1), W)
+                take = z3.BitVecVal((1 << width) - 1, W)
+                prev = nxt.get(name, s[i].get(name, z3.BitVecVal(0, W)))
+                merged = (prev & keep) | ((val & take) << lo)
+                nxt[name] = z3.If(_cond_expr(conds, W), merged, prev)
+                continue
+            name = target[1] if isinstance(target, tuple) else target
+            prev = nxt.get(name, s[i].get(name, z3.BitVecVal(0, W)))
+            nxt[name] = z3.If(_cond_expr(conds, W), val, prev)
         return nxt
 
     try:
