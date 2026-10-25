@@ -135,7 +135,13 @@
   budget, losing 2 of 4 workers costs ~22% and losing 3 costs ~34%. MARL/IPPO, NAS,
   HyEvo/SAGE/SelfEvolve, GNN adaptation and A2A/ANP are **not** implemented, with
   reasons recorded. ✅ *(this release)*
-- **v0.23** — whole-project elaboration (one compilation unit rather than per file);
+- **v0.24** — a **cognitive-ability scorecard**: every ability scored as measured
+  (with a number), failed, or not-measurable-here (with the reason). 10 of 14
+  measurable, 1 measured and failed, 4 untestable in this environment.
+  Neuromorphic computing, neuroevolution, catastrophic-forgetting research and any
+  AGI benchmark claim are **not** implemented — the reasons are in the table.
+  ✅ *(this release)*
+- **v0.25** — whole-project elaboration (one compilation unit rather than per file);
   a file set taken from the project's own build metadata (FuseSoC `.core`, `.f`
   filelists) instead of hand-passed include dirs; HJSON register maps.
 - **v1.1** — a Surelog/Verible elaboration backend; SymbiYosys as an external
