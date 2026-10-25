@@ -130,6 +130,41 @@ def test_the_html_is_self_contained(tmp_path):
     assert "module leaf;" in html
 
 
+def test_the_block_table_lists_every_block(tmp_path):
+    """The bottom of the IDE lists design units with what they depend on and what
+    consumes them — blocks only, since a parameter is not a block."""
+    root = _project(tmp_path, {
+        "leaf.sv": "module leaf #(parameter W = 4); endmodule\n",
+        "mid.sv": "module mid; leaf u (); endmodule\n",
+        "top.sv": "module top; mid u (); endmodule\n",
+    })
+    files = {str(p): p.read_text() for p in root.rglob("*.sv")}
+    g = GraphBuilder().build_from_files(files, include_dirs=[str(root)],
+                                        backend="slang")
+    data = collect(root, g, set(), {}, None, set())
+    rows = {b["name"]: b for b in data["blocks"]}
+    assert set(rows) == {"leaf", "mid", "top"}      # not the parameter node
+    assert rows["mid"]["deps"] == 1 and rows["mid"]["consumers"] == 1
+    assert rows["top"]["deps"] == 2 and rows["top"]["consumers"] == 0
+    assert rows["leaf"]["deps"] == 0 and rows["leaf"]["consumers"] == 2
+    assert rows["leaf"]["file"] == "leaf.sv"
+
+
+def test_the_summary_counts_kinds_separately(tmp_path):
+    root = _project(tmp_path, {
+        "leaf.sv": "module leaf #(parameter W = 4); endmodule\n",
+        "top.sv": "module top; leaf u (); endmodule\n",
+    })
+    files = {str(p): p.read_text() for p in root.rglob("*.sv")}
+    g = GraphBuilder().build_from_files(files, include_dirs=[str(root)],
+                                        backend="slang")
+    s = collect(root, g, set(), {}, None, set())["summary"]
+    assert s["blocks"] == 2
+    assert s["parameters"] >= 1        # counted, but not listed as a block
+    assert s["edges"] == len(g.edges)
+    assert s["complete"] is True
+
+
 def test_a_file_that_was_not_embedded_is_reported(tmp_path):
     root = _project(tmp_path, {"big.sv": "module big; endmodule\n"})
     import wengold.ide as ide
