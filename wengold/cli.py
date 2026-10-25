@@ -374,8 +374,43 @@ def cmd_spec_from_text(args) -> int:
 
 
 def cmd_learn(args) -> int:
-    """Three methods, three jobs the exact code cannot do on its own."""
+    """Methods, and the jobs the exact code cannot do on its own."""
     from .graph.model import NodeKind
+
+    if args.task == "generative":
+        from .learn.coverage import benchmark
+        print("generative stimulus — three families, one yardstick\n")
+        print("  The design is a passcode chain. The corpus reaches stage 2 and")
+        print("  never stage 3, and the symbol that would finish it appears")
+        print("  nowhere in the data. Ground truth is the engine's own reachable")
+        print("  set, so 'did the model help?' has a number, not an impression.\n")
+        res = benchmark(samples=args.instances, epochs=args.epochs,
+                        seed=args.seed)
+        print(f"\n  {'model':<24}{'states':>9}{'stage2':>9}{'unlock':>8}")
+        print("  " + "-" * 48)
+        for r in res["rows"]:
+            print(f"  {r['model']:<24}"
+                  f"{str(r['states_reached']) + '/' + str(r['of_states']):>9}"
+                  f"{r['stage2_rate']:>8.0%}{r['unlock_rate']:>8.0%}")
+        by = {r["model"]: r for r in res["rows"]}
+        base = by.get("random", {}).get("stage2_rate", 0.0)
+        best = max((r for r in res["rows"]
+                    if r["model"] not in ("random", "corpus (partial only)")),
+                   key=lambda r: r["stage2_rate"], default=None)
+        if best:
+            print(f"\n  best generator: {best['model']}")
+            if base and best["stage2_rate"] > base:
+                print(f"  It reaches the deep state {best['stage2_rate'] / base:.1f}x "
+                      f"as often as random sampling ({best['stage2_rate']:.0%} vs "
+                      f"{base:.0%}) — a real coverage gain from the corpus.")
+            else:
+                print("  It does not beat random sampling here. Nothing in the")
+                print("  corpus teaches it the structure; the honest answer is to")
+                print("  use constrained-random, not the model.")
+            print(f"  No model reproduces the corpus itself "
+                  f"({by['corpus (partial only)']['stage2_rate']:.0%}); they are all")
+            print("  far weaker than the data they were shown.")
+        return 0
 
     if args.task == "supervised":
         from .learn.supervised import (FEATURE_KEYS, build_dataset,
@@ -675,7 +710,8 @@ def main(argv=None) -> int:
 
     p = sub.add_parser("learn", help="machine learning over the graph")
     p.add_argument("task", nargs="?", default="cluster",
-                   choices=["cluster", "supervised", "rl", "regress", "dbscan"])
+                   choices=["cluster", "supervised", "rl", "regress", "dbscan",
+                            "generative"])
     p.add_argument("path", nargs="?", default=".")
     p.add_argument("--include", action="append", default=[])
     p.add_argument("--define", action="append", default=[])
@@ -699,6 +735,8 @@ def main(argv=None) -> int:
                         "(one change can put hundreds in doubt)")
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--save", help="write the trained model to this path")
+    p.add_argument("--epochs", type=int, default=150,
+                   help="training epochs for the generative models")
     p.add_argument("--verbose", action="store_true")
     p.set_defaults(func=cmd_learn)
 
