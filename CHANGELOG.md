@@ -14,6 +14,37 @@ what the tags are for.
 
 ---
 
+## [0.21.0] — 2026-10-25
+
+### Added
+- **`Belief`** — a POMDP belief over P(check passes) per open result, with entropy
+  and value-of-information.
+- **`Memory`** — dual-stream: episodic runs and semantic facts, persisted to disk.
+  Supplies the belief's priors.
+- **`mcts`** — MCTS with UCB1 (selection, expansion, rollout, backpropagation).
+- **`hierarchy`** — GoalAct (global milestones, local execution) and ReAcTree
+  (recursive decomposition), measured on milestones completed.
+
+### Results
+- **Value-of-information ordering loses to greedy by 4–8%** — VOI assumes a
+  negative observation is actionable, but a failed check halts the run here.
+- **Inverting the same belief wins**: safest check first beats greedy by **+3.9%
+  on neorv32** and **+34.8% on picorv32** at budget 12, winning 10/10 worlds. The
+  first component in the agent layer to beat the two-line heuristic.
+- MCTS gains nothing on the real designs (79.08 vs 79.82 on neorv32).
+- GoalAct wins on picorv32 (0.28 vs 0.00 milestones) and loses on neorv32 (1.42 vs
+  1.56); ReAcTree is worse than GoalAct on both.
+
+### Not implemented, deliberately
+- PPO/actor-critic, CTDE, DRL, meta-DRL, internalised planning. The reasons are in
+  the README — the short version is that the first four are further RL attempts at
+  a problem a one-line belief heuristic now wins by 35%, and the last is not
+  possible without a model, a corpus and training compute.
+
+### Fixed
+- `reactree` emitted synthetic sub-goal names (`cov56/a`) that nothing could
+  settle, and placed a milestone after only half its members.
+
 ## [0.20.3] — 2026-10-25
 
 ### Documentation
