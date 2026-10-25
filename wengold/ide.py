@@ -48,11 +48,12 @@ class FileEntry:
 
 @dataclass
 class PendingBlock:
-    name: str
+    name: str                    # the result id: what is now in doubt
     verdict: str                 # invalidated | unknown
     file: str | None
     line: int | None
     cause: str
+    target: str = ""             # the block the result is about
     path_chain: list[str] = field(default_factory=list)
     certainty: str = "proven"
 
@@ -84,7 +85,8 @@ def changed_lines(diff: list[dict]) -> list[int]:
 # ---- collecting ------------------------------------------------------------
 def collect(root: Path, graph, changed_files: set[str],
             befores: dict[str, str] | None = None,
-            results=None, changes: set[str] | None = None) -> dict:
+            results=None, changes: set[str] | None = None,
+            wave: dict | None = None) -> dict:
     """Assemble everything the IDE renders, from the graph and a change set."""
     from .rootcause import diagnose_verdict, localize
 
@@ -121,9 +123,11 @@ def collect(root: Path, graph, changed_files: set[str],
                          f"{hops} level(s) of hierarchy"
                          + (" (it is the changed block)" if hops == 0 else ""))
                 chain = c.path
+            # name the RESULT, not the block: three results can be about one
+            # block, and three identical headings say nothing
             pending.append(PendingBlock(
-                name=target, verdict=diag.status,
-                file=file_of.get(target), line=None, cause=cause,
+                name=r.id, verdict=diag.status,
+                file=file_of.get(target), line=None, cause=cause, target=target,
                 path_chain=chain,
                 certainty=diag.causes[0].certainty if diag.causes else "proven"))
             if file_of.get(target):
@@ -177,6 +181,7 @@ def collect(root: Path, graph, changed_files: set[str],
         "pending": [p.__dict__ for p in pending],
         "summary": summary,
         "changed": sorted(changed_files),
+        "wave": wave,
     }
 
 
@@ -190,7 +195,8 @@ _TEMPLATE = """<!DOCTYPE html>
   :root {{ --ink:{ink}; --panel:{panel}; --line:{line}; --orange:{orange};
            --green:{green}; --blue:{blue}; --grey:{grey}; }}
   * {{ box-sizing:border-box; }}
-  body {{ margin:0; background:var(--ink); color:#E8E8EA;
+  body {{ margin:0; background:var(--ink); color:#E8E8EA; height:100vh;
+          display:flex; flex-direction:column; overflow:hidden;
           font:13px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; }}
   header {{ display:flex; align-items:center; gap:16px; padding:10px 16px;
             border-bottom:1px solid var(--line); background:#0E0E10;
@@ -201,7 +207,16 @@ _TEMPLATE = """<!DOCTYPE html>
   .stats {{ margin-left:auto; display:flex; gap:18px; color:var(--grey); }}
   .stats b {{ color:#E8E8EA; font-weight:600; }}
   .stats .warn b {{ color:var(--orange); }}
-  main {{ display:grid; grid-template-columns:260px 1fr 380px; height:calc(100vh - 45px); }}
+  main {{ display:grid; grid-template-columns:260px 1fr 380px; flex:1; min-height:0; }}
+  #wave {{ flex:none; border-top:1px solid var(--line); max-height:44vh;
+           overflow:auto; background:#0E0E10; }}
+  #wave.hidden {{ display:none; }}
+  #waveh {{ display:flex; gap:12px; align-items:baseline; padding:8px 12px;
+            border-bottom:1px solid var(--line); position:sticky; top:0;
+            background:#0E0E10; z-index:2; }}
+  #waveh .src {{ color:var(--grey); }}
+  #waveh .fail {{ color:#FF8A4C; }}
+  #wavesvg {{ display:block; }}
   section {{ overflow:auto; border-right:1px solid var(--line); }}
   section:last-child {{ border-right:none; }}
   h2 {{ font-size:11px; letter-spacing:.12em; text-transform:uppercase;
@@ -246,9 +261,8 @@ _TEMPLATE = """<!DOCTYPE html>
   .legend {{ padding:8px 12px; color:var(--grey); border-bottom:1px solid var(--line); }}
   .legend i {{ display:inline-block; width:7px; height:7px; border-radius:50%;
                margin:0 5px 0 10px; }}
-  footer {{ position:fixed; bottom:0; left:0; right:0; padding:5px 16px;
-            background:#0E0E10; border-top:1px solid var(--line); color:var(--grey);
-            font-size:11px; }}
+  footer {{ flex:none; padding:5px 16px; background:#0E0E10;
+            border-top:1px solid var(--line); color:var(--grey); font-size:11px; }}
 </style>
 </head>
 <body>
@@ -285,6 +299,11 @@ _TEMPLATE = """<!DOCTYPE html>
     <div id="pending"></div>
   </section>
 </main>
+<section id="wave" class="hidden">
+  <div id="waveh"><b>Waveform</b><span class="src" id="wavesrc"></span>
+    <span class="fail" id="wavefail"></span></div>
+  <svg id="wavesvg" xmlns="http://www.w3.org/2000/svg"></svg>
+</section>
 <footer>WENGOLD {version} &mdash; a block is listed pending only when the change
 reaches it; the cause and the dependency path are shown with it.
 {embed_note}</footer>
@@ -360,6 +379,7 @@ function renderPending() {{
   el.innerHTML = D.pending.map((p, i) =>
     `<div class="block" data-i="${{i}}"><b>${{esc(p.name)}}</b>`+
     `<span class="v ${{p.verdict}}">${{p.verdict}}</span>`+
+    `<div class="certainty">block: ${{esc(p.target || p.name)}}</div>`+
     `<div class="why">${{esc(p.cause)}}</div>`+
     (p.path_chain && p.path_chain.length>1
       ? `<div class="chain">${{p.path_chain.map(esc).join(" &rarr; ")}}</div>` : "")+
@@ -380,11 +400,81 @@ function syncTabs() {{
     t.classList.toggle("on", t.dataset.view === view);
 }}
 
+function renderWave() {{
+  const w = D.wave;
+  if (!w || !w.signals || !w.signals.length) return;
+  document.getElementById("wave").classList.remove("hidden");
+  document.getElementById("wavesrc").textContent =
+    w.source + " — " + w.cycles + " cycles";
+  if (w.fail_at !== null && w.fail_at !== undefined)
+    document.getElementById("wavefail").textContent =
+      "property fails at cycle " + w.fail_at;
+
+  const GUT = 160, CW = 46, ROW = 24, PAD = 10;
+  const n = w.cycles, rows = w.signals.length;
+  const W = GUT + n * CW + PAD * 2, H = rows * ROW + PAD * 2 + 18;
+  const svg = document.getElementById("wavesvg");
+  svg.setAttribute("width", W); svg.setAttribute("height", H);
+  svg.setAttribute("viewBox", `0 0 ${{W}} ${{H}}`);
+  let s = "";
+
+  for (let i = 0; i < n; i++) {{
+    const x = GUT + i * CW + PAD;
+    s += `<line x1="${{x}}" y1="${{PAD}}" x2="${{x}}" y2="${{H - PAD - 14}}"`+
+         ` stroke="#26262A"/>`;
+    s += `<text x="${{x + CW / 2}}" y="${{H - 4}}" fill="#6B7280" font-size="10"`+
+         ` text-anchor="middle">${{i}}</text>`;
+  }}
+  if (w.fail_at !== null && w.fail_at !== undefined) {{
+    const x = GUT + w.fail_at * CW + PAD;
+    s += `<rect x="${{x}}" y="${{PAD}}" width="${{CW}}" height="${{H - PAD - 14}}"`+
+         ` fill="#FF6A00" opacity="0.10"/>`;
+    s += `<line x1="${{x}}" y1="${{PAD}}" x2="${{x}}" y2="${{H - PAD - 14}}"`+
+         ` stroke="#FF6A00"/>`;
+  }}
+
+  w.signals.forEach((sig, r) => {{
+    const y = PAD + r * ROW, hi = y + 4, lo = y + ROW - 6, mid = (hi + lo) / 2;
+    s += `<text x="${{GUT - 10}}" y="${{mid + 4}}" fill="#A9A9B0" font-size="11"`+
+         ` text-anchor="end">${{esc(sig.name)}}</text>`;
+    const v = sig.values;
+    if (sig.width === 1) {{
+      let d = "";
+      for (let i = 0; i < n; i++) {{
+        const x0 = GUT + i * CW + PAD, x1 = x0 + CW;
+        const lvl = v[i] ? hi : lo;
+        if (i === 0) d += `M ${{x0}} ${{lvl}}`;
+        else if (v[i - 1] !== v[i]) d += ` L ${{x0}} ${{lvl}}`;
+        d += ` L ${{x1}} ${{lvl}}`;
+      }}
+      s += `<path d="${{d}}" fill="none" stroke="#16A34A" stroke-width="1.6"/>`;
+    }} else {{
+      let i = 0;
+      while (i < n) {{
+        let j = i;
+        while (j + 1 < n && v[j + 1] === v[i]) j++;
+        const x0 = GUT + i * CW + PAD, x1 = GUT + (j + 1) * CW + PAD;
+        const a = (i > 0 && v[i - 1] !== v[i]) ? 5 : 0;
+        const b = (j + 1 < n && v[j + 1] !== v[i]) ? 5 : 0;
+        s += `<path d="M ${{x0 + a}} ${{hi}} L ${{x1 - b}} ${{hi}} L ${{x1}} ${{mid}}`+
+             ` L ${{x1 - b}} ${{lo}} L ${{x0 + a}} ${{lo}} L ${{x0}} ${{mid}} Z"`+
+             ` fill="#2563EB" opacity="0.16" stroke="#4D8DFF" stroke-width="1"/>`;
+        if (x1 - x0 > 28)
+          s += `<text x="${{(x0 + x1) / 2}}" y="${{mid + 4}}" fill="#CFE0FF"`+
+               ` font-size="10" text-anchor="middle">`+
+               `${{v[i] == null ? "?" : "0x" + v[i].toString(16)}}</text>`;
+        i = j + 1;
+      }}
+    }}
+  }});
+  svg.innerHTML = s;
+}}
+
 document.getElementById("filter").oninput = renderTree;
 for (const t of document.querySelectorAll(".tab"))
   t.onclick = () => {{ view = t.dataset.view; syncTabs(); renderCode(); }};
 
-renderTree(); renderCode(); renderPending(); syncTabs();
+renderTree(); renderCode(); renderPending(); renderWave(); syncTabs();
 </script>
 </body>
 </html>
@@ -409,7 +499,8 @@ def render(data: dict, project: str, revision: str, version: str) -> str:
 
 def build(root, graph, changed_files, befores=None, results=None,
           changes=None, project=None, revision="working copy",
-          version="unknown") -> str:
+          version="unknown", wave=None) -> str:
     """The whole IDE as one HTML string."""
-    data = collect(Path(root), graph, changed_files, befores, results, changes)
+    data = collect(Path(root), graph, changed_files, befores, results, changes,
+                   wave)
     return render(data, project or Path(root).name, revision, version)
