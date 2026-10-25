@@ -12,6 +12,7 @@ from .planning import STRATEGIES, best_first, cheapest, greedy, plan
 from .react import ReActRun, Step, react
 from .reasoning import Thought, Trace, explain, explain_all
 from .search import beam, best_of_k, sample_orders, scaling_curve, score_order, single
+from .swarm import Swarm, SwarmRun, Worker, partition, potential
 
 __all__ = ["Agent", "AgentRun", "SimulatedRunner", "Bandit", "Context", "perceive",
            "plan", "STRATEGIES", "cheapest", "greedy", "best_first",
@@ -28,4 +29,6 @@ __all__ = ["Agent", "AgentRun", "SimulatedRunner", "Bandit", "Context", "perceiv
            "cheapest_safest", "Memory", "Episode",
            # search and hierarchy
            "mcts", "MCTSResult", "Goal", "build_goals", "goalact", "reactree",
-           "milestones_done"]
+           "milestones_done",
+           # swarm
+           "Swarm", "SwarmRun", "Worker", "partition", "potential"]
