@@ -354,6 +354,74 @@ def cmd_learn(args) -> int:
             print(f"  saved model -> {args.save}  ({len(FEATURE_KEYS)} features)")
         return 0
 
+    if args.task == "regress":
+        from .kernel.validity import Result
+        from .learn import regression as R
+        from .learn.trees import (DecisionTreeRegressor,
+                                  GradientBoostingRegressor,
+                                  RandomForestRegressor)
+        graph, _files = _build(args)
+        mods = sorted(n for n, d in graph.nodes.items()
+                      if d.kind is NodeKind.RTL)
+        if len(mods) < 8:
+            print("wengold: need a project with more blocks")
+            return 1
+        suite = [Result(f"unit_{m}", "sim", depends_on={m}) for m in mods]
+        for target in ("doubtful", "unknown"):
+            X, y, _blocks = R.build_dataset(graph, suite,
+                                            max_blocks=args.blocks,
+                                            target=target)
+            if len(set(y)) < 2:
+                print(f"\ntarget {target}: constant ({y[0]:.0f}) — nothing to learn")
+                continue
+            print(f"\ntarget {target}: {len(X)} blocks, values "
+                  f"{min(y):.0f}-{max(y):.0f}")
+            print(f"  {'model':<18}{'test MAE':>10}{'test R2':>10}")
+            print("  " + "-" * 38)
+            _, _, _tb, base = R.evaluate(lambda: R.LinearRegression(), X, y,
+                                         seed=args.seed)
+            print(f"  {'predict the mean':<18}{base.mae:>10.2f}{base.r2:>+10.3f}")
+            for name, fac in (
+                    ("linear regression", lambda: R.LinearRegression()),
+                    ("decision tree", lambda: DecisionTreeRegressor(max_depth=3)),
+                    ("random forest", lambda: RandomForestRegressor(
+                        n_trees=25, max_depth=5)),
+                    ("gradient boosting", lambda: GradientBoostingRegressor(
+                        n_estimators=40, max_depth=3))):
+                _m, _tr, te, _b = R.evaluate(fac, X, y, seed=args.seed)
+                print(f"  {name:<18}{te.mae:>10.2f}{te.r2:>+10.3f}")
+        print("\n  The label is exact — the kernel computes it. This is a surrogate for")
+        print("  it, and after the edge-index fix the kernel walks a real graph in")
+        print("  milliseconds, so the honest reading is that the methods work on")
+        print("  this data rather than that they are needed.")
+        return 0
+
+    if args.task == "dbscan":
+        from .learn.dbscan import cluster_blocks_dbscan
+        graph, _files = _build(args)
+        res, blocks, outliers = cluster_blocks_dbscan(graph, eps=args.eps,
+                                                      min_pts=args.min_pts)
+        if not blocks:
+            print("wengold: no RTL blocks in the graph")
+            return 1
+        sizes: dict[int, int] = {}
+        for lab in res.labels:
+            if lab >= 0:
+                sizes[lab] = sizes.get(lab, 0) + 1
+        print(f"blocks: {len(blocks)}   eps: {res.eps:.3f}   min_pts: {res.min_pts}")
+        print(f"clusters: {res.clusters}   unassigned (outliers): {len(outliers)} "
+              f"({len(outliers) / len(blocks):.0%})")
+        print(f"  cluster sizes: "
+              f"{sorted(sizes.values(), reverse=True)[:12]}")
+        print("\nblocks whose dependency signature resembles nothing else in the")
+        print("design — worth a look, either genuinely special or a modelling slip:")
+        for b in outliers[:args.show]:
+            print(f"  {b}")
+        if len(outliers) > 20:
+            print(f"  ({len(outliers)} is a lot — lower --eps to widen the"
+                  f" neighbourhood, or raise --min-pts)")
+        return 0
+
     if args.task == "rl":
         from .kernel.validity import Result
         from .learn import rl
@@ -537,7 +605,7 @@ def main(argv=None) -> int:
 
     p = sub.add_parser("learn", help="machine learning over the graph")
     p.add_argument("task", nargs="?", default="cluster",
-                   choices=["cluster", "supervised", "rl"])
+                   choices=["cluster", "supervised", "rl", "regress", "dbscan"])
     p.add_argument("path", nargs="?", default=".")
     p.add_argument("--include", action="append", default=[])
     p.add_argument("--define", action="append", default=[])
@@ -550,6 +618,12 @@ def main(argv=None) -> int:
     p.add_argument("--designs", type=int, default=16, help="designs to generate")
     p.add_argument("--episodes", type=int, default=2000)
     p.add_argument("--instances", type=int, default=30)
+    p.add_argument("--blocks", type=int, default=120,
+                   help="blocks to build the regression dataset from")
+    p.add_argument("--eps", type=float, default=None,
+                   help="DBSCAN neighbourhood radius (default: the 90th-percentile "
+                        "k-distance)")
+    p.add_argument("--min-pts", type=int, default=3, help="DBSCAN minimum points")
     p.add_argument("--max-pending", type=int, default=40,
                    help="sample the pending set down to this many checks "
                         "(one change can put hundreds in doubt)")
