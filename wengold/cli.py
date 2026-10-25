@@ -322,6 +322,51 @@ def cmd_ide(args) -> int:
     return 0
 
 
+def cmd_spec_from_text(args) -> int:
+    """Text -> spec, with the spec checked before anyone trusts it."""
+    from .spec_frontend import (check_pipeline, draft_spec, load_or_train,
+                                validate)
+
+    model, vocab_list = load_or_train(args.model, verbose=True)
+    d = draft_spec(args.text, model, vocab_list)
+    print(f"in   : {args.text}")
+    if not d.ok:
+        print(f"draft: unreadable — {d.error}")
+        print("\n  The model could not read that sentence. It knows the grammar it")
+        print("  was trained on and nothing else; a sentence outside it is refused")
+        print("  rather than guessed at.")
+        return 1
+
+    spec = dict(d.spec)
+    print(f"draft: register {spec['register']} @ 0x{spec['addr']:02x}, field "
+          f"{spec['name']} bits {spec['hi']}:{spec['lo']}, {spec['access']}, "
+          f"reset {spec['reset']}")
+
+    problems = validate(spec)
+    if problems:
+        print("\nvalidation: REFUSED")
+        for p in problems:
+            print(f"  ! {p}")
+        return 1
+    print("validation: accepted — access mode, bit range, alignment and reset "
+          "all check out")
+
+    out = check_pipeline(spec, module=args.module)
+    print(f"\nrtl       : {out['conformance']}")
+    print(f"properties: {'emitted' if out['properties_emitted'] else 'none'}")
+    f = out["formal"]
+    print(f"formal    : `{f['property']}` -> {f['status']}  ({f['detail']})")
+    if args.out:
+        Path(args.out).parent.mkdir(parents=True, exist_ok=True)
+        Path(args.out).write_text(out["rtl"])
+        print(f"\nwrote {args.out}")
+    print("\n  The model drafted this; the checker decided. The formal run verifies")
+    print("  that this spec yields correct RTL — it cannot verify that the spec is")
+    print("  what the sentence meant. That is the model's job, and it is measured")
+    print("  by held-out accuracy, not by the prover.")
+    return 0
+
+
 def cmd_learn(args) -> int:
     """Three methods, three jobs the exact code cannot do on its own."""
     from .graph.model import NodeKind
@@ -602,6 +647,14 @@ def main(argv=None) -> int:
                    choices=["explicit", "z3"], help="engine for --property")
     p.add_argument("--out", default="wengold-ide.html")
     p.set_defaults(func=cmd_ide)
+
+    p = sub.add_parser("spec-from-text",
+                       help="draft a register spec from a sentence, and check it")
+    p.add_argument("text", help="the sentence to read")
+    p.add_argument("--module", default="drafted")
+    p.add_argument("--model", default=".wengold/spec-model.json")
+    p.add_argument("--out", help="write the emitted RTL here")
+    p.set_defaults(func=cmd_spec_from_text)
 
     p = sub.add_parser("learn", help="machine learning over the graph")
     p.add_argument("task", nargs="?", default="cluster",
