@@ -14,6 +14,22 @@ what the tags are for.
 
 ---
 
+## [0.20.3] — 2026-10-25
+
+### Documentation
+- Recorded the **v0.3.0 defect** accurately: no commit in the history ever
+declares version 0.3.0 — the code went 0.2.0 → 0.4.0 and the v0.3 work shipped
+under the old version. The tag is left in place rather than rewritten.
+- Added the missing 0.20.2 and 0.20.3 entries to this file.
+
+## [0.20.2] — 2026-10-25
+
+### Added
+- **`CHANGELOG.md`**, documenting every version v0.3.0 onward.
+- **Fourteen backfilled tags** (v0.5.1 – v0.17.0), each verified to point at the
+commit whose `pyproject.toml` carries that exact version. No releases attached.
+- Three roadmap entries filled: v0.11, v0.13 and v0.17 were absent entirely.
+
 ## [0.20.1] — 2026-10-25
 
 ### Changed
@@ -266,6 +282,20 @@ Patch on v0.5.0.
 
 ### Added
 - **Register-map and CDC front-ends**: SystemRDL and IP-XACT.
+
+### Known defect — the version was never bumped
+
+`pyproject.toml` at this tag says **0.2.0**, not 0.3.0. The v0.3 work landed in
+commit `b91dea23f3` ("v0.3 — result contracts, reuse obligations, …") without a
+version bump, and the tag was placed one commit later, on `c0e3120531` (the
+Pages landing page), which still said 0.2.0. The next bump went straight to
+0.4.0 in `1335f2cbb8`.
+
+**No commit in the history ever declares version 0.3.0**, so this cannot be
+fixed by retagging — there is no correct commit to move the tag to. It is left
+as it is, and recorded here, rather than rewritten: rewriting a published tag
+breaks anyone who has already fetched it, and it would not make the code say
+something it never said. `v0.4.0` onwards are all correct.
 
 ---
 
