@@ -30,9 +30,14 @@ RESULT_KEYS = ["closure", "changes_in_closure", "nearest_change",
 
 
 def block_features(graph, node: str) -> dict[str, float]:
-    """A block's position in the graph."""
-    anc = graph.ancestors(node)
-    des = graph.descendants(node)
+    """A block's position in the graph.
+
+    Counts blocks, not nodes: `ancestors` also pulls in the PARAM and PACKAGE
+    nodes, and on neorv32 that is 664 parameters against 86 blocks — the feature
+    would have measured parameter counts rather than structure.
+    """
+    anc = graph.rtl_ancestors(node)
+    des = graph.rtl_descendants(node)
     out_e = graph.out_edges(node)
     in_e = graph.in_edges(node)
     return {
