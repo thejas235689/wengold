@@ -64,15 +64,29 @@ def test_an_empty_trace_is_an_empty_waveform():
 # ---- from a VCD ------------------------------------------------------------
 def test_vcd_values_land_on_the_right_cycle():
     """A VCD lists changes after their #time marker; sampling on the marker
-    gives the previous cycle and shifts the whole waveform."""
+    gives the previous cycle and shifts the whole waveform.
+
+    Names are scope-qualified (`top.clk`): a dump of a testbench and its children
+    declares the same net at two scopes, and keying on the leaf name reported two
+    signals both called `q` — indistinguishable in the waveform.
+    """
     w = parse_vcd(VCD)
     assert w["cycles"] == 4
     assert w["times"] == [0, 5, 10, 15]
     got = {s["name"]: s["values"] for s in w["signals"]}
-    assert got["clk"] == [0, 1, 0, 1]
-    assert got["en"] == [0, 1, 1, 0]
-    assert got["count"] == [0, 1, 2, 2]
-    assert w["clock"] == "clk"
+    assert got["top.clk"] == [0, 1, 0, 1]
+    assert got["top.en"] == [0, 1, 1, 0]
+    assert got["top.count"] == [0, 1, 2, 2]
+    assert w["clock"] == "top.clk"
+
+
+def test_the_same_net_at_two_scopes_is_not_two_signals():
+    """`tb.q` and `tb.u.q` are different nets, and must be named as such."""
+    vcd = ("$scope module tb $end\n$var wire 4 ! q $end\n"
+           "$scope module u $end\n$var wire 4 # q $end\n$upscope $end\n"
+           "$upscope $end\n$enddefinitions $end\n#0\nb0001 !\nb0010 #\n")
+    names = sorted(s["name"] for s in parse_vcd(vcd)["signals"])
+    assert names == ["tb.q", "tb.u.q"]
 
 
 def test_a_vcd_without_a_body_is_empty():
