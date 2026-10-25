@@ -154,19 +154,37 @@ class GraphBuilder:
                 if p.lower().endswith((".vhd", ".vhdl"))}
         sv = {p: t for p, t in files.items() if p not in vhdl}
         units: dict = {}
+        handled_sv = False
         if sv and backend in ("auto", "slang"):
             from .slang_backend import available, elaborate as slang_elaborate
             if available():
                 units.update(slang_elaborate(sv, include_dirs or [],
                                              defines or {}))
+                handled_sv = True
             elif backend == "slang":
                 raise RuntimeError("slang (pyslang) is not installed")
+        vhdl_units: dict = {}
         if vhdl:
             from .vhdl_backend import elaborate as vhdl_elaborate
-            units.update(vhdl_elaborate(vhdl))
-        if units:
+            vhdl_units = vhdl_elaborate(vhdl)
+
+        # Only take the units path when the SystemVerilog side was actually
+        # handled. A project with one stray .vhd file and 477 .sv files used to
+        # return here with `units` holding that single VHDL module — silently
+        # dropping every SystemVerilog file. cva6 indexed to 4 blocks instead of
+        # 458, and the number looked plausible enough to pass unnoticed.
+        if units and (handled_sv or not sv):
+            units.update(vhdl_units)
             return self.build_from_slang(units)
-        elab = Elaborator(files, include_dirs).elaborate()
+
+        # Falling back silently is dangerous: the bounded regex elaborator finds a
+        # fraction of the modules, so the same project can index to hundreds of
+        # blocks or to a handful depending on what is installed.
+        self.graph.notes.append(
+            "slang (pyslang) is not installed — fell back to the bounded regex "
+            "elaborator, which finds far fewer modules. The block count below is "
+            "an under-estimate, not the design.")
+        elab = Elaborator(sv or files, include_dirs).elaborate()
 
         # packages
         for pkg in sorted(elab.packages):
@@ -224,6 +242,10 @@ class GraphBuilder:
                 self.graph.mark_unresolved(pkg, "; ".join(reasons))
 
         self.graph.approximate = elab.approximate
+        if vhdl_units:
+            # the regex elaborator cannot read VHDL, so add those design units on
+            # top of what it produced rather than losing them
+            self.build_from_slang(vhdl_units)
         return self.graph
 
     def build_from_filelist(self, filelist_text: str,
