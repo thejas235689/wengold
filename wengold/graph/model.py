@@ -90,7 +90,20 @@ class DesignGraph:
     notes: list[str] = field(default_factory=list)
 
     # ---- construction -------------------------------------------------
+    # Ancestor and descendant sets are asked for over and over — once per result
+    # by the kernel, once per block by the learners. Recomputing them each time is
+    # quadratic-ish and made a single RL instance on OpenTitan take 29 seconds.
+    _anc_cache: dict[str, set[str]] = field(default_factory=dict, repr=False)
+    _des_cache: dict[str, set[str]] = field(default_factory=dict, repr=False)
+    # Adjacency, so out_edges/in_edges do not scan the whole edge list. They were
+    # called 41,527 times on one OpenTitan run and scanned 10,710 edges each —
+    # 21.8 of the 22.4 seconds went into that one list comprehension.
+    _out_idx: dict[str, list] = field(default_factory=dict, repr=False)
+    _in_idx: dict[str, list] = field(default_factory=dict, repr=False)
+
     def add_node(self, node: Node) -> Node:
+        self._anc_cache.clear()
+        self._des_cache.clear()
         existing = self.nodes.get(node.id)
         if existing is not None:
             # Never upgrade an unresolved node back to resolved by accident.
@@ -102,7 +115,21 @@ class DesignGraph:
         return node
 
     def add_edge(self, src: str, dst: str, kind: EdgeKind = EdgeKind.DRIVES) -> None:
-        self.edges.append(Edge(src, dst, kind))
+        edge = Edge(src, dst, kind)
+        self.edges.append(edge)
+        self._out_idx.setdefault(src, []).append(edge)
+        self._in_idx.setdefault(dst, []).append(edge)
+        self._anc_cache.clear()
+        self._des_cache.clear()
+
+    def rebuild_index(self) -> None:
+        """Rebuild the adjacency index after assigning `edges` directly."""
+        self._out_idx, self._in_idx = {}, {}
+        for e in self.edges:
+            self._out_idx.setdefault(e.src, []).append(e)
+            self._in_idx.setdefault(e.dst, []).append(e)
+        self._anc_cache.clear()
+        self._des_cache.clear()
 
     def mark_unresolved(self, node_id: str, reason: str = "", *,
                         kind: str | None = None, file: str | None = None,
@@ -134,13 +161,18 @@ class DesignGraph:
 
     # ---- queries ------------------------------------------------------
     def out_edges(self, node_id: str) -> list[Edge]:
-        return [e for e in self.edges if e.src == node_id]
+        return list(self._out_idx.get(node_id, ()))
 
     def in_edges(self, node_id: str) -> list[Edge]:
-        return [e for e in self.edges if e.dst == node_id]
+        return list(self._in_idx.get(node_id, ()))
 
     def ancestors(self, node_id: str) -> set[str]:
-        """Everything `node_id` depends on (upstream), following edges backwards."""
+        """Everything `node_id` depends on (upstream), following edges backwards.
+
+        Cached, and a copy is returned so a caller cannot corrupt the cache.
+        """
+        if node_id in self._anc_cache:
+            return set(self._anc_cache[node_id])
         seen, stack = set(), [node_id]
         while stack:
             cur = stack.pop()
@@ -148,9 +180,12 @@ class DesignGraph:
                 if e.src not in seen:
                     seen.add(e.src)
                     stack.append(e.src)
-        return seen
+        self._anc_cache[node_id] = seen
+        return set(seen)
 
     def descendants(self, node_id: str) -> set[str]:
+        if node_id in self._des_cache:
+            return set(self._des_cache[node_id])
         seen, stack = set(), [node_id]
         while stack:
             cur = stack.pop()
@@ -158,7 +193,8 @@ class DesignGraph:
                 if e.dst not in seen:
                     seen.add(e.dst)
                     stack.append(e.dst)
-        return seen
+        self._des_cache[node_id] = seen
+        return set(seen)
 
     def nodes_of(self, kind: NodeKind) -> Iterable[Node]:
         return (n for n in self.nodes.values() if n.kind == kind)
