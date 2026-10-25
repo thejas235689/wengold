@@ -88,6 +88,10 @@ class DesignGraph:
     # kernel treats a would-be VALID as UNKNOWN.
     approximate: bool = False
     notes: list[str] = field(default_factory=list)
+    # The input file set, so completeness can say how much of the repository the
+    # graph actually describes. Without it, `complete: True` is reported on a UVM
+    # class library where 4 of 89 files contributed anything at all.
+    file_set: set[str] = field(default_factory=set)
 
     # ---- construction -------------------------------------------------
     # Ancestor and descendant sets are asked for over and over — once per result
@@ -224,9 +228,26 @@ class DesignGraph:
         """A report the kernel and the CLI can act on."""
         unresolved = sorted(self.unresolved_nodes())
         issues = list(self.notes)
+        # How much of the file set produced a design unit. A UVM class library has
+        # almost no modules, so every file parses and nothing is unresolved while
+        # the graph describes 5% of the repository — `complete` alone reads as
+        # reassurance it has not earned.
+        contributing = {n.path for n in self.nodes.values()
+                        if n.kind is not NodeKind.FILE and n.path}
+        contributing &= self.file_set
+        total = len(self.file_set)
+        coverage = (len(contributing) / total) if total else 1.0
+        if total and coverage < 0.5:
+            issues.append(
+                f"only {len(contributing)} of {total} file(s) contributed a design "
+                f"unit ({coverage:.0%}) — most of this repository is not modules, "
+                f"packages or interfaces, and the graph does not describe it")
         return {
             "complete": not unresolved and not self.approximate,
             "approximate": self.approximate,
             "unresolved": unresolved,
             "issues": issues,
+            "files": total,
+            "contributing_files": len(contributing),
+            "file_coverage": coverage,
         }
