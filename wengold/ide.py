@@ -36,6 +36,10 @@ LINE = "#26262A"
 
 MAX_EMBED = 12_000_000          # stop embedding sources beyond this
 
+# kept in step with the CLI's SRC_EXT: VHDL was added to the front-end and the
+# IDE went on showing only the Verilog files
+SOURCE_SUFFIXES = {".sv", ".svh", ".v", ".vh", ".vhd", ".vhdl"}
+
 
 @dataclass
 class FileEntry:
@@ -149,7 +153,9 @@ def collect(root: Path, graph, changed_files: set[str],
     sources: dict[str, str] = {}
     embedded = 0
     for p in sorted(root.rglob("*")):
-        if not p.is_file() or p.suffix not in (".sv", ".svh", ".v", ".vh"):
+        # the same extension set the CLI collects, so adding a language in one
+        # place does not silently hide it in the other
+        if not p.is_file() or p.suffix.lower() not in SOURCE_SUFFIXES:
             continue
         rel = str(p.relative_to(root)).replace("\\", "/")
         try:
