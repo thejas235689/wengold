@@ -14,6 +14,30 @@ what the tags are for.
 
 ---
 
+## [0.22.0] — 2026-10-25
+
+### Added
+- **`swarm`** — a decentralised scheduler: workers own slices of the open set
+  (partitioned by IP), choose locally, and no worker schedules another.
+- `partition`, `potential` (attraction from dependents, repulsion from failure risk),
+  and `max_rounds` on `Swarm.run`.
+
+### Results — the control experiment that changed the conclusion
+- The swarm first looked far better than the central planner: **18.8 vs 10.4**
+  results settled on OpenTitan. That was not decentralisation. A central planner
+  that simply **does not halt on the first failure** scores **18.5** — the gain was
+  the failure policy, which is one line, not an architecture.
+- **Fault tolerance is a statement about time, not work.** Under a check budget,
+  killing workers changes nothing: one survivor spends the whole budget. Under a
+  round budget, losing 2 of 4 workers costs ~22% of output and losing 3 costs ~34%
+  — graceful degradation, never collapse.
+
+### Not implemented, deliberately
+- MARL/IPPO, NAS, HyEvo/SAGE/SelfEvolve, GNN adaptation, A2A/ANP. The first four
+  need training compute or a population of tasks; the last two need other agents to
+  talk to. WENGOLD already has an MCP server, dynamic handoff (the orchestra) and a
+  self-evolving loop (the bandit).
+
 ## [0.21.1] — 2026-10-25
 
 ### Run on OpenTitan (1,849 HDL files, 879 blocks, 10,730 edges)
