@@ -53,11 +53,16 @@ class Instance:
 
 
 def instance_from_graph(graph, results, changed: set[str], seed: int = 0,
-                        cost_lo: float = 1.0, cost_hi: float = 8.0) -> Instance:
+                        cost_lo: float = 1.0, cost_hi: float = 8.0,
+                        max_results: int | None = None) -> Instance:
     """Build a real settle structure from the graph.
 
     Check `i` settles check `j` when `j`'s dependency closure is contained in
     `i`'s — running the broader check answers the narrower question too.
+
+    `max_results` samples the pending set down to a workable size. One change to
+    OpenTitan puts ~390 results in doubt, and learning over a 390-action problem
+    is 300M operations; a bounded sub-problem is the honest thing to learn on.
     """
     from ..kernel.validity import classify_all
 
@@ -67,6 +72,11 @@ def instance_from_graph(graph, results, changed: set[str], seed: int = 0,
                if c.verdict.value in ("invalidated", "unknown")]
     if not pending:
         return Instance("empty", [], [], 0.0, 0, "nothing pending")
+    sampled = False
+    if max_results and len(pending) > max_results:
+        pending = sorted(random.Random(seed + 7).sample(pending, max_results),
+                         key=lambda r: r.id)
+        sampled = True
 
     closures = []
     for r in pending:
@@ -83,10 +93,12 @@ def instance_from_graph(graph, results, changed: set[str], seed: int = 0,
         settles.append(s or {i})
     costs = [round(rng.uniform(cost_lo, cost_hi), 2) for _ in range(n)]
     total = sum(costs)
+    note = "settle structure from the graph; costs synthetic"
+    if sampled:
+        note += f"; sampled to {n} of the pending set"
     return Instance(
-        name=f"{len(pending)} pending checks", costs=costs, settles=settles,
-        budget=total * 0.5, all_results=n,
-        note="settle structure from the graph; costs synthetic")
+        name=f"{n} pending checks", costs=costs, settles=settles,
+        budget=total * 0.5, all_results=n, note=note)
 
 
 class OrderingEnv:
@@ -198,7 +210,8 @@ def _run(env: OrderingEnv, choose, learn: LinearQ | None = None) -> float:
     """One episode; returns the total cost paid."""
     env.reset()
     total = 0.0
-    while True:
+    # an episode cannot need more steps than there are candidates
+    for _step in range(len(env.inst.costs) + 1):
         cands = env.candidates()
         if not cands:
             break
