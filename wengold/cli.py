@@ -171,6 +171,32 @@ def cmd_singularity(args) -> int:
     return 0
 
 
+def cmd_repro(args) -> int:
+    """Capture a result's inputs, or replay a bundle against the current tree."""
+    from .repro import capture, load, replay, save
+
+    if args.action == "replay":
+        rep = replay(load(args.bundle), args.root)
+        print(rep.render())
+        return 0 if rep.reproduced else 1
+
+    from .kernel.validity import Result
+
+    graph, _files = _build(args)
+    if not args.result:
+        print("  capture needs --result <id>")
+        return 2
+    r = Result(args.result, args.kind or "sim")
+    r.status = args.status or "fail"
+    b = capture(args.path, r, verdict=args.verdict or "", detail=args.detail or "",
+                tool=args.tool or "", tool_version=args.tool_version or "")
+    out = args.out or f"{args.result}.repro.json"
+    p = save(b, out)
+    print(f"  captured {b.result_id} ({b.kind}) status={b.status}")
+    print(f"  {len(b.files)} file(s) pinned -> {p}")
+    return 0
+
+
 def cmd_generate(args) -> int:
     """Spec in, SystemVerilog out — and then check the code against the spec."""
     from .generate.emit import emit_map, emit_props, emit_rtl
@@ -765,6 +791,26 @@ def main(argv=None) -> int:
     p.add_argument("--damp", action="store_true",
                    help="report what isolating the worst block would buy")
     p.set_defaults(func=cmd_singularity)
+
+    p = sub.add_parser("repro",
+                       help="capture a result's inputs, or replay a bundle")
+    p.add_argument("action", choices=["capture", "replay"])
+    p.add_argument("path", nargs="?", default=".",
+                   help="design root (capture) or bundle file (replay)")
+    p.add_argument("--result", help="the result id being captured")
+    p.add_argument("--kind", default="sim")
+    p.add_argument("--status", default="fail")
+    p.add_argument("--verdict", default="")
+    p.add_argument("--detail", default="")
+    p.add_argument("--tool", default="")
+    p.add_argument("--tool-version", dest="tool_version", default="")
+    p.add_argument("--out", default="")
+    p.add_argument("--root", default=".", help="tree to replay against")
+    p.add_argument("--bundle", default="", help="bundle file for replay")
+    p.add_argument("--include", action="append", default=[])
+    p.add_argument("--define", action="append", default=[])
+    p.add_argument("--backend", default="auto", choices=["auto", "slang", "regex"])
+    p.set_defaults(func=cmd_repro)
 
     p = sub.add_parser("generate",
                        help="generate SystemVerilog from a spec, then check it")
