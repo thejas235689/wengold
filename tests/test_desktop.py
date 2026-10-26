@@ -125,3 +125,58 @@ def test_the_html_has_no_external_dependencies():
     assert "http://" not in HTML.split("<script>")[0]
     assert "cdn" not in HTML.lower()
     assert "<script src=" not in HTML
+
+
+# ---- real app window -------------------------------------------------------
+def test_a_browser_supporting_app_mode_is_found_or_absent_cleanly():
+    """Absence must not raise — a machine without Chrome still runs the app."""
+    from wengold.desktop import find_app_browser
+    found = find_app_browser()
+    assert found is None or isinstance(found, str)
+
+
+def test_app_mode_passes_app_and_an_isolated_profile(monkeypatch):
+    """The separate profile matters: joining the user's session means closing
+    the window can take their other tabs with it."""
+    import subprocess
+    from wengold.desktop import launch_app
+
+    captured = {}
+
+    class FakePopen:
+        def __init__(self, args, **kw):
+            captured["args"] = args
+
+    monkeypatch.setattr(subprocess, "Popen", FakePopen)
+    ok = launch_app("http://127.0.0.1:9/", browser="/usr/bin/google-chrome")
+    assert ok
+    args = captured["args"]
+    assert "--app=http://127.0.0.1:9/" in args
+    assert any(a.startswith("--user-data-dir=") for a in args)
+    assert any(a.startswith("--window-size=") for a in args)
+
+
+def test_no_browser_means_no_window_not_an_exception():
+    from wengold.desktop import launch_app
+    assert launch_app("http://127.0.0.1:9/", browser="/nonexistent/browser") is False
+
+
+def test_the_shortcut_is_a_valid_desktop_entry(tmp_path):
+    from wengold.desktop import install_shortcut
+
+    p = install_shortcut(8765, "/tmp/proj", dest=str(tmp_path / "w.desktop"))
+    if p is None:
+        pytest.skip("no automatic shortcut on this platform")
+    body = open(p).read()
+    assert body.startswith("[Desktop Entry]")
+    for key in ("Type=Application", "Name=WENGOLD", "Exec=", "Icon="):
+        assert key in body
+    assert "app_mode=True" in body, "the shortcut must open the app, not a tab"
+
+
+def test_the_icon_is_self_contained():
+    """A desktop icon that needs a CDN is not an icon."""
+    from wengold.desktop import SHORTCUT_SVG
+    assert SHORTCUT_SVG.startswith("<svg")
+    # the xmlns is a namespace URI, not a fetch — look for actual references
+    assert "href" not in SHORTCUT_SVG and "src=" not in SHORTCUT_SVG
