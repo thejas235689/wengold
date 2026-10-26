@@ -1,0 +1,2 @@
+#!/bin/sh
+exec "/usr/local/bin/python3" -c 'import sys; sys.path.insert(0, "/x"); from wengold.desktop import serve; serve("/x", port=8765, app_mode=True)'
