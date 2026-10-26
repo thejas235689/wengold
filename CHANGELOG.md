@@ -14,6 +14,50 @@ what the tags are for.
 
 ---
 
+## [0.25.0] — 2026-10-26
+
+### Added
+- **`graph/singularity.py`** and `wengold singularity` — singular configurations of
+  the dependency graph. A kinematic singularity is where a Jacobian loses rank and a
+  small motion produces an unbounded one; the dependency analogue is a block whose
+  change voids an unbounded share of the evidence.
+  - `blast_radius` — how many blocks a change propagates to.
+  - `conditioning` — worst blast radius / median. High means ill-conditioned for
+    evidence invalidation: one change buys the whole regression.
+  - `damping` — what isolating a block behind a stub buys, **and what it costs**.
+
+### Measured
+- **neorv32: 86 blocks, condition number 2.78 — well conditioned.** The most
+  load-bearing block is `neorv32_prim_fifo` at 25 blocks (29.1% of the design);
+  median blast radius is 9.
+
+### Fixed
+- **The "flaky" soundness test was never flaky — it was CWD-dependent.**
+  `test_the_generated_register_block_is_not_proved_constant` called
+  `load_spec("examples/sec_ctrl/sec_ctrl.spec.yaml")` with a relative path, so it
+  passed only when pytest ran from the repository root and failed with `SpecError`
+  from anywhere else. That is what v0.24.2 recorded as an unreproducible flake; it
+  reproduced the moment the tree was reconstructed without `examples/`. The path is
+  now resolved from `__file__`, and the test passes from any working directory.
+- `blast_radius` first walked `ancestors()`, which in this edge convention walks
+  *into* a block — so it named `neorv32_tb` as singular because the testbench
+  instantiates 76 blocks. Backwards, and plausible-looking. It now walks
+  `descendants()` (the instantiators), and a test pins the direction.
+
+### Not added, and why
+- **Damped least squares, singular value filtering, output twist screws, PVT
+  trajectory planning, wavelet singularity detection, phase unwrapping** — all six
+  are robotics, kinematics or signal-processing algorithms. WENGOLD has no robot, no
+  Jacobian, no trajectory and no signal, so there is nothing for them to compute.
+  Only the *concept* of a singularity transfers, and that is what `singularity.py`
+  implements.
+- **Recursive self-improvement** — declined. A system that rewrites and merges its
+  own code without review is the failure mode the `reviewer` in `agent/orchestra.py`
+  exists to prevent. Any change this agent makes should be read by a person.
+- **Bilevel RL** — declined for the same reason as PPO, CTDE and MARL: nested
+  optimisation needs a task distribution and training compute, and three RL attempts
+  at the scheduling problem have already lost to a one-line heuristic.
+
 ## [0.24.3] — 2026-10-25
 
 ### Fixed
