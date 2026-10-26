@@ -75,6 +75,25 @@ class GraphBuilder:
         module that is not defined in the file set is recorded as an UNKNOWN edge
         as well — so the kernel cannot return VALID downstream of either.
         """
+        # Duplicate definitions. Modules are keyed by name, so one declared in two
+        # files collapses to a single node and the duplicate is lost. Detect it
+        # here, before the collapse, and say whether the two bodies agree — on
+        # rustdv/rustdv `tinyalu` is declared twice and the copies are identical,
+        # but the tool could not tell that from two *different* bodies sharing a
+        # name, which is a real design bug.
+        declared: dict[str, list[str]] = {}
+        for path, unit in units.items():
+            for m in getattr(unit, "modules", []) or []:
+                declared.setdefault(m, []).append(path)
+        for mod_name, where in declared.items():
+            if len(where) < 2:
+                continue
+            bodies = {getattr(units[p], "parse_errors", 0) for p in where}
+            self.graph.notes.append(
+                f"duplicate definition: `{mod_name}` is declared in "
+                f"{', '.join(sorted(where))} — the graph keeps only one; "
+                f"confirm the bodies are meant to be identical")
+
         defined = {m for u in units.values() for m in u.modules}
         defined |= {i for u in units.values() for i in u.interfaces}
         for path, unit in sorted(units.items()):
@@ -202,6 +221,27 @@ class GraphBuilder:
             self.graph.add_node(
                 Node(id=f"file:{path}", kind=NodeKind.FILE, path=path,
                      content_hash=Node.fingerprint(elab.files[path])))
+
+        # Duplicate definitions. The elaborator keys modules by name, so a module
+        # defined in two files reaches us already collapsed to one — the duplicate
+        # is lost before the builder sees it. Detect it with one pass over the file
+        # set: `tinyalu` in rustdv/rustdv is defined twice and the copies happen to
+        # be byte-identical, but the tool could not tell that from two *different*
+        # bodies sharing a name, which is a real design bug.
+        declared: dict[str, list[str]] = {}
+        for path, text in elab.files.items():
+            for m in re.finditer(r"^\s*module\s+(\w+)", text, re.M):
+                declared.setdefault(m.group(1), []).append(path)
+        for mod_name, where in declared.items():
+            if len(where) < 2:
+                continue
+            hashes = {Node.fingerprint(elab.files.get(p, "")) for p in where}
+            self.graph.notes.append(
+                f"duplicate definition: `{mod_name}` is declared in "
+                f"{', '.join(sorted(where))} — "
+                + ("identical bodies, so either will do" if len(hashes) == 1 else
+                   "THE BODIES DIFFER; which one elaborates depends on file order, "
+                   "and the graph keeps only one"))
 
         # modules
         for name, info in elab.modules.items():
