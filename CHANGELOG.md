@@ -14,6 +14,38 @@ what the tags are for.
 
 ---
 
+## [0.29.0] — 2026-10-26
+
+### Added
+- **`wengold desktop <path>`** — a local app. Builds the graph once, serves a UI on
+  `127.0.0.1` and opens your browser.
+
+  | panel | what it shows |
+  | --- | --- |
+  | Summary | files, nodes, edges, blocks, unresolved, coverage, completeness |
+  | Blocks | every RTL block with what it instantiates and what instantiates it |
+  | Verdicts | the kernel's verdict and reason for every result after a change |
+  | Singularity | condition number and the blocks with the largest blast radius |
+
+### Why a local app and not Electron
+Electron and Tauri both need a Node toolchain to build and produce a
+platform-specific binary. This produces nothing to distribute: it runs wherever
+Python runs, which for a verification tool is the machine that already has the
+design on it. The UI is one stdlib `ThreadingHTTPServer` and one HTML string —
+no CDN, no bundler, no dependency. A test asserts there is no external script.
+
+The server binds to `127.0.0.1` only and has no authentication *because* it is not
+reachable off the machine. Binding it to `0.0.0.0` would make that untrue, so the
+option is not offered.
+
+### Fixed during the build
+The verdicts panel first read `ctx.results` as a sequence when it is a dict keyed
+by result id. Every row rendered with an id of `?`, an empty reason and a verdict
+of UNKNOWN — **the panel looked broken while the kernel underneath was correct**
+(neorv32 actually returns 57 valid, 26 invalidated, 1 unknown). A UI that
+misreports a correct kernel is worse than no UI, so a test pins the ids and
+reasons coming from the kernel's own dicts.
+
 ## [0.28.0] — 2026-10-26
 
 ### Added
