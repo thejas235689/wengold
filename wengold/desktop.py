@@ -27,12 +27,14 @@ option is not offered.
 from __future__ import annotations
 
 import json
+import os
 import threading
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
-__all__ = ["serve", "build_state", "HTML"]
+__all__ = ["serve", "build_state", "HTML", "launch_app",
+           "find_app_browser", "install_shortcut", "SHORTCUT_SVG"]
 
 HTML = """<!doctype html>
 <html><head><meta charset="utf-8"><title>WENGOLD</title>
@@ -252,8 +254,128 @@ def _handler(state: dict):
     return H
 
 
+
+
+# ---- real app window -------------------------------------------------------
+# A browser tab is not an app. Chrome and Edge both accept `--app=<url>`, which
+# opens a window with no address bar, no tabs and no browser menu — it looks and
+# behaves like a native window, and it costs no toolchain. Electron would give
+# the same result for ~100 MB of runtime and a Node build.
+APP_BROWSERS = (
+    "google-chrome", "google-chrome-stable", "chromium", "chromium-browser",
+    "microsoft-edge", "microsoft-edge-stable", "brave-browser",
+    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+    "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
+)
+
+
+def find_app_browser() -> str | None:
+    """A browser that supports `--app=`, or None. Absence is not an error."""
+    import shutil
+    for name in APP_BROWSERS:
+        found = shutil.which(name) or (name if os.path.exists(name) else None)
+        if found:
+            return found
+    return None
+
+
+def launch_app(url: str, browser: str | None = None,
+               size: str = "1280,860") -> bool:
+    """Open `url` in app mode. Returns False if no browser could do it.
+
+    The separate `--user-data-dir` matters: without it the window joins the
+    user's existing browser session, so closing it can take other tabs with it
+    and the window size is not respected.
+    """
+    import subprocess
+    import tempfile
+    exe = browser or find_app_browser()
+    if not exe:
+        return False
+    profile = os.path.join(tempfile.gettempdir(), "wengold-app-profile")
+    os.makedirs(profile, exist_ok=True)
+    try:
+        subprocess.Popen(
+            [exe, f"--app={url}", f"--window-size={size}",
+             f"--user-data-dir={profile}", "--no-first-run",
+             "--no-default-browser-check"],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        return True
+    except OSError:
+        return False
+
+
+SHORTCUT_SVG = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+<rect width="64" height="64" rx="14" fill="#0B0B0C"/>
+<path d="M12 42 L20 22 L28 42" stroke="#FF6A00" stroke-width="4"
+ fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M32 22 L32 42 L44 42" stroke="#F5F5F5" stroke-width="4"
+ fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<circle cx="50" cy="26" r="4" fill="#16A34A"/>
+</svg>
+"""
+
+
+def install_shortcut(port: int, root: str, dest: str | None = None,
+                     icon: str | None = None) -> str | None:
+    """Write a desktop launcher that starts the app for `root`.
+
+    Linux writes a `.desktop` entry. macOS and Windows get the command to make
+    their own, printed rather than silently half-installed — a shortcut that
+    only works on one platform should say so instead of pretending.
+    """
+    import stat
+    import sys
+
+    python = sys.executable or "python3"
+    repo = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    cmd = f'{python} -c "import sys;sys.path.insert(0,{repo!r});' \
+          f'from wengold.desktop import serve;serve({root!r},port={port},app_mode=True)"'
+
+    if not sys.platform.startswith("linux"):
+        print("  no automatic shortcut on this platform. To make one:")
+        print(f'    {cmd}')
+        return None
+
+    if icon is None:
+        icon_dir = os.path.join(os.path.expanduser("~"), ".local", "share", "icons")
+        os.makedirs(icon_dir, exist_ok=True)
+        icon = os.path.join(icon_dir, "wengold.svg")
+        try:
+            open(icon, "w").write(SHORTCUT_SVG)
+        except OSError:
+            icon = "applications-engineering"
+
+    target = dest or os.path.join(
+        os.path.expanduser("~"), ".local", "share", "applications", "wengold.desktop")
+    os.makedirs(os.path.dirname(target), exist_ok=True)
+    body = f"""[Desktop Entry]
+Type=Application
+Name=WENGOLD
+Comment=Validity kernel for silicon verification
+Exec={cmd}
+Icon={icon}
+Terminal=false
+Categories=Development;Electronics;
+StartupNotify=true
+"""
+    open(target, "w").write(body)
+    try:
+        os.chmod(target, os.stat(target).st_mode | stat.S_IXUSR)
+    except OSError:
+        pass
+    return target
+
+
 def serve(path: str = ".", port: int = 8765, open_browser: bool = True,
-          quiet: bool = False) -> None:
+          quiet: bool = False, app_mode: bool = True,
+          window_size: str = "1280,860") -> None:
+    """Build the graph and serve the app.
+
+    `app_mode` defaults to True: the window opens without browser chrome when a
+    Chromium-family browser is present, and falls back to a normal tab when it is
+    not. A desktop app should not require a flag to be a desktop app.
+    """
     """Build the graph, serve the UI on 127.0.0.1 and open a browser."""
     state = build_state(path)
     httpd = ThreadingHTTPServer(("127.0.0.1", port), _handler(state))
@@ -263,7 +385,13 @@ def serve(path: str = ".", port: int = 8765, open_browser: bool = True,
               f"{state['blocks']} blocks, {state['unresolved']} unresolved")
         print(f"  serving {url}   (Ctrl-C to stop)")
     if open_browser:
-        threading.Timer(0.4, lambda: webbrowser.open(url)).start()
+        def _open():
+            if app_mode and launch_app(url, size=window_size):
+                return
+            if app_mode and not quiet:
+                print("  no Chrome/Edge found for app mode — opening a tab instead")
+            webbrowser.open(url)
+        threading.Timer(0.4, _open).start()
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:
