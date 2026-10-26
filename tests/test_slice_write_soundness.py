@@ -11,6 +11,8 @@ RTL contains — the engine reported **proof** for properties that are false. A
 verification tool that proves a false property has no value at all, so these tests
 pin both directions: a false property must fail, and a true one must still prove.
 """
+from pathlib import Path
+
 from wengold.formal import Property, prove
 
 SLICE_WRITE = """
@@ -129,7 +131,13 @@ def test_the_generated_register_block_is_not_proved_constant():
     assert _status(rtl, f"{f3} == 0") == "proof"
 
     # the shipped example still emits provable RTL
-    ex = load_spec("examples/sec_ctrl/sec_ctrl.spec.yaml")
+    # resolve from the repository root, not from the working directory. This test
+    # was reported as "flaky" in v0.24.2 — it is not: it passed only when pytest
+    # happened to be run from the repo root, because the path below is relative.
+    # Run from anywhere else and it fails with SpecError, which looks like a
+    # soundness regression and is not.
+    root = Path(__file__).resolve().parent.parent
+    ex = load_spec(str(root / "examples/sec_ctrl/sec_ctrl.spec.yaml"))
     assert "module sec_ctrl" in emit_rtl(ex)
 
 
