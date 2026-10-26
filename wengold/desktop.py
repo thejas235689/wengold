@@ -30,6 +30,7 @@ import json
 import os
 import threading
 import webbrowser
+from pathlib import Path
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
@@ -38,100 +39,249 @@ __all__ = ["serve", "build_state", "HTML", "launch_app",
 
 HTML = """<!doctype html>
 <html><head><meta charset="utf-8"><title>WENGOLD</title>
+<link rel="icon" href="/icon.png">
 <style>
-:root{--bg:#0B0B0C;--panel:#141416;--line:#26262A;--fg:#F5F5F5;
---dim:#9A9AA0;--orange:#FF6A00;--green:#16A34A;--blue:#2563EB}
+:root{--bg:#FFFFFF;--panel:#FAFAFA;--panel2:#F4F4F5;--line:#E4E4E7;
+--line2:#EFEFF1;--fg:#18181B;--dim:#52525B;--dim2:#A1A1AA;
+--red:#C81E1E;--red-soft:rgba(200,30,30,.10);--red-line:rgba(200,30,30,.35);
+--grey:#3F3F46;--grey-soft:rgba(63,63,70,.08)}
 *{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--fg);
-font:14px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace}
-header{padding:18px 24px;border-bottom:1px solid var(--line);display:flex;
-align-items:center;gap:16px}
-h1{font-size:15px;margin:0;letter-spacing:.14em;font-weight:700}
-h1 span{color:var(--orange)}
-#path{color:var(--dim);font-size:12px}
-nav{display:flex;gap:4px;padding:10px 24px;border-bottom:1px solid var(--line)}
-button{background:transparent;border:1px solid transparent;color:var(--dim);
-padding:6px 12px;border-radius:6px;cursor:pointer;font:inherit;font-size:13px}
-button.on{background:var(--panel);border-color:var(--line);color:var(--fg)}
-button:hover{color:var(--fg)}
-main{padding:22px 24px}
-.cards{display:flex;gap:14px;flex-wrap:wrap;margin-bottom:22px}
-.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;
-padding:14px 18px;min-width:130px}
-.card .k{color:var(--dim);font-size:11px;text-transform:uppercase;
-letter-spacing:.08em}
-.card .v{font-size:24px;font-weight:600;margin-top:4px}
-.ok{color:var(--green)}.bad{color:var(--orange)}.info{color:var(--blue)}
-table{width:100%;border-collapse:collapse;font-size:13px}
-th{text-align:left;color:var(--dim);font-weight:500;font-size:11px;
-text-transform:uppercase;letter-spacing:.08em;padding:8px 10px;
-border-bottom:1px solid var(--line)}
-td{padding:7px 10px;border-bottom:1px solid #1b1b1e}
-tr:hover td{background:#17171a}
-.tag{padding:1px 7px;border-radius:4px;font-size:11px}
-.t-valid{background:rgba(22,163,74,.16);color:var(--green)}
-.t-inv{background:rgba(255,106,0,.16);color:var(--orange)}
-.t-unk{background:rgba(37,99,235,.16);color:var(--blue)}
-.bar{height:4px;background:var(--line);border-radius:2px;overflow:hidden;
-margin-top:6px}
-.bar i{display:block;height:100%;background:var(--orange)}
-#msg{color:var(--dim);font-size:12px;padding:0 24px 18px}
+html,body{height:100%}
+body{margin:0;background:var(--bg);color:var(--fg);overflow:hidden;
+font:12.5px/1.45 ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace}
+button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
+#top{height:44px;display:flex;align-items:center;gap:12px;padding:0 14px;
+border-bottom:2px solid var(--red);background:var(--bg)}
+#top img{width:20px;height:20px;border-radius:4px}
+#mark{font-weight:700;letter-spacing:.16em;font-size:11.5px}
+#mark i{font-style:normal;color:var(--red)}
+#proj{color:var(--dim);font-size:11.5px}
+#spacer{flex:1}
+.pill{border:1px solid var(--line);border-radius:5px;padding:3px 8px;
+font-size:11px;color:var(--dim)}
+.pill b{color:var(--fg);font-weight:600}
+.pill.ok{border-color:var(--line);color:var(--grey)}
+.pill.warn{border-color:var(--red-line);color:var(--red);background:var(--red-soft)}
+#body{display:grid;grid-template-columns:238px 1fr 372px;
+height:calc(100% - 44px - 26px - 172px)}
+#cli{height:172px;border-top:2px solid var(--red);background:var(--bg);
+display:flex;flex-direction:column;overflow:hidden}
+#clihead{display:flex;align-items:center;gap:8px;padding:5px 12px;
+font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;
+color:var(--dim2);border-bottom:1px solid var(--line);background:var(--panel)}
+#out{flex:1;overflow:auto;padding:8px 12px;font-size:12px;line-height:1.5;
+white-space:pre-wrap;word-break:break-word}
+#out .cmd{color:var(--red)}
+#out .dim{color:var(--dim2)}
+#out .ok{color:var(--grey)}
+#inrow{display:flex;align-items:center;gap:8px;border-top:1px solid var(--line);
+padding:6px 12px;background:var(--panel)}
+#caret{color:var(--red);font-weight:700}
+#in{flex:1;background:transparent;border:0;outline:0;color:var(--fg);
+font:inherit;font-size:12.5px}
+#in::placeholder{color:var(--dim2)}
+.pane{overflow:auto;border-right:1px solid var(--line);background:var(--panel)}
+.pane:last-child{border-right:0;background:var(--panel2)}
+.panehead{position:sticky;top:0;z-index:2;background:var(--panel);
+border-bottom:1px solid var(--line);padding:7px 12px;font-size:10.5px;
+letter-spacing:.1em;text-transform:uppercase;color:var(--dim2);
+display:flex;justify-content:space-between}
+.pane:last-child .panehead{background:var(--panel2)}
+.row{padding:3px 12px;white-space:nowrap;overflow:hidden;
+text-overflow:ellipsis;color:var(--dim);cursor:pointer;font-size:12px}
+.row:hover{background:var(--panel2);color:var(--fg)}
+.row.sel{background:var(--red-soft);color:var(--fg);box-shadow:inset 2px 0 0 var(--red)}
+.dir{color:var(--fg);font-weight:600}
+.row .n{color:var(--dim2);font-size:10.5px;margin-left:6px}
+.caret{display:inline-block;width:10px;color:var(--dim2)}
+.r{display:grid;grid-template-columns:16px 1fr auto;gap:8px;align-items:center;
+padding:5px 12px;border-bottom:1px solid var(--line2);cursor:pointer;font-size:12px}
+.r:hover{background:var(--panel2)}
+.r.sel{background:var(--red-soft);box-shadow:inset 2px 0 0 var(--red)}
+.r .id{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.v{font-size:10px;padding:1px 6px;border-radius:3px;letter-spacing:.04em}
+.v.VALID{background:var(--grey-soft);color:var(--grey)}
+.v.INVALIDATED{background:var(--red-soft);color:var(--red);font-weight:600}
+.v.UNKNOWN{background:var(--panel2);color:var(--dim2)}
+.g{font-size:11px}
+.g.ok{color:var(--grey)}.g.bad{color:var(--red)}.g.un{color:var(--dim2)}
+#detail{padding:14px}
+#detail h3{margin:0 0 3px;font-size:13px;font-weight:600;word-break:break-all}
+#detail .sub{color:var(--dim2);font-size:11px;margin-bottom:14px}
+.kv{display:grid;grid-template-columns:96px 1fr;gap:4px 10px;font-size:12px;margin-bottom:16px}
+.kv dt{color:var(--dim2)}
+.kv dd{margin:0;word-break:break-word}
+.why{border-left:2px solid var(--red-line);padding:8px 0 8px 12px;
+color:var(--dim);font-size:12px;line-height:1.55}
+.why b{color:var(--fg);font-weight:600}
+.bar{height:3px;background:var(--line);border-radius:2px;overflow:hidden;margin:6px 0 14px}
+.bar i{display:block;height:100%;background:var(--red)}
+.empty{color:var(--dim2);padding:14px;font-size:12px}
+#status{height:26px;display:flex;align-items:center;gap:14px;padding:0 14px;
+border-top:1px solid var(--line);background:var(--panel);font-size:11px;
+color:var(--dim2);overflow:hidden}
+#status b{color:var(--dim);font-weight:500}
+#status .sep{color:var(--line)}
+::-webkit-scrollbar{width:9px;height:9px}
+::-webkit-scrollbar-thumb{background:#D4D4D8;border-radius:5px}
+::-webkit-scrollbar-track{background:transparent}
 </style></head><body>
-<header><h1>WEN<span>GOLD</span></h1><span id="path"></span></header>
-<nav>
-<button data-t="summary" class="on">Summary</button>
-<button data-t="blocks">Blocks</button>
-<button data-t="verdicts">Verdicts</button>
-<button data-t="singularity">Singularity</button>
-</nav>
-<main id="view"></main><div id="msg"></div>
+
+<div id="top">
+  <img src="/icon.png" alt="">
+  <span id="mark">WEN<i>GOLD</i></span>
+  <span id="proj">loading…</span>
+  <span id="spacer"></span>
+  <span class="pill" id="p-cov">coverage —</span>
+  <span class="pill" id="p-cond">condition —</span>
+  <span class="pill" id="p-unres">unresolved —</span>
+</div>
+
+<div id="body">
+  <div class="pane"><div class="panehead"><span>Explorer</span><span id="nf"></span></div>
+    <div id="tree"></div></div>
+  <div class="pane"><div class="panehead"><span>Results</span><span id="nr"></span></div>
+    <div id="results"></div></div>
+  <div class="pane"><div class="panehead"><span>Detail</span></div>
+    <div id="detail"><div class="empty">select a result or a file</div></div></div>
+</div>
+
+<div id="cli">
+  <div id="clihead"><span>CLI</span><span style="color:var(--dim2)">type <b style="color:var(--fg)">help</b> for commands</span></div>
+  <div id="out"><span class="dim">wengold desktop — the kernel is ready.</span></div>
+  <div id="inrow"><span id="caret">›</span><input id="in" autocomplete="off" spellcheck="false" placeholder="summary · blocks · verdicts &lt;id&gt; · singularity · files · help"></div>
+</div>
+<div id="status"><span id="s-msg">—</span></div>
+
 <script>
-const view=document.getElementById('view');
-const esc=s=>String(s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
-async function get(u){const r=await fetch(u);return r.json()}
-function cards(rows){return '<div class="cards">'+rows.map(([k,v,c])=>
-`<div class="card"><div class="k">${esc(k)}</div>
-<div class="v ${c||''}">${esc(v)}</div></div>`).join('')+'</div>'}
-const TABS={
-async summary(){const s=await get('/api/summary');
- document.getElementById('path').textContent=s.path;
- return cards([['files',s.files],['nodes',s.nodes],['edges',s.edges],
- ['blocks',s.blocks],['unresolved',s.unresolved,s.unresolved?'bad':'ok'],
- ['coverage',s.coverage+'%',s.coverage>=80?'ok':s.coverage>=50?'info':'bad'],
- ['complete',s.complete?'yes':'no',s.complete?'ok':'bad']])
- +`<div class="bar"><i style="width:${s.coverage}%"></i></div>`
- +(s.notes.length?'<p style="color:#9A9AA0;margin-top:16px">'+
- esc(s.notes.join(' · '))+'</p>':'')},
-async blocks(){const b=await get('/api/blocks');
- return '<table><tr><th>block</th><th>instantiates</th><th>instantiated by</th></tr>'
- +b.blocks.map(r=>`<tr><td>${esc(r.name)}</td><td>${r.out}</td>
- <td>${r.in}</td></tr>`).join('')+'</table>'},
-async verdicts(){const v=await get('/api/verdicts');
- const t={VALID:'t-valid',INVALIDATED:'t-inv',UNKNOWN:'t-unk'};
- return `<p style="color:#9A9AA0">change: <b style="color:#F5F5F5">${esc(v.change)}</b>
- — ${v.counts.VALID||0} valid, ${v.counts.INVALIDATED||0} invalidated,
- ${v.counts.UNKNOWN||0} unknown</p>`
- +'<table><tr><th>result</th><th>verdict</th><th>reason</th></tr>'
- +v.results.map(r=>`<tr><td>${esc(r.id)}</td>
- <td><span class="tag ${t[r.verdict]||''}">${esc(r.verdict)}</span></td>
- <td style="color:#9A9AA0">${esc(r.reason)}</td></tr>`).join('')+'</table>'},
-async singularity(){const s=await get('/api/singularity');
- if(!s.blocks)return '<p>no blocks</p>';
- return cards([['blocks',s.blocks],['condition',s.condition_number,
- s.condition_number>10?'bad':'ok'],['worst radius',s.worst_radius],
- ['median',s.median]])+'<p style="color:#9A9AA0">'+esc(s.verdict)+'</p>'
- +'<table><tr><th>block</th><th>blast radius</th><th>share</th></tr>'
- +s.singular.map(r=>`<tr><td>${esc(r.name)}</td><td>${r.radius}</td>
- <td>${r.fraction}</td></tr>`).join('')+'</table>'}
-};
-async function show(t){document.querySelectorAll('nav button')
- .forEach(b=>b.classList.toggle('on',b.dataset.t===t));
- view.innerHTML='<p style="color:#9A9AA0">loading…</p>';
- try{view.innerHTML=await TABS[t]()}catch(e){view.innerHTML=
- '<p class="bad">'+esc(e.message)+'</p>'}}
-document.querySelectorAll('nav button').forEach(b=>
- b.onclick=()=>show(b.dataset.t));
-show('summary');
+/*__STATE__*/
+const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const $=id=>document.getElementById(id);
+async function get(u){const r=await fetch(u);if(!r.ok)throw new Error(u+' '+r.status);return r.json()}
+
+async function boot(){
+  try{
+    // the state is inlined by the server, so the first paint needs no request
+    const S=window.__WENGOLD__;
+    const s=S.summary;
+    $('proj').textContent=s.path.split('/').slice(-2).join('/');
+    $('p-cov').innerHTML='coverage <b>'+s.coverage+'%</b>';
+    $('p-cov').className='pill '+(s.coverage>=80?'ok':'warn');
+    const c=S.singularity;
+    $('p-cond').innerHTML='condition <b>'+(c.condition_number||0).toFixed(2)+'</b>';
+    $('p-cond').className='pill '+((c.condition_number||0)>10?'warn':'ok');
+    $('p-unres').innerHTML='unresolved <b>'+s.unresolved+'</b>';
+    $('p-unres').className='pill '+(s.unresolved?'warn':'ok');
+    $('s-msg').innerHTML=s.blocks+' blocks <span class="sep">·</span> '+
+      s.nodes+' nodes <span class="sep">·</span> '+s.edges+' edges <span class="sep">·</span> '+
+      (s.complete?'<b>complete</b>':'<b>incomplete</b>');
+    renderTree(S.tree);
+    const r=S.verdicts;renderResults(r);
+    // open the most interesting result so the detail pane is not blank on arrival
+    const first=r.results.find(x=>x.verdict==='INVALIDATED')||r.results[0];
+    if(first){const el=document.querySelector('#results [data-id="'+
+      CSS.escape(first.id)+'"]');if(el)el.click();}
+  }catch(e){$('s-msg').textContent='error: '+e.message}
+}
+
+function renderTree(d){
+  $('nf').textContent=d.files.length+' files';
+  const byDir={};
+  for(const f of d.files){
+    const parts=f.split('/');const dir=parts.length>1?parts.slice(0,-1).join('/'):'';
+    (byDir[dir]=byDir[dir]||[]).push(parts[parts.length-1]);
+  }
+  let h='';
+  for(const dir of Object.keys(byDir).sort()){
+    if(dir)h+='<div class="row dir"><span class="caret">▾</span>'+esc(dir)+
+      '<span class="n">'+byDir[dir].length+'</span></div>';
+    for(const f of byDir[dir].sort())
+      h+='<div class="row" data-file="'+esc(dir?dir+'/'+f:f)+'"><span class="caret"></span>'+
+         esc(f)+'</div>';
+  }
+  $('tree').innerHTML=h||'<div class="empty">no HDL files</div>';
+  $('tree').querySelectorAll('[data-file]').forEach(el=>el.onclick=()=>selectFile(el));
+}
+
+async function selectFile(el){
+  document.querySelectorAll('#tree .row').forEach(r=>r.classList.remove('sel'));
+  el.classList.add('sel');
+  const f=el.dataset.file;
+  try{renderFile(await get('/api/detail?file='+encodeURIComponent(f)),f)}
+  catch(e){$('detail').innerHTML='<div class="empty">'+esc(e.message)+'</div>'}
+}
+
+function renderFile(d,f){
+  $('detail').innerHTML='<h3>'+esc(f)+'</h3><div class="sub">'+d.blocks.length+
+    ' module(s) defined here</div>'+
+    (d.blocks.length?'<dl class="kv">'+d.blocks.map(b=>'<dt>'+esc(b.name)+'</dt><dd>'+
+      b.instantiates+' out · '+b.instantiated_by+' in</dd>').join('')+'</dl>'
+      :'<div class="empty">no modules</div>');
+}
+
+function renderResults(r){
+  $('nr').textContent=(r.results||[]).length+' results';
+  const order={INVALIDATED:0,UNKNOWN:1,VALID:2};
+  const rows=[...(r.results||[])].sort((a,b)=>(order[a.verdict]-order[b.verdict])||
+    a.id.localeCompare(b.id));
+  const gl={VALID:'ok',INVALIDATED:'bad',UNKNOWN:'un'};
+  const sym={VALID:'✓',INVALIDATED:'✗',UNKNOWN:'?'};
+  $('results').innerHTML=rows.map(x=>'<div class="r" data-id="'+esc(x.id)+'">'+
+    '<span class="g '+gl[x.verdict]+'">'+sym[x.verdict]+'</span>'+
+    '<span class="id">'+esc(x.id)+'</span>'+
+    '<span class="v '+x.verdict+'">'+x.verdict+'</span></div>').join('')
+    ||'<div class="empty">no results</div>';
+  $('results').querySelectorAll('[data-id]').forEach(el=>el.onclick=()=>{
+    document.querySelectorAll('#results .r').forEach(x=>x.classList.remove('sel'));
+    el.classList.add('sel');
+    renderResult(rows.find(v=>v.id===el.dataset.id), r.change);
+  });
+}
+
+function renderResult(x,change){
+  const col={VALID:'var(--grey)',INVALIDATED:'var(--red)',UNKNOWN:'var(--dim2)'}[x.verdict];
+  $('detail').innerHTML='<h3>'+esc(x.id)+'</h3>'+
+    '<div class="sub">verdict <span style="color:'+col+'">'+x.verdict+
+    '</span> after a change to <b style="color:var(--fg)">'+esc(change)+'</b></div>'+
+    '<dl class="kv"><dt>verdict</dt><dd style="color:'+col+'">'+x.verdict+'</dd>'+
+    '<dt>changed</dt><dd>'+esc(change)+'</dd></dl>'+
+    '<div class="why"><b>Why.</b> '+esc(x.reason||'the kernel gave no reason')+'</div>';
+}
+
+/* ---------- CLI ---------- */
+const out=$('out'), inp=$('in');
+function write(html){out.insertAdjacentHTML('beforeend',html);out.scrollTop=out.scrollHeight}
+function esc2(s){return esc(s)}
+
+async function runCmd(line){
+  const cmd=line.trim();
+  if(!cmd)return;
+  write('<div><span class="cmd">› '+esc2(cmd)+'</span></div>');
+  inp.value='';
+  if(cmd==='clear'){out.innerHTML='';return}
+  if(cmd==='help'){
+    // Built from an array: an escape sequence inside a string literal had
+    // turned into a real line break and broke the whole script.
+    write('<div class="dim">'+[
+      'summary              graph counts and completeness',
+      'files                the HDL file set',
+      'blocks               every RTL block, fan-in and fan-out',
+      'verdicts [id]        kernel verdicts after the change',
+      'singularity          conditioning and blast radii',
+      'clear                clear this pane',
+      'help                 this list'
+    ].join(String.fromCharCode(10))+'</div>');
+    return;
+  }
+  try{
+    const r=await get('/api/exec?cmd='+encodeURIComponent(cmd));
+    write('<div class="'+(r.ok?'ok':'dim')+'">'+esc2(r.output)+'</div>');
+  }catch(e){write('<div class="dim">error: '+esc2(e.message)+'</div>')}
+}
+inp.addEventListener('keydown',e=>{if(e.key==='Enter')runCmd(inp.value)});
+$('clihead').addEventListener('click',()=>inp.focus());
+
+boot();
 </script></body></html>
 """
 
@@ -161,7 +311,129 @@ def build_state(path: str) -> dict:
         "complete": bool(c["complete"]),
         "notes": [n for n in dict.fromkeys(g.notes)][:3],
         "graph": g, "block_names": blocks,
+        "file_paths": sorted(
+            str(Path(f).resolve().relative_to(Path(path).resolve()))
+            if str(Path(f).resolve()).startswith(str(Path(path).resolve())) else f
+            for f in files),
     }
+
+
+def _files_of(state: dict) -> list:
+    """The HDL file set, relative to the project root, for the explorer."""
+    return list(state.get("file_paths", []))
+
+
+def _file_detail(state: dict, rel: str) -> dict:
+    """What a file contributes: its modules and their fan-in/out."""
+    g = state["graph"]
+    root = Path(state["path"])
+    want = rel.lstrip("./")
+
+    def norm(path) -> str:
+        p = str(path)
+        try:
+            return str(Path(p).resolve().relative_to(root.resolve()))
+        except (ValueError, OSError):
+            return p.lstrip("./")
+
+    blocks = []
+    for b in state["block_names"]:
+        node = g.nodes.get(b)
+        path = getattr(node, "path", None)
+        if path and norm(path) == want:
+            blocks.append({"name": b, "instantiates": len(g.rtl_ancestors(b)),
+                           "instantiated_by": len(g.rtl_descendants(b))})
+    notes = [n for n in dict.fromkeys(g.notes) if rel and rel in n]
+    return {"file": rel, "blocks": blocks, "notes": notes[:6]}
+
+
+# A deliberately tiny command surface. The desktop app runs on the user's machine
+# with their design on disk, so it must never be a shell: only these verbs run, and
+# each one reads state the kernel already computed. Adding a verb here is a code
+# change, not a config option.
+CLI_COMMANDS = ("summary", "files", "blocks", "verdicts", "singularity", "help")
+
+
+def _page(state: dict) -> str:
+    """The app HTML with the initial state inlined."""
+    import json as _json
+    initial = {
+        "summary": {k: v for k, v in state.items()
+                    if k not in ("graph", "block_names", "file_paths")},
+        "tree": {"files": _files_of(state)},
+        "verdicts": _verdicts(state),
+        "singularity": _singularity(state),
+    }
+    blob = _json.dumps(initial).replace("</", "<\\/")
+    return HTML.replace("/*__STATE__*/", "window.__WENGOLD__ = " + blob + ";")
+
+
+
+def _exec(state: dict, line: str) -> dict:
+    """Run one whitelisted command against the indexed state."""
+    parts = line.strip().split()
+    if not parts:
+        return {"ok": True, "output": ""}
+    verb, args = parts[0].lower(), parts[1:]
+    if verb not in CLI_COMMANDS:
+        return {"ok": False, "output": f"unknown command: {verb}. try: help"}
+
+    if verb == "summary":
+        s = state
+        return {"ok": True, "output": (
+            f"files {s['files']}  nodes {s['nodes']}  edges {s['edges']}\n"
+            f"blocks {s['blocks']}  unresolved {s['unresolved']}  "
+            f"coverage {s['coverage']}%\n"
+            f"complete {s['complete']}")}
+
+    if verb == "help":
+        return {"ok": True, "output":
+                "summary              graph counts and completeness\n"
+                "files                the HDL file set\n"
+                "blocks               every RTL block, fan-in and fan-out\n"
+                "verdicts [id]        kernel verdicts after the change\n"
+                "singularity          conditioning and blast radii\n"
+                "clear                clear the pane\n"
+                "help                 this list"}
+
+    if verb == "files":
+        fs = _files_of(state)
+        return {"ok": True, "output": "\n".join(fs) if fs else "(no HDL files)"}
+
+    if verb == "blocks":
+        g = state["graph"]
+        rows = [f"{b:<34}{len(g.rtl_ancestors(b)):>4} out "
+                f"{len(g.rtl_descendants(b)):>4} in"
+                for b in state["block_names"]]
+        return {"ok": True, "output": "\n".join(rows) if rows else "(no blocks)"}
+
+    if verb == "verdicts":
+        v = _verdicts(state)
+        if args:
+            want = args[0]
+            hit = [r for r in v["results"] if r["id"] == want]
+            if not hit:
+                return {"ok": False, "output": f"no result {want!r}"}
+            r = hit[0]
+            return {"ok": True, "output": (
+                f"{r['id']}\n  verdict {r['verdict']}\n  {r['reason']}")}
+        counts = v["counts"]
+        head = (f"change: {v['change']}\n"
+                + "  ".join(f"{k} {n}" for k, n in sorted(counts.items())))
+        return {"ok": True, "output": head}
+
+    if verb == "singularity":
+        s = _singularity(state)
+        # `_singularity` reports the worst *radius*, not a worst name — the name is
+        # the first entry of `singular`. Reading `s['worst']` raised KeyError and
+        # took the whole connection down.
+        worst = s["singular"][0]["name"] if s.get("singular") else "(none)"
+        return {"ok": True, "output": (
+            f"blocks {s['blocks']}  condition {s['condition_number']:.2f}\n"
+            f"worst {worst} ({s['worst_radius']} blocks)  "
+            f"median {s['median']:.0f}\n{s['verdict']}")}
+
+    return {"ok": True, "output": ""}
 
 
 def _verdicts(state: dict) -> dict:
@@ -223,11 +495,36 @@ def _handler(state: dict):
         def do_GET(self):
             u = urlparse(self.path)
             if u.path == "/":
-                self._send(HTML.encode(), "text/html; charset=utf-8")
+                # Server-render the first paint. Fetching the initial state meant a
+                # blank window until three round-trips finished, and anything that
+                # screenshots or proxies the page before then saw "loading…".
+                self._send(_page(state).encode(), "text/html; charset=utf-8")
                 return
             if u.path == "/api/summary":
                 self._json({k: v for k, v in state.items()
                             if k not in ("graph", "block_names")})
+                return
+            if u.path == "/icon.png":
+                from .assets import icon_bytes
+                self._send(icon_bytes(), "image/png")
+                return
+            if u.path == "/api/exec":
+                q = parse_qs(u.query)
+                try:
+                    payload = _exec(state, (q.get("cmd") or [""])[0])
+                except Exception as exc:
+                    # One bad command must not take the connection down with it —
+                    # the browser saw a dropped socket instead of an error.
+                    payload = {"ok": False,
+                               "output": f"{type(exc).__name__}: {exc}"}
+                self._json(payload)
+                return
+            if u.path == "/api/tree":
+                self._json({"files": _files_of(state)})
+                return
+            if u.path == "/api/detail":
+                q = parse_qs(u.query)
+                self._json(_file_detail(state, (q.get("file") or [""])[0]))
                 return
             if u.path == "/api/blocks":
                 from .graph.builder import GraphBuilder  # noqa: F401
