@@ -14,6 +14,38 @@ what the tags are for.
 
 ---
 
+## [0.30.0] — 2026-10-26
+
+### Added
+- **`agent/propose.py`** and `wengold propose` — edits the kernel can justify,
+  shown as unified diffs and applied only on request.
+
+  | proposal | the kernel fact behind it |
+  | --- | --- |
+  | stub the unresolved modules | `completeness()` names each module instantiated but not defined |
+  | exclude a duplicate definition | two files declare the same module; the graph keeps one, and which one depends on file order |
+
+- **`wengold.propose`** in the VS Code / Cursor extension: proposals open in an
+  output channel with the diff, and nothing is written from the editor.
+
+### The safety property
+**Proposing is not applying.** `Proposal.apply()` is a separate, explicit call, and
+`wengold propose` prints "nothing applied" unless given `--apply <id>`. A tool that
+edits RTL without showing the diff first is not one you would let near a tapeout, so
+a test pins it: `test_a_proposal_never_applies_itself`.
+
+### What it deliberately does not do
+It does not write RTL logic, guess a missing module's behaviour, or invent a fix for
+a failing check. **Stubs are empty by construction and say so in the generated
+comment** — a stub returning 0 would let a check pass for the wrong reason. There is
+no language model behind this: every proposal traces to a kernel fact, and free-form
+generation would belong behind the same diff gate rather than replacing it.
+
+### Measured on neorv32
+The duplicate proposal produces a file list that keeps the seven VHDL copies and
+excludes their Verilog twins — turning "which definition elaborates" from an
+accident of file order into a decision.
+
 ## [0.29.0] — 2026-10-26
 
 ### Added
