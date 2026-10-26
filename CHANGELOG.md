@@ -14,6 +14,43 @@ what the tags are for.
 
 ---
 
+## [0.26.0] — 2026-10-26
+
+### Added
+- **`learn/universal.py`** — bounded universal prediction and unbiased off-policy
+  evaluation.
+  - `Mixture` — a description-length prior over a **fixed, small** hypothesis class,
+    updated by Bayes. A Solomonoff-*style* mixture, explicitly not Solomonoff
+    induction.
+  - `ips` / `snips` — estimate how a policy that never ran would have scored, using
+    only logged runs.
+
+### Measured
+- **SNIPS recovers the target value; IPS explodes.** Evaluating a deterministic
+  safest-first ordering against uniform-random-ordering logs: true value 3.705.
+  IPS reports **427.4 ± 51.3** with an effective sample of 85 out of 5,000 — the
+  target ordering has probability 1/8!, so a handful of trajectories carry all the
+  weight. SNIPS reports **3.741 ± 0.199**, error +0.04.
+- **The description-length prior is slow to find structure.** On `101` repeated, the
+  mixture predicts no better than a frequency count over the first dozen
+  observations, and its best hypothesis is "always 1" rather than "period 3" —
+  which costs more bits than twelve observations can pay for.
+
+### Fixed
+- The SNIPS standard error used the naive variance of the weighted values, reporting
+  **±50** on an estimate accurate to ±0.01. Replaced with the delta-method error for
+  a ratio estimator; it now reports ±0.199. A wrong error bar is worse than none.
+
+### Not implemented, and why
+- **Solomonoff induction** is incomputable: the prior sums over all programs and the
+  halting problem decides which contribute. `Mixture` is the honest bounded version
+  and is named as such everywhere.
+- **Universal optimality (AIXI)** is incomputable for the same reason, and its
+  optimality is asymptotic over an infinite horizon. Nothing here claims it.
+- **Sequential decision theory** was already the shape of `agent/belief.py` and
+  `agent/planning.py` — a POMDP over evidence with a belief and a policy. Nothing
+  new was needed.
+
 ## [0.25.0] — 2026-10-26
 
 ### Added
