@@ -1,7 +1,7 @@
 {
   "name": "wengold",
   "displayName": "WENGOLD",
-  "description": "Validity kernel for silicon verification — which of your prior results still hold after a change",
+  "description": "Validity kernel for silicon verification \u2014 which of your prior results still hold after a change",
   "version": "0.1.0",
   "publisher": "thejas235689",
   "license": "MIT OR Apache-2.0",
@@ -45,6 +45,10 @@
       {
         "command": "wengold.clear",
         "title": "WENGOLD: Clear diagnostics"
+      },
+      {
+        "command": "wengold.propose",
+        "title": "WENGOLD: Propose an edit the kernel can justify"
       }
     ],
     "viewsContainers": {
