@@ -207,6 +207,31 @@ generated spec fields. The command says so when given a path.
 that conclusion instead of hiding it. The generative models are scored the same
 way — see the section below.
 
+### Does ML work with design and verification? Measured against simulation: no.
+
+With `cocotb`, Icarus, Verilator and GHDL installed, the question was tested on
+real RTL rather than on the graph alone. Mutation testing on `picosoc/simpleuart.v`
+and `spimemio.v`: inject a fault, simulate, compare the output trace.
+
+| framing | samples | positives | result vs majority baseline |
+| --- | --- | --- | --- |
+| run-level: "is this run faulty?" | 33 | 6 | 82% vs 82% — ties |
+| run-level, per-signal features | 33 | 6 | 76% vs 82% — worse |
+| signal-level: "will this signal diverge?" | 1,338 | 9 | 92.7% vs 99.3% — worse |
+
+**Three framings, three failures to beat guessing.** The waveform features do carry
+signal — `wengold learn waveform` separates clocks from data buses from tied-off
+nets at 18/19 correct with no labels — but that signal does not predict faults.
+
+The structural reason is worth stating: a fault injected into RTL is present from
+time zero, so there is no "before" to warn from. Early-warning localisation assumes
+a degradation that develops over time, and mutation testing cannot manufacture one.
+
+**What this means for the product:** the kernel's exact machinery is the product.
+ML sits beside it, and every measurement has either tied, lost, or detected a
+proxy. The honest description of `wengold/learn/` is a correct little deep-learning
+library that the product does not depend on.
+
 ## The agent layer: six stages, and the one that has nothing to win
 
 ```bash
@@ -611,23 +636,68 @@ Palladium, Veloce, Vivado, Quartus, Yosys, vManager.
 
 ## Measured on real projects
 
-Every number below came from running the tool on the project named. The full runs
-are in [`docs/measurements/`](docs/measurements/).
+**33 repositories attempted, 30 indexed.** Every number below came from running the
+tool on the project named; the full table is in [`RESULTS.md`](RESULTS.md).
 
-| project | blocks | edges | unresolved | complete |
+### Complete and clean (unresolved = 0)
+
+| project | blocks | edges | coverage |
+| --- | --- | --- | --- |
+| 2D-systolic-array | 2 | 7 | 100% |
+| riscv-boom | 2 | 0 | 100% |
+| neorv32 | 86 | 1,262 | 89% |
+| Anvil-Pro | 19 | 107 | 76% |
+| rustdv/rustdv | 7 | 5 | 62% |
+| pyuvm | 7 | 38 | 30% |
+| wave_rerunner | 10 | 34 | 22% |
+| riscv-dv | 1 | 2 | 4% |
+| lxp32-cpu (VHDL) | 34 | 163 | — |
+| minerva (generated) | 51 | 50 | — |
+| BorussCPU-Laibach | 8 | 20 | — |
+
+### Not complete, with the reason
+
+| project | blocks | unresolved | coverage | why |
 | --- | --- | --- | --- | --- |
-| OpenTitan `hw/ip` | 879 | 10,743 | 78 | false |
-| cva6 | 458 | 3,260 | 32 | false |
-| ibex | 345 | 2,079 | 17 | false |
-| CV32E40P | 154 | 872 | 8 | false |
-| qeciphy_riverlane | 83 | 269 | 3 | false |
-| neorv32 | 86 | 1,262 | 0 | **true** |
-| lxp32-cpu (VHDL) | 34 | 163 | 0 | **true** |
-| minerva (generated) | 51 | 50 | 0 | **true** |
+| OpenTitan `hw/ip` | 879 | 79 | — | unresolved primitives deep in closures |
+| cva6 | 458 | 32 | 68% | vendor IP |
+| ibex | 345 | 17 | — | vendor IP |
+| rsd | 258 | 26 | 88% | vendor primitives |
+| frost | 256 | 8 | **98%** | vendor IP |
+| CV32E40P | 154 | 8 | — | vendor IP |
+| Cores-VeeR-EL2 | 143 | 41 | 81% | one bad module poisons `beh_lib.sv` |
+| riscduino | 304 | 169 | 62% | SkyWater PDK not vendored |
+| verilog-pcie | 123 | 1 | 53% | one primitive; 8 duplicate board copies |
+| qeciphy | 98 | 3 | 51% | FPGA IP in example wrappers |
+| openCologne-PCIE | 77 | 12 | 81% | Xilinx hard blocks |
+| litex_wr_nic | 39 | 11 | **100%** | LiteX wrappers to vendor IP |
+| picorv32 | 31 | 16 | 39% | `picosoc` not in file set |
+| pcievhost | 34 | 16 | — | vendor IP |
+| fwrisc-s | 54 | 10 | — | — |
+| difftest | 11 | 5 | 75% | C++/SV glue |
+
+**Not indexable:** `logisim-cpu-project` (0 HDL files — Logisim `.circ`
+schematics), `XiangShan` and `openPiton` (unreachable at `master`/`main`).
+
+### Three things the table shows
+
+**Coverage and completeness are independent.** `litex_wr_nic` is **100%
+file-coverage and not complete** — all 22 files contributed a unit, but 11
+instantiations are unresolvable vendor IP. Reporting either number alone misleads,
+which is why both are printed.
+
+**Coverage separates repositories into three bands**: real hand-written RTL lands
+68–100% (frost 98%, neorv32 89%, rsd 88%, cva6 68%); mixed design+DV 30–62%;
+verification libraries 4–22% (riscv-dv 4%, wave_rerunner 22%). Repository size
+predicts nothing — riscduino has 232 files at 62%, riscv-dv has 89 at 4%.
+
+**Half the famous cores are not RTL.** BOOM ships 2 Verilog files and rocket-chip
+11; both are Chisel generators whose Verilog is build output. A structural RTL
+indexer correctly has nothing to say about them, and saying so is the right answer
+rather than a failure.
 
 Waveforms in those runs are real: modules were simulated with Icarus Verilog and
-the VCDs rendered by `wengold ide`. `tools/wave_harness.py` is the harness that
-does it — it generates a testbench from a module's own port list.
+the VCDs rendered by `wengold ide`.
 
 **`complete: false` is the honest reading** for most of them: their file sets, as
 collected, do not contain everything they instantiate, so results downstream of
@@ -645,12 +715,62 @@ those blocks are `unknown` by design.
   encoding is covered by unit tests, which is weaker.
 - **Analog and mixed-signal verification and physical signoff** are out of scope.
 
+## Reproducing a failure
+
+A verification result is only useful if it can be re-created.
+
+```bash
+wengold repro capture ./rtl --result sim_uart --detail "assertion failed at cycle 21"
+wengold repro replay  --bundle sim_uart.repro.json --root ./rtl
+```
+
+A bundle pins a **per-file content hash** of the design file set, the result id,
+kind, status, the kernel's verdict at capture time, the tool and its version, and
+the detail.
+
+**A reproducer that reproduces everything reproduces nothing.** `replay` returns
+`reproduced=False` the moment the file set has drifted, and names the files —
+changed, missing and added reported **separately**, because they mean different
+things:
+
+```
+  drift    changed: a.sv
+  => NOT REPRODUCED — the inputs differ from the capture
+     1 file(s) changed since capture: the result is about different code
+```
+
+Reporting "still fails" against changed RTL would be the most damaging bug this
+feature could have, so three tests pin the refusals rather than the successes.
+
+**Scope, stated plainly:** WENGOLD does not run simulators itself; it records what
+a tool reported. `replay` re-establishes the *inputs* and re-checks the recorded
+outcome. It does not re-invoke VCS, Verilator or Icarus.
+
+## Singular configurations
+
+```bash
+wengold singularity ./rtl --damp
+```
+
+A kinematic singularity is where a Jacobian loses rank; the dependency analogue is
+a block whose change voids an unbounded share of the evidence. `conditioning` is
+worst blast radius over median; `damping` reports what isolating a block behind a
+stub buys **and what it costs**. On neorv32: 86 blocks, condition number 2.78 —
+well conditioned, with `neorv32_prim_fifo` the most load-bearing at 29% of the
+design.
+
 ## Status
 
-**v0.17.1 — 311 tests passing.** The graph, kernel, ledger, MCP server, formal
+**v0.28.0 — 431 tests passing.** The graph, kernel, ledger, MCP server, formal
 loop, register-map and CDC front-ends, the VHDL front-end, root cause, the IDE with
-waveforms, the ML methods and the text-to-spec front-end are all implemented and
-tested. See [`docs/roadmap.md`](docs/roadmap.md).
+waveforms, the ML methods, the text-to-spec front-end, failure reproduction and
+singularity analysis are all implemented and tested. See
+[`docs/roadmap.md`](docs/roadmap.md).
+
+Thirty repositories have been indexed (table above), and the four defects that
+running against new projects exposed — a `complete: True` on 4.5% coverage, a note
+printed six times, a transitive invalidation mis-explained, and duplicate module
+definitions merged silently — are all fixed and pinned by tests.
 
 ## Documentation
 
