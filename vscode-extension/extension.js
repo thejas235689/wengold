@@ -209,6 +209,26 @@ function activate(context) {
       vscode.window.showInformationMessage(
         `Condition number ${state.condition.toFixed(2)} — ${state.verdict}`);
     }),
+    vscode.commands.registerCommand('wengold.propose', async () => {
+      // The proposal comes from the kernel, not from a model. Nothing is written
+      // until the diff has been shown and accepted — a tool that edits RTL without
+      // showing the diff first is not one you would let near a tapeout.
+      const root = workspaceRoot();
+      const { python, cliPath } = cfg();
+      const args = ['-m', 'wengold.cli', 'propose', root];
+      if (cliPath) { args.unshift('-c', 'import sys;sys.path.insert(0,"' + cliPath + '");'
+        + 'import runpy;runpy.run_module("wengold.cli",run_name="__main__")'); }
+      const out = await new Promise((res, rej) =>
+        cp.execFile(python, args, { timeout: 180000, maxBuffer: 1 << 24 },
+          (err, stdout) => err ? rej(new Error(String(err))) : res(stdout)));
+      const chan = vscode.window.createOutputChannel('WENGOLD proposals');
+      chan.clear(); chan.appendLine(out); chan.show(true);
+      vscode.window.showInformationMessage(
+        'WENGOLD proposed the edits above. Nothing was written — ' +
+        'run `wengold propose --apply <id>` to write one.', 'Copy command')
+        .then(a => { if (a) vscode.env.clipboard.writeText(
+          `wengold propose ${root} --apply <id>`); });
+    }),
     vscode.commands.registerCommand('wengold.impact', async () => {
       const ed = vscode.window.activeTextEditor;
       if (!ed) { vscode.window.showWarningMessage('Open a design file first.'); return; }
