@@ -14,6 +14,32 @@ what the tags are for.
 
 ---
 
+## [0.31.0] — 2026-10-26
+
+### Added
+- **`wengold desktop --app`** — a real window, not a browser tab. Chrome and Edge
+  both accept `--app=<url>`, which opens with no address bar, no tabs and no
+  browser menu. It costs no toolchain, where Electron costs ~100 MB of runtime and
+  a Node build for the same result.
+- **`wengold desktop --install-shortcut`** — a launcher entry (`.desktop` on Linux)
+  that starts the app for a project, with a self-contained SVG icon.
+- **App mode is now the default.** `wengold desktop` opens an app window when a
+  Chromium-family browser is present and falls back to a tab when it is not. A
+  desktop app should not need a flag to be a desktop app; `--no-app` opts out.
+- `--window-size` and a fallback: if no Chrome/Edge is present it says so and opens
+  a tab instead of failing.
+
+### Why the separate profile
+`launch_app` passes its own `--user-data-dir`. Without it the window joins the
+user's existing browser session, so closing the app window can take their other
+tabs with it and `--window-size` is ignored.
+
+### Not Electron, and why
+Electron and Tauri produce a distributable binary but need a Node toolchain to
+build one, and neither can be built in the environment this ships from. App mode
+gives the same window today on any machine with Chrome or Edge installed. A true
+native shell remains a larger change and is not claimed here.
+
 ## [0.30.0] — 2026-10-26
 
 ### Added
