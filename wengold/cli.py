@@ -224,9 +224,19 @@ def cmd_propose(args) -> int:
 
 
 def cmd_desktop(args) -> int:
-    """Serve the local WENGOLD app and open a browser."""
-    from .desktop import serve
-    serve(args.path, port=args.port, open_browser=not args.no_browser)
+    """Serve the local WENGOLD app and open it as a window."""
+    from .desktop import find_app_browser, install_shortcut, serve
+
+    if args.install_shortcut:
+        target = install_shortcut(args.port, args.path)
+        if target:
+            print(f"  shortcut installed: {target}")
+        return 0
+
+    if not args.no_app and not find_app_browser():
+        print("  no Chrome/Edge found for app mode; falling back to a browser tab")
+    serve(args.path, port=args.port, open_browser=not args.no_browser,
+          app_mode=not args.no_app, window_size=args.window_size)
     return 0
 
 
@@ -860,6 +870,14 @@ def main(argv=None) -> int:
     p.add_argument("path", nargs="?", default=".")
     p.add_argument("--port", type=int, default=8765)
     p.add_argument("--no-browser", dest="no_browser", action="store_true")
+    p.add_argument("--no-app", dest="no_app", action="store_true",
+                   help="open a normal browser tab instead of an app window")
+    p.add_argument("--app", dest="no_app", action="store_false",
+                   help=argparse.SUPPRESS)
+    p.add_argument("--window-size", dest="window_size", default="1280,860")
+    p.add_argument("--install-shortcut", dest="install_shortcut",
+                   action="store_true",
+                   help="write a desktop launcher for this project")
     p.add_argument("--include", action="append", default=[])
     p.add_argument("--define", action="append", default=[])
     p.add_argument("--backend", default="auto", choices=["auto", "slang", "regex"])
