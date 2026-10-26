@@ -197,6 +197,32 @@ def cmd_repro(args) -> int:
     return 0
 
 
+def cmd_propose(args) -> int:
+    """Show the edits the kernel can justify. Never applies without --apply."""
+    from .agent.propose import propose_all
+
+    graph, _files = _build(args)
+    props = propose_all(graph, graph.completeness(), args.path)
+    if not props:
+        print("  no proposals: the kernel has nothing to justify an edit with")
+        return 0
+    print(f"  {len(props)} proposal(s)\n")
+    for p in props:
+        print(p.render())
+        print()
+    if not args.apply:
+        print("  nothing applied. re-run with --apply <id> to write one.")
+        return 0
+    chosen = [p for p in props if p.id == args.apply]
+    if not chosen:
+        print(f"  no proposal with id {args.apply!r}; ids: "
+              f"{', '.join(p.id for p in props)}")
+        return 2
+    out = chosen[0].apply(args.path)
+    print(f"  applied {chosen[0].id} -> {out}")
+    return 0
+
+
 def cmd_desktop(args) -> int:
     """Serve the local WENGOLD app and open a browser."""
     from .desktop import serve
@@ -818,6 +844,16 @@ def main(argv=None) -> int:
     p.add_argument("--define", action="append", default=[])
     p.add_argument("--backend", default="auto", choices=["auto", "slang", "regex"])
     p.set_defaults(func=cmd_repro)
+
+    p = sub.add_parser("propose",
+                       help="show edits the kernel can justify; apply only on request")
+    p.add_argument("path", nargs="?", default=".")
+    p.add_argument("--apply", default="", metavar="ID",
+                   help="write the proposal with this id")
+    p.add_argument("--include", action="append", default=[])
+    p.add_argument("--define", action="append", default=[])
+    p.add_argument("--backend", default="auto", choices=["auto", "slang", "regex"])
+    p.set_defaults(func=cmd_propose)
 
     p = sub.add_parser("desktop",
                        help="serve the local WENGOLD app and open a browser")
