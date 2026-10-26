@@ -14,6 +14,35 @@ what the tags are for.
 
 ---
 
+## [0.27.0] — 2026-10-26
+
+### Added
+- **`learn/waveform_features.py`** — every learner in the package can now read a
+  VCD as well as a graph. `waveform_dataset()` returns `(names, X)` in exactly the
+  shape `learn.features.dataset` returns, so DBSCAN, the trees and the regression
+  consume waveforms with no changes.
+- Eight per-signal features: `toggles`, `toggle_rate`, `duty`, `x_fraction`,
+  `max_run`, `switching_cycles`, `entropy`, `width`.
+- `activity_summary()` — a plain-language verdict on how alive a dump is, useful
+  before pointing any learner at it.
+
+### Measured
+- **Waveform features separate behavioural groups; graph features did not.**
+  On a dump with 6 clocks, 8 data buses and 5 tied-off nets, DBSCAN over the
+  waveform features recovers the three groups — 6 clocks, 7 data, 5 tied nets,
+  one noise — with no labels supplied. The same learner over graph features showed
+  **zero lift** against simulation ground truth.
+- Feature sanity is pinned against constructed signals: a stuck net reports
+  `toggles=0, max_run=cycles, entropy=0`; a toggling bit reports `duty=0.5,
+  entropy=1.0`; `x` and `z` both count toward `x_fraction`.
+
+### The honest limit
+A *product-level* claim — "waveform features predict which blocks fail" — needs a
+simulator to produce the dumps **and** the failures. `cocotb` and `iverilog` are
+not installed in this environment, so the validation here is against constructed
+waveforms with known properties. What is demonstrated is that the features carry
+signal; what is not demonstrated is that the signal predicts a regression outcome.
+
 ## [0.26.0] — 2026-10-26
 
 ### Added
