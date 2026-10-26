@@ -1,0 +1,1 @@
+HTML = """<!doctype html><html><head><script>const a=1;</script></head><body>x</body></html>"""
