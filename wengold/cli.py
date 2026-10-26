@@ -197,6 +197,13 @@ def cmd_repro(args) -> int:
     return 0
 
 
+def cmd_desktop(args) -> int:
+    """Serve the local WENGOLD app and open a browser."""
+    from .desktop import serve
+    serve(args.path, port=args.port, open_browser=not args.no_browser)
+    return 0
+
+
 def cmd_generate(args) -> int:
     """Spec in, SystemVerilog out — and then check the code against the spec."""
     from .generate.emit import emit_map, emit_props, emit_rtl
@@ -811,6 +818,16 @@ def main(argv=None) -> int:
     p.add_argument("--define", action="append", default=[])
     p.add_argument("--backend", default="auto", choices=["auto", "slang", "regex"])
     p.set_defaults(func=cmd_repro)
+
+    p = sub.add_parser("desktop",
+                       help="serve the local WENGOLD app and open a browser")
+    p.add_argument("path", nargs="?", default=".")
+    p.add_argument("--port", type=int, default=8765)
+    p.add_argument("--no-browser", dest="no_browser", action="store_true")
+    p.add_argument("--include", action="append", default=[])
+    p.add_argument("--define", action="append", default=[])
+    p.add_argument("--backend", default="auto", choices=["auto", "slang", "regex"])
+    p.set_defaults(func=cmd_desktop)
 
     p = sub.add_parser("generate",
                        help="generate SystemVerilog from a spec, then check it")
