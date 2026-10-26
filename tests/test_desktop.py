@@ -180,3 +180,41 @@ def test_the_icon_is_self_contained():
     assert SHORTCUT_SVG.startswith("<svg")
     # the xmlns is a namespace URI, not a fetch — look for actual references
     assert "href" not in SHORTCUT_SVG and "src=" not in SHORTCUT_SVG
+
+
+# ---- the agent transcript --------------------------------------------------
+def test_the_agent_reports_timed_steps_not_just_an_answer():
+    """A command prompt gives the answer; a transcript gives the working.
+
+    Each step must carry the command that ran, what it produced and how long it
+    took — that is what a reviewer needs to trust the answer.
+    """
+    from wengold.desktop import _agent, build_state
+    st = build_state("examples")
+    a = _agent(st, "what must I re-run?")
+    assert a["ok"] and len(a["steps"]) >= 4
+    for s in a["steps"]:
+        assert s["label"] and s["cmd"] and s["detail"]
+        assert isinstance(s["secs"], (int, float)) and s["secs"] >= 0
+        assert s["done"] is True
+    assert a["total_secs"] >= 0
+    assert a["summary"], "a transcript must end with a conclusion"
+
+
+def test_the_transcript_names_the_command_it_ran():
+    from wengold.desktop import _agent, build_state
+    a = _agent(build_state("examples"), "check dma")
+    cmds = " ".join(s["cmd"] for s in a["steps"])
+    for expect in ("wengold index", "wengold ingest graph", "wengold verdicts"):
+        assert expect in cmds, f"{expect} missing from the transcript"
+
+
+def test_the_agent_endpoint_serves_the_transcript(server):
+    d = get_json(server, "/api/agent?q=what+changed")
+    assert d["ok"] and d["steps"]
+    assert d["request"] == "what changed"
+
+
+def test_the_page_deep_links_a_request():
+    from wengold.desktop import HTML
+    assert "URLSearchParams" in HTML and "ask" in HTML
