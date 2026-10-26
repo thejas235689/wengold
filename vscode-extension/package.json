@@ -1,0 +1,99 @@
+{
+  "name": "wengold",
+  "displayName": "WENGOLD",
+  "description": "Validity kernel for silicon verification — which of your prior results still hold after a change",
+  "version": "0.1.0",
+  "publisher": "thejas235689",
+  "license": "MIT OR Apache-2.0",
+  "engines": {
+    "vscode": "^1.75.0"
+  },
+  "categories": [
+    "Programming Languages",
+    "Linters",
+    "Visualization"
+  ],
+  "keywords": [
+    "verilog",
+    "systemverilog",
+    "vhdl",
+    "verification",
+    "rtl",
+    "eda"
+  ],
+  "activationEvents": [
+    "onLanguage:verilog",
+    "onLanguage:systemverilog",
+    "onLanguage:vhdl",
+    "workspaceContains:**/*.sv"
+  ],
+  "main": "./extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "wengold.index",
+        "title": "WENGOLD: Index workspace"
+      },
+      {
+        "command": "wengold.impact",
+        "title": "WENGOLD: What must I re-run after this file's change?"
+      },
+      {
+        "command": "wengold.singularity",
+        "title": "WENGOLD: Show singular configurations"
+      },
+      {
+        "command": "wengold.clear",
+        "title": "WENGOLD: Clear diagnostics"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "wengold",
+          "title": "WENGOLD",
+          "icon": "$(circuit-board)"
+        }
+      ]
+    },
+    "views": {
+      "wengold": [
+        {
+          "id": "wengold.summary",
+          "name": "Design"
+        },
+        {
+          "id": "wengold.unresolved",
+          "name": "Unresolved"
+        },
+        {
+          "id": "wengold.singular",
+          "name": "Singular configurations"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "WENGOLD",
+      "properties": {
+        "wengold.pythonPath": {
+          "type": "string",
+          "default": "python3",
+          "description": "Interpreter used to run the wengold CLI."
+        },
+        "wengold.cliPath": {
+          "type": "string",
+          "default": "",
+          "description": "Path to a wengold checkout. Empty means the extension uses the interpreter's installed wengold."
+        },
+        "wengold.showUnresolvedAsWarnings": {
+          "type": "boolean",
+          "default": true,
+          "description": "Squiggle modules that the file set does not resolve."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "package": "npx --yes @vscode/vsce package"
+  }
+}
