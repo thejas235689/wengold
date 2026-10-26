@@ -28,3 +28,15 @@ from .features import (BLOCK_KEYS, RESULT_KEYS, block_features, dataset,  # noqa
 
 __all__ = ["BLOCK_KEYS", "RESULT_KEYS", "block_features", "result_features",
            "vector", "dataset", "normalise"]
+
+# Waveform features: the same row format, read from a VCD instead of a graph.
+# Graph features measured zero lift against simulation ground truth; a waveform is
+# what the design actually did, cycle by cycle.
+from .waveform_features import (FEATURE_KEYS as WAVE_FEATURE_KEYS,  # noqa: E402
+                                activity_summary, signal_features,
+                                waveform_dataset, waveform_features,
+                                waveform_vector)
+
+__all__ = list(globals().get("__all__", [])) + [
+    "waveform_dataset", "waveform_features", "waveform_vector",
+    "signal_features", "activity_summary", "WAVE_FEATURE_KEYS"]
