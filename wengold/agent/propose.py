@@ -12,7 +12,7 @@ a model's guess:
 
 Every proposal is a **unified diff** against a real path, and nothing is applied
 here — `Proposal.apply()` is a separate, explicit call. A tool that edits RTL
-without showing the diff first is not one you would let near a tapeout.
+without showing the diff first is not one you would let near silicon signoff.
 
 **What this deliberately does not do.** It does not write RTL logic, guess a
 missing module's behaviour, or invent a fix for a failing check. Stubs are empty
