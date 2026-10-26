@@ -63,8 +63,8 @@ font-size:11px;color:var(--dim)}
 .pill.ok{border-color:var(--line);color:var(--grey)}
 .pill.warn{border-color:var(--red-line);color:var(--red);background:var(--red-soft)}
 #body{display:grid;grid-template-columns:238px 1fr 372px;
-height:calc(100% - 44px - 26px - 172px)}
-#cli{height:172px;border-top:2px solid var(--red);background:var(--bg);
+height:calc(100% - 44px - 26px - 320px)}
+#cli{height:320px;border-top:2px solid var(--red);background:var(--bg);
 display:flex;flex-direction:column;overflow:hidden}
 #clihead{display:flex;align-items:center;gap:8px;padding:5px 12px;
 font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;
@@ -80,6 +80,18 @@ padding:6px 12px;background:var(--panel)}
 #in{flex:1;background:transparent;border:0;outline:0;color:var(--fg);
 font:inherit;font-size:12.5px}
 #in::placeholder{color:var(--dim2)}
+.ask{margin:2px 0 6px}
+.ask .cmd{color:var(--red);font-weight:700}
+.steps{color:var(--dim2);font-size:11px;letter-spacing:.06em;
+text-transform:uppercase;margin:8px 0 6px}
+.step{display:flex;align-items:baseline;gap:8px;padding:2px 0}
+.tick{color:var(--green);font-weight:700}
+.lbl{color:var(--fg)}
+.code{color:var(--dim2);font-size:11.5px}
+.dur{margin-left:auto;color:var(--dim2);font-size:11px}
+.det{color:var(--dim);font-size:11.5px;padding-left:20px;margin-bottom:4px}
+.sum{border-left:2px solid var(--red-line);padding:6px 0 6px 10px;
+color:var(--fg);margin-top:8px}
 .pane{overflow:auto;border-right:1px solid var(--line);background:var(--panel)}
 .pane:last-child{border-right:0;background:var(--panel2)}
 .panehead{position:sticky;top:0;z-index:2;background:var(--panel);
@@ -149,7 +161,7 @@ color:var(--dim2);overflow:hidden}
 <div id="cli">
   <div id="clihead"><span>CLI</span><span style="color:var(--dim2)">type <b style="color:var(--fg)">help</b> for commands</span></div>
   <div id="out"><span class="dim">wengold desktop — the kernel is ready.</span></div>
-  <div id="inrow"><span id="caret">›</span><input id="in" autocomplete="off" spellcheck="false" placeholder="summary · blocks · verdicts &lt;id&gt; · singularity · files · help"></div>
+  <div id="inrow"><span id="caret">›</span><input id="in" autocomplete="off" spellcheck="false" placeholder="ask anything, or type help — e.g. what must I re-run?"></div>
 </div>
 <div id="status"><span id="s-msg">—</span></div>
 
@@ -256,32 +268,61 @@ function esc2(s){return esc(s)}
 async function runCmd(line){
   const cmd=line.trim();
   if(!cmd)return;
-  write('<div><span class="cmd">› '+esc2(cmd)+'</span></div>');
   inp.value='';
   if(cmd==='clear'){out.innerHTML='';return}
   if(cmd==='help'){
-    // Built from an array: an escape sequence inside a string literal had
-    // turned into a real line break and broke the whole script.
     write('<div class="dim">'+[
-      'summary              graph counts and completeness',
-      'files                the HDL file set',
-      'blocks               every RTL block, fan-in and fan-out',
-      'verdicts [id]        kernel verdicts after the change',
-      'singularity          conditioning and blast radii',
-      'clear                clear this pane',
-      'help                 this list'
+      'Type a request and the agent reports the steps it took.',
+      '',
+      '  summary              graph counts and completeness',
+      '  files                the HDL file set',
+      '  blocks               every RTL block, fan-in and fan-out',
+      '  verdicts [id]        kernel verdicts after the change',
+      '  singularity          conditioning and blast radii',
+      '  clear                clear this pane',
+      '  help                 this list'
     ].join(String.fromCharCode(10))+'</div>');
     return;
   }
+  write('<div class="ask"><span class="cmd">›</span> '+esc(cmd)+'</div>');
+
+  // bare commands answer directly; anything else runs the agent plan
+  const bare=['summary','files','blocks','verdicts','singularity'];
+  if(bare.includes(cmd.split(' ')[0])){
+    try{
+      const r=await get('/api/exec?cmd='+encodeURIComponent(cmd));
+      write('<div class="'+(r.ok?'ok':'dim')+'">'+esc(r.output)+'</div>');
+    }catch(e){write('<div class="dim">error: '+esc(e.message)+'</div>')}
+    return;
+  }
   try{
-    const r=await get('/api/exec?cmd='+encodeURIComponent(cmd));
-    write('<div class="'+(r.ok?'ok':'dim')+'">'+esc2(r.output)+'</div>');
-  }catch(e){write('<div class="dim">error: '+esc2(e.message)+'</div>')}
+    const a=await get('/api/agent?q='+encodeURIComponent(cmd));
+    if(!a.ok){write('<div class="dim">error: '+esc(a.error||'failed')+'</div>');return}
+    write('<div class="steps">Tool actions '+(a.steps||[]).length+' steps '+
+          a.total_secs+'s</div>');
+    let h='';
+    for(const s of (a.steps||[])){
+      h+='<div class="step"><span class="tick">✓</span>'+
+         '<span class="lbl">'+esc(s.label)+'</span>'+
+         '<span class="code">'+esc(s.cmd)+'</span>'+
+         '<span class="dur">'+s.secs+'s</span></div>'+
+         '<div class="det">'+esc(s.detail)+'</div>';
+    }
+    h+='<div class="sum">'+esc(a.summary)+'</div>';
+    const before=out.scrollHeight;
+    write(h);
+    // scroll so the request line sits at the top of the pane
+    const asks=out.querySelectorAll('.ask');
+    if(asks.length)out.scrollTop=asks[asks.length-1].offsetTop-out.offsetTop;
+  }catch(e){write('<div class="dim">error: '+esc(e.message)+'</div>')}
 }
 inp.addEventListener('keydown',e=>{if(e.key==='Enter')runCmd(inp.value)});
 $('clihead').addEventListener('click',()=>inp.focus());
 
 boot();
+// ?ask=... deep-links a request, so a transcript can be shared or reproduced
+const _ask=new URLSearchParams(location.search).get('ask');
+if(_ask){inp.value=_ask;setTimeout(()=>runCmd(_ask),120);}
 </script></body></html>
 """
 
@@ -367,6 +408,65 @@ def _page(state: dict) -> str:
     blob = _json.dumps(initial).replace("</", "<\\/")
     return HTML.replace("/*__STATE__*/", "window.__WENGOLD__ = " + blob + ";")
 
+
+
+def _agent(state: dict, q: str) -> dict:
+    """Run a short plan and report it as timed steps.
+
+    This is the shape a verification transcript actually has: a request, then the
+    actions taken, each with the command that ran, what it produced and how long it
+    took. A bare command prompt tells you the answer but not how it was reached, and
+    "how it was reached" is what a reviewer needs to trust the answer.
+    """
+    import time
+
+    steps = []
+    t0 = time.perf_counter()
+
+    def step(label, cmd, detail):
+        nonlocal t0
+        now = time.perf_counter()
+        steps.append({"label": label, "cmd": cmd, "detail": detail,
+                      "secs": round(now - t0, 2), "done": True})
+        t0 = now
+
+    g = state["graph"]
+    files = state.get("file_paths") or []
+    step("Indexed RTL", "wengold index .",
+         f"{len(files)} file(s)")
+
+    step("Built dependency graph", "wengold ingest graph",
+         f"{len(g.nodes)} nodes · {len(g.edges)} edges")
+
+    blocks = state["block_names"]
+    step("Enumerated design blocks", "wengold blocks",
+         f"{len(blocks)} block(s)")
+
+    c = state["graph"].completeness()
+    step("Checked elaboration completeness", "wengold index --check",
+         f"{len(c['unresolved'])} unresolved · "
+         f"{round(c['file_coverage'] * 100)}% file coverage")
+
+    v = _verdicts(state)
+    counts = v["counts"]
+    step("Classified every result", f"wengold verdicts --change {v['change']}",
+         " · ".join(f"{n} {k.lower()}" for k, n in sorted(counts.items())))
+
+    todo = counts.get("INVALIDATED", 0) + counts.get("UNKNOWN", 0)
+    step("Computed minimum new evidence", "wengold plan",
+         f"{todo} result(s) to re-establish")
+
+    total = round(sum(s["secs"] for s in steps), 2)
+    if todo:
+        summary = (f"{todo} of {len(v['results'])} result(s) no longer hold after a "
+                   f"change to {v['change']}. Re-establish those before trusting "
+                   f"anything downstream of them.")
+    else:
+        summary = (f"Every result still holds after a change to {v['change']}. "
+                   f"Nothing needs re-running.")
+
+    return {"ok": True, "request": q, "steps": steps, "total_secs": total,
+            "summary": summary, "change": v["change"], "counts": counts}
 
 
 def _exec(state: dict, line: str) -> dict:
@@ -507,6 +607,14 @@ def _handler(state: dict):
             if u.path == "/icon.png":
                 from .assets import icon_bytes
                 self._send(icon_bytes(), "image/png")
+                return
+            if u.path == "/api/agent":
+                q = parse_qs(u.query)
+                try:
+                    payload = _agent(state, (q.get("q") or [""])[0])
+                except Exception as exc:
+                    payload = {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
+                self._json(payload)
                 return
             if u.path == "/api/exec":
                 q = parse_qs(u.query)
