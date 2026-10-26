@@ -145,6 +145,32 @@ def cmd_cdc(args) -> int:
     return 0 if not rep.crossings else 1
 
 
+def cmd_singularity(args) -> int:
+    """Singular configurations: which blocks a change propagates furthest from."""
+    from .graph.singularity import conditioning, damping, singular_nodes
+
+    graph, _files = _build(args)
+    c = conditioning(graph)
+    print(f"blocks: {c['blocks']}   condition number: {c['condition_number']:.2f}")
+    print(f"verdict: {c['verdict']}")
+    if c["worst"]:
+        print(f"worst: {c['worst']} — a change there reaches {c['worst_radius']} "
+              f"block(s); median is {c['median']:.0f}")
+    nodes = singular_nodes(graph, threshold=args.threshold)
+    if nodes:
+        print(f"\nsingular configurations (>={args.threshold:.0%} of the design):")
+        for s in nodes[: args.top]:
+            print(s.render())
+    else:
+        print(f"\nno block reaches >={args.threshold:.0%} of the design")
+    if args.damp and c["worst"]:
+        d = damping(graph, c["worst"])
+        print(f"\ndamping '{c['worst']}': {d['before']} -> {d['after']} block(s) "
+              f"({d['fraction_before']:.1%} -> {d['fraction_after']:.1%})")
+        print(f"  cost: {d['cost']}")
+    return 0
+
+
 def cmd_generate(args) -> int:
     """Spec in, SystemVerilog out — and then check the code against the spec."""
     from .generate.emit import emit_map, emit_props, emit_rtl
@@ -726,6 +752,19 @@ def main(argv=None) -> int:
     p = sub.add_parser("cdc", help="report clock-domain crossings in an RTL file")
     p.add_argument("file")
     p.set_defaults(func=cmd_cdc)
+
+    p = sub.add_parser("singularity",
+                       help="find blocks whose change voids the most evidence")
+    p.add_argument("path", nargs="?", default=".")
+    p.add_argument("--include", action="append", default=[])
+    p.add_argument("--define", action="append", default=[])
+    p.add_argument("--backend", default="auto", choices=["auto", "slang", "regex"])
+    p.add_argument("--threshold", type=float, default=0.25,
+                   help="fraction of the design that counts as singular")
+    p.add_argument("--top", type=int, default=10)
+    p.add_argument("--damp", action="store_true",
+                   help="report what isolating the worst block would buy")
+    p.set_defaults(func=cmd_singularity)
 
     p = sub.add_parser("generate",
                        help="generate SystemVerilog from a spec, then check it")
