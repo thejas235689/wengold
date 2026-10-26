@@ -1,7 +1,7 @@
 """Edit proposals the kernel can justify.
 
 The load-bearing test is `test_a_proposal_never_applies_itself`. A tool that edits
-RTL without showing the diff first is not one you would let near a tapeout, so the
+RTL without showing the diff first is not one you would let near silicon signoff, so the
 gate is pinned rather than assumed.
 """
 import pytest
