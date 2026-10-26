@@ -57,7 +57,7 @@ native shell remains a larger change and is not claimed here.
 ### The safety property
 **Proposing is not applying.** `Proposal.apply()` is a separate, explicit call, and
 `wengold propose` prints "nothing applied" unless given `--apply <id>`. A tool that
-edits RTL without showing the diff first is not one you would let near a tapeout, so
+edits RTL without showing the diff first is not one you would let near silicon signoff, so
 a test pins it: `test_a_proposal_never_applies_itself`.
 
 ### What it deliberately does not do
