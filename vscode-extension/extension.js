@@ -212,7 +212,7 @@ function activate(context) {
     vscode.commands.registerCommand('wengold.propose', async () => {
       // The proposal comes from the kernel, not from a model. Nothing is written
       // until the diff has been shown and accepted — a tool that edits RTL without
-      // showing the diff first is not one you would let near a tapeout.
+      // showing the diff first is not one you would let near silicon signoff.
       const root = workspaceRoot();
       const { python, cliPath } = cfg();
       const args = ['-m', 'wengold.cli', 'propose', root];
