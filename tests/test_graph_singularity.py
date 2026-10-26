@@ -85,6 +85,28 @@ def test_singular_nodes_are_sorted_worst_first():
     assert radii == sorted(radii, reverse=True)
 
 
+def test_a_duplicate_definition_is_reported_not_silently_merged():
+    """Regression from rustdv/rustdv.
+
+    `tinyalu` is declared in two files and the graph keeps one, silently. Harmless
+    when the copies are identical — and that repo's are — but the tool could not
+    tell that from two *different* bodies sharing a name, which is a real design
+    bug. Anvil-Pro turned out to have three `module Top` declarations.
+    """
+    from wengold.graph.builder import GraphBuilder
+
+    files = {
+        "a.sv": "module dup(input logic c, output logic q); assign q = c; endmodule\n",
+        "b.sv": "module dup(input logic c, output logic q); assign q = ~c; endmodule\n",
+        "c.sv": "module solo(input logic c, output logic q); assign q = c; endmodule\n",
+    }
+    g = GraphBuilder().build_from_files(files, backend="auto")
+    notes = [n for n in g.notes if "duplicate definition" in n]
+    assert any("dup" in n for n in notes), f"duplicate not reported: {g.notes}"
+    assert not any("solo" in n for n in notes), "a unique module must not be flagged"
+    assert "dup" in g.nodes, "the module is still in the graph, one definition of it"
+
+
 def test_damping_reports_a_cost_as_well_as_a_saving():
     """Isolating a block must never be presented as free."""
     g, names = _tree()
