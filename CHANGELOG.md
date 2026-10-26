@@ -14,6 +14,36 @@ what the tags are for.
 
 ---
 
+## [0.28.0] — 2026-10-26
+
+### Added
+- **`repro.py`** and `wengold repro` — capture what determined a result, then
+  replay it and check the inputs still match.
+  - `capture` pins a per-file content hash of the design file set, the result id,
+    kind, status, the kernel's verdict at capture time, the tool and its version,
+    and the human-readable detail.
+  - `replay` compares the pinned file set against the current tree and reports
+    **changed / missing / added** files separately.
+  - `wengold repro capture <path> --result <id>` / `wengold repro replay --bundle
+    <file> --root <path>`.
+
+### The design constraint
+**A reproducer that reproduces everything reproduces nothing.** `replay` returns
+`reproduced=False` whenever the file set has drifted, and names the files. Reporting
+"still fails" against changed RTL would be the most damaging bug this feature could
+have, so a test pins it: `test_a_drifted_file_is_not_reported_as_reproduced`.
+
+Deletions and additions are reported separately from modifications, because they
+mean different things — a changed file makes the result about different code, a
+missing file means the design no longer elaborates as it did, and an added file may
+introduce a definition that shadows an old one.
+
+### Scope, stated plainly
+WENGOLD does not run simulators itself; it records what a tool reported. So `replay`
+re-establishes the *inputs* and re-checks the recorded outcome against the current
+tree. It does **not** re-invoke VCS, Verilator or Icarus. Re-running the tool is a
+larger change and is not claimed here.
+
 ## [0.27.1] — 2026-10-26
 
 ### Fixed
