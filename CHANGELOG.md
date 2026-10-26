@@ -14,6 +14,28 @@ what the tags are for.
 
 ---
 
+## [0.27.1] — 2026-10-26
+
+### Fixed
+- **Duplicate module definitions were merged silently.** Running against
+  `rustdv/rustdv` showed `tinyalu` declared in two files while the graph kept one
+  and said nothing. The two copies there are byte-identical, so nothing was wrong —
+  but the tool could not distinguish that from two *different* bodies sharing a name,
+  which is a real design bug where which one elaborates depends on file order.
+  The builder now reports the duplicate and names the files.
+
+  **This also corrected an earlier assessment.** `Priyanshumishra77/Anvil-Pro`, which
+  I had called the best-behaved design in the series, has **three `module Top`
+  declarations** — in `Core/Top.sv`, `Test/Subsystems/FetchTest.sv` and
+  `Test/Subsystems/PipelineTest.sv`. The test wrappers shadow the core's `Top`, and
+  nothing reported it before.
+
+### Run on rustdv/rustdv
+- 8 HDL files (RustDV is a Rust verification framework; the HDL is incidental),
+  7 nodes, 5 edges, 0 unresolved, 62% coverage. `tinyalu`, `single_cycle` and
+  `three_cycle` each declared twice.
+- Agent: 11 results, 7 valid, 4 invalidated, 4 need new evidence.
+
 ## [0.27.0] — 2026-10-26
 
 ### Added
