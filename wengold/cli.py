@@ -729,8 +729,14 @@ def cmd_learn(args) -> int:
 
 
 def cmd_serve(args) -> int:
-    from .mcp.server import main as serve
-    serve()
+    """MCP over stdio. A project is required: an empty graph answers `count: 0`,
+    which reads as "no blocks" — a wrong answer, not an absent one."""
+    from .mcp.server import WengoldServer
+    if not args.path:
+        print("  serve needs a project: wengold serve ./rtl", file=__import__("sys").stderr)
+        return 2
+    WengoldServer(root=args.path, ledger_path=args.ledger).serve(
+        __import__("sys").stdin, __import__("sys").stdout)
     return 0
 
 
@@ -1017,6 +1023,10 @@ def main(argv=None) -> int:
     p.set_defaults(func=cmd_learn)
 
     p = sub.add_parser("serve", help="run the MCP server over stdio")
+    p.add_argument("path", nargs="?", default=None,
+                   help="the project to serve (required)")
+    p.add_argument("--ledger", default=None,
+                   help="ledger file (default <path>/.tof/ledger.tof)")
     p.set_defaults(func=cmd_serve)
 
     p = sub.add_parser("agent", help="perceive, reason, plan, act, reflect, adapt")
