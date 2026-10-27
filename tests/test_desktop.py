@@ -218,3 +218,25 @@ def test_the_agent_endpoint_serves_the_transcript(server):
 def test_the_page_deep_links_a_request():
     from wengold.desktop import HTML
     assert "URLSearchParams" in HTML and "ask" in HTML
+
+
+# ---- the frame -------------------------------------------------------------
+def test_the_app_is_one_panel_not_a_page():
+    """The whole app sits in a rounded bordered panel inset from the viewport —
+    a window, not a page. The title strip reads like a revision line."""
+    from wengold.desktop import HTML
+    assert 'id="frame"' in HTML
+    assert 'id="titlebar"' in HTML
+    assert "border-radius:10px" in HTML
+    assert "position:absolute;inset:14px" in HTML
+    # the strip carries project — tool — revision — size, the way a build line does
+    for part in ('id="tname"', 'id="trev"', "wengold</span>", 'id="tdims"'):
+        assert part in HTML, f"title strip missing {part}"
+
+
+def test_the_title_strip_has_no_logo_beside_it():
+    """The 512px mark is a dark chip on black; at 15px on a light strip it renders
+    as a black blob. The mark belongs in the favicon and the app icon, not here."""
+    from wengold.desktop import HTML
+    bar = HTML[HTML.index('id="titlebar"'):HTML.index("</div>", HTML.index('id="titlebar"'))]
+    assert "/icon.png" not in bar
