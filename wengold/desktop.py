@@ -47,11 +47,22 @@ HTML = """<!doctype html>
 --grey:#3F3F46;--grey-soft:rgba(63,63,70,.08)}
 *{box-sizing:border-box}
 html,body{height:100%}
-body{margin:0;background:var(--bg);color:var(--fg);overflow:hidden;
+body{margin:0;background:#EFEFF1;color:var(--fg);overflow:hidden;
 font:12.5px/1.45 ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace}
+/* the whole app is one panel: rounded, bordered, inset — a window, not a page */
+#frame{position:absolute;inset:14px;display:flex;flex-direction:column;
+background:var(--bg);border:1px solid #D8D8DC;border-radius:10px;overflow:hidden;
+box-shadow:0 1px 2px rgba(0,0,0,.04),0 8px 24px rgba(0,0,0,.06)}
 button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
-#top{height:44px;display:flex;align-items:center;gap:12px;padding:0 14px;
-border-bottom:2px solid var(--red);background:var(--bg)}
+#titlebar{height:38px;display:flex;align-items:center;gap:7px;padding:0 14px;
+border-bottom:1px solid var(--line);background:var(--panel);font-size:12px;
+white-space:nowrap;overflow:hidden}
+#titlebar .dash{color:#C8C8CE}
+#titlebar .dim{color:var(--dim2)}
+#titlebar #tname{font-weight:600}
+#titlebar #tspacer{flex:1}
+#titlebar .mode{border:1px solid var(--line);border-radius:4px;padding:1px 7px;
+color:var(--dim);font-size:11px;background:var(--bg)}
 #top img{width:20px;height:20px;border-radius:4px}
 #mark{font-weight:700;letter-spacing:.16em;font-size:11.5px}
 #mark i{font-style:normal;color:var(--red)}
@@ -63,8 +74,8 @@ font-size:11px;color:var(--dim)}
 .pill.ok{border-color:var(--line);color:var(--grey)}
 .pill.warn{border-color:var(--red-line);color:var(--red);background:var(--red-soft)}
 #body{display:grid;grid-template-columns:238px 1fr 372px;
-height:calc(100% - 44px - 26px - 320px)}
-#cli{height:320px;border-top:2px solid var(--red);background:var(--bg);
+flex:1;min-height:0}
+#cli{height:300px;flex:0 0 auto;border-top:2px solid var(--red);background:var(--bg);
 display:flex;flex-direction:column;overflow:hidden}
 #clihead{display:flex;align-items:center;gap:8px;padding:5px 12px;
 font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;
@@ -129,7 +140,7 @@ color:var(--dim);font-size:12px;line-height:1.55}
 .bar{height:3px;background:var(--line);border-radius:2px;overflow:hidden;margin:6px 0 14px}
 .bar i{display:block;height:100%;background:var(--red)}
 .empty{color:var(--dim2);padding:14px;font-size:12px}
-#status{height:26px;display:flex;align-items:center;gap:14px;padding:0 14px;
+#status{height:24px;flex:0 0 auto;display:flex;align-items:center;gap:14px;padding:0 14px;
 border-top:1px solid var(--line);background:var(--panel);font-size:11px;
 color:var(--dim2);overflow:hidden}
 #status b{color:var(--dim);font-weight:500}
@@ -139,14 +150,15 @@ color:var(--dim2);overflow:hidden}
 ::-webkit-scrollbar-track{background:transparent}
 </style></head><body>
 
-<div id="top">
-  <img src="/icon.png" alt="">
-  <span id="mark">WEN<i>GOLD</i></span>
-  <span id="proj">loading…</span>
-  <span id="spacer"></span>
-  <span class="pill" id="p-cov">coverage —</span>
-  <span class="pill" id="p-cond">condition —</span>
-  <span class="pill" id="p-unres">unresolved —</span>
+<div id="frame">
+<div id="titlebar">
+  <span id="tname">…</span><span class="dash">—</span>
+  <span class="dim">wengold</span><span class="dash">—</span>
+  <span class="dim" id="trev">r0</span><span class="dash">—</span>
+  <span id="tdims">…</span>
+  <span id="tspacer"></span>
+  <span class="dim" id="tunres"></span>
+  <span class="mode">on-prem</span>
 </div>
 
 <div id="body">
@@ -164,6 +176,7 @@ color:var(--dim2);overflow:hidden}
   <div id="inrow"><span id="caret">›</span><input id="in" autocomplete="off" spellcheck="false" placeholder="ask anything, or type help — e.g. what must I re-run?"></div>
 </div>
 <div id="status"><span id="s-msg">—</span></div>
+</div>
 
 <script>
 /*__STATE__*/
@@ -176,14 +189,10 @@ async function boot(){
     // the state is inlined by the server, so the first paint needs no request
     const S=window.__WENGOLD__;
     const s=S.summary;
-    $('proj').textContent=s.path.split('/').slice(-2).join('/');
-    $('p-cov').innerHTML='coverage <b>'+s.coverage+'%</b>';
-    $('p-cov').className='pill '+(s.coverage>=80?'ok':'warn');
-    const c=S.singularity;
-    $('p-cond').innerHTML='condition <b>'+(c.condition_number||0).toFixed(2)+'</b>';
-    $('p-cond').className='pill '+((c.condition_number||0)>10?'warn':'ok');
-    $('p-unres').innerHTML='unresolved <b>'+s.unresolved+'</b>';
-    $('p-unres').className='pill '+(s.unresolved?'warn':'ok');
+    // the strip reads like a revision line: project — tool — rev — size · mode
+    $('tname').textContent=s.path.split('/').filter(Boolean).pop()||'design';
+    $('tdims').textContent=s.blocks+' blocks · '+s.nodes+' nodes · '+s.coverage+'% cov';
+    $('tunres').textContent=s.unresolved?(s.unresolved+' unresolved'):'complete';
     $('s-msg').innerHTML=s.blocks+' blocks <span class="sep">·</span> '+
       s.nodes+' nodes <span class="sep">·</span> '+s.edges+' edges <span class="sep">·</span> '+
       (s.complete?'<b>complete</b>':'<b>incomplete</b>');
