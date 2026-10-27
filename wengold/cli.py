@@ -88,6 +88,11 @@ def cmd_classify(args) -> int:
     from .kernel.minimize import minimum_new_evidence
     from .kernel.validity import Result, classify_all
     graph, _files = _build(args)
+    if Path(args.results).is_dir():
+        # a directory where a results file was expected is a user error, not a crash
+        print(f"  --results expects a JSON file of results, not a directory: "
+              f"{args.results}")
+        return 2
     payload = json.loads(Path(args.results).read_text())
     results = [Result(id=r["id"], kind=r.get("kind", "sim"),
                       depends_on=set(r.get("depends_on", [])),
@@ -107,7 +112,17 @@ def cmd_formal(args) -> int:
     text = _read(args.file)
     props = [Property.safety(f"p{i}", expr, clock=args.clock, reset=args.reset)
              for i, expr in enumerate(args.property)]
-    out = prove(text, props, engine=args.engine, depth=args.depth, budget=args.budget)
+    from .formal.rtl_model import UnsupportedConstruct
+    try:
+        out = prove(text, props, engine=args.engine, depth=args.depth,
+                    budget=args.budget)
+    except UnsupportedConstruct as exc:
+        # A property that names a signal the file does not define is a user error,
+        # not a crash. It used to surface as a Python traceback.
+        print(f"  cannot prove: {exc}")
+        print(f"  the property refers to something this file does not define; "
+              f"check the signal name against {args.file}")
+        return 2
     for r in out["results"]:
         print(f"  {r.status:>8}  {r.property:<10} {r.engine:<8} {r.detail}")
     for c in out["contracts"]:
@@ -473,6 +488,32 @@ def cmd_spec_from_text(args) -> int:
 def cmd_learn(args) -> int:
     """Methods, and the jobs the exact code cannot do on its own."""
     from .graph.model import NodeKind
+
+    if args.task == "waveform":
+        # `learn waveform <dump.vcd>` — the features the README describes. It reads
+        # a VCD rather than a project, because that is what a waveform is.
+        import os
+        from .learn.waveform_features import (activity_summary, waveform_dataset)
+        from .wave import from_vcd
+        if not os.path.exists(args.path):
+            print(f"  no such file: {args.path}")
+            return 2
+        if not args.path.lower().endswith((".vcd", ".fst")):
+            print(f"  waveform expects a .vcd dump, got: {args.path}")
+            return 2
+        wave = from_vcd(args.path)
+        names, X = waveform_dataset(wave)
+        print(f"  {len(names)} signal(s) × {len(X[0]) if X else 0} feature(s)")
+        print(f"  {activity_summary(wave)['verdict']}\n")
+        print(f"  {'signal':<28}{'toggles':>9}{'rate':>8}{'duty':>8}{'x':>7}{'entropy':>9}")
+        print("  " + "-" * 69)
+        from .learn.waveform_features import waveform_features
+        feats = waveform_features(wave)
+        for n in names[:args.show]:
+            f = feats[n]
+            print(f"  {n:<28}{f['toggles']:>9.0f}{f['toggle_rate']:>8.2f}"
+                  f"{f['duty']:>8.2f}{f['x_fraction']:>7.2f}{f['entropy']:>9.2f}")
+        return 0
 
     if args.task == "generative":
         from .learn.coverage import benchmark
@@ -946,7 +987,7 @@ def main(argv=None) -> int:
     p = sub.add_parser("learn", help="machine learning over the graph")
     p.add_argument("task", nargs="?", default="cluster",
                    choices=["cluster", "supervised", "rl", "regress", "dbscan",
-                            "generative"])
+                            "generative", "waveform"])
     p.add_argument("path", nargs="?", default=".")
     p.add_argument("--include", action="append", default=[])
     p.add_argument("--define", action="append", default=[])
