@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "wengold"
-version = "0.36.1"
+version = "0.37.0"
 description = "The open-source validity kernel for silicon verification."
 readme = "README.md"
 requires-python = ">=3.11"
