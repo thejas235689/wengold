@@ -51,7 +51,8 @@ COMMANDS = {
                  "-associated_outputs", "-associated_inputs", "-logic",
                  "-rdc_control", "-cdc_control", "-cdc_data_from_clock",
                  "-rdc_data_from_reset", "-rdc_data_to_reset", "-rdc_data_to_clock",
-                 "-blocking_polarity", "-sampling_edge"},
+                 "-blocking_polarity", "-sampling_edge", "-cdc_control_setup",
+                 "-cdc_control_hold", "-cdc_control"},
     "set_clock_group": {"-name", "-clocks", "-polarity", "-logic"},
     "set_reset_assertion_sequence": {"-name"},
 }
@@ -75,6 +76,25 @@ class Port:
     associated_to_reset: list = field(default_factory=list)
     ignore: bool = False
     raw: dict = field(default_factory=dict)
+
+    @property
+    def sampling_edge(self) -> str:
+        """Clause 8.2: the active edge of the first flop, `pos` or `neg`."""
+        return (self.raw.get("sampling_edge") or "").strip().lower()
+
+    @property
+    def control_setup(self) -> str:
+        """Clause 8.3: how long the data must be stable before the control enables."""
+        return (self.raw.get("cdc_control_setup") or "").strip()
+
+    @property
+    def control_hold(self) -> str:
+        """Clause 8.3: how long it must stay stable after the control disables."""
+        return (self.raw.get("cdc_control_hold") or "").strip()
+
+    @property
+    def logic(self) -> str:
+        return (self.raw.get("logic") or "").strip().lower()
 
     @property
     def base_name(self) -> str:
