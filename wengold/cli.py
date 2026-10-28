@@ -151,6 +151,22 @@ def cmd_regmap(args) -> int:
 def cmd_cdc(args) -> int:
     from .graph.cdc import analyse
     text = _read(args.file)
+
+    if args.standard:
+        # Accellera CDC/RDC Interface Standard v1.0: check the IP's collateral
+        # against itself and against this file's ports. It says whether the two
+        # agree, never whether a crossing is safe.
+        import re as _re
+        from .cdc_standard import check, parse
+        col = parse(_read(args.standard))
+        rtl_ports = set(_re.findall(
+            r"\b(?:input|output|inout)\b[^;\n]*?\b([A-Za-z_]\w*)\s*(?:,|;|\))",
+            text))
+        rep_conf = check(col, rtl_ports)
+        print(f"  standard: {args.standard}")
+        print(rep_conf.render())
+        return 0 if not rep_conf.errors else 1
+
     rep = analyse(text, Path(args.file).stem)
     print(f"domains: {rep.domains}")
     for c in rep.crossings:
@@ -867,6 +883,9 @@ def main(argv=None) -> int:
 
     p = sub.add_parser("cdc", help="report clock-domain crossings in an RTL file")
     p.add_argument("file")
+    p.add_argument("--standard", default=None, metavar="TCL",
+                   help="check an Accellera CDC/RDC collateral file (v1.0) against "
+                        "this RTL instead of analysing crossings")
     p.set_defaults(func=cmd_cdc)
 
     p = sub.add_parser("singularity",
