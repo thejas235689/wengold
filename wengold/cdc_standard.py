@@ -52,7 +52,7 @@ COMMANDS = {
                  "-rdc_control", "-cdc_control", "-cdc_data_from_clock",
                  "-rdc_data_from_reset", "-rdc_data_to_reset", "-rdc_data_to_clock",
                  "-blocking_polarity", "-sampling_edge", "-cdc_control_setup",
-                 "-cdc_control_hold", "-cdc_control"},
+                 "-cdc_control_hold", "-cdc_control", "-polarity"},
     "set_clock_group": {"-name", "-clocks", "-polarity", "-logic"},
     "set_reset_assertion_sequence": {"-name"},
 }
@@ -95,6 +95,11 @@ class Port:
     @property
     def logic(self) -> str:
         return (self.raw.get("logic") or "").strip().lower()
+
+    @property
+    def polarity(self) -> str:
+        """Clause 4: `low`, `high` or `low_high`. Mandatory for async_reset."""
+        return (self.raw.get("polarity") or "").strip().lower()
 
     @property
     def base_name(self) -> str:
@@ -286,6 +291,16 @@ def check(col: Collateral, rtl_ports: set | None = None) -> Conformance:
             out.findings.append(Finding("error", "type not defined",
                                         f"port {name}: {p.type!r} is not one of "
                                         f"{sorted(PORT_TYPES)}"))
+        if p.type == "async_reset":
+            if not p.polarity:
+                out.findings.append(Finding(
+                    "error", "polarity missing",
+                    f"port {name}: -polarity is mandatory for -type async_reset"))
+            elif p.polarity not in ("low", "high", "low_high"):
+                out.findings.append(Finding(
+                    "error", "polarity not defined",
+                    f"port {name}: {p.polarity!r} is not one of "
+                    f"['high', 'low', 'low_high']"))
         for attr, refs in (("associated_from_clocks", p.associated_from_clocks),
                            ("associated_to_clocks", p.associated_to_clocks)):
             for ref in refs:
