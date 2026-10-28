@@ -152,6 +152,22 @@ def cmd_cdc(args) -> int:
     from .graph.cdc import analyse
     text = _read(args.file)
 
+    if args.from_ipxact:
+        # Clause 7 -> Clause 6: read the IP-XACT form back as Tcl.
+        from .cdc_ipxact import check_scr, from_ipxact, to_tcl
+        xml = _read(args.from_ipxact)
+        scr = check_scr(xml)
+        print(scr.render())
+        if not scr.ok:
+            return 1
+        out = to_tcl(from_ipxact(xml))
+        if args.out:
+            Path(args.out).write_text(out)
+            print(f"  wrote {args.out}")
+        else:
+            print(out)
+        return 0
+
     if args.standard:
         # Accellera CDC/RDC Interface Standard v1.0: check the IP's collateral
         # against itself and against this file's ports. It says whether the two
@@ -159,6 +175,16 @@ def cmd_cdc(args) -> int:
         import re as _re
         from .cdc_standard import check, parse
         col = parse(_read(args.standard))
+
+        if args.to_ipxact:
+            # Clause 6 -> Clause 7: package the collateral as an IP-XACT component.
+            from .cdc_ipxact import check_scr, to_ipxact
+            xml = to_ipxact(col)
+            Path(args.to_ipxact).write_text(xml)
+            scr = check_scr(xml)
+            print(f"  wrote {args.to_ipxact} ({len(xml)} bytes)")
+            print(scr.render())
+            return 0 if scr.ok else 1
         rtl_ports = set(_re.findall(
             r"\b(?:input|output|inout)\b[^;\n]*?\b([A-Za-z_]\w*)\s*(?:,|;|\))",
             text))
@@ -886,6 +912,11 @@ def main(argv=None) -> int:
     p.add_argument("--standard", default=None, metavar="TCL",
                    help="check an Accellera CDC/RDC collateral file (v1.0) against "
                         "this RTL instead of analysing crossings")
+    p.add_argument("--to-ipxact", dest="to_ipxact", default=None, metavar="XML",
+                   help="with --standard: also write the IP-XACT form (Clause 7)")
+    p.add_argument("--from-ipxact", dest="from_ipxact", default=None, metavar="XML",
+                   help="read an IP-XACT CDC component and print the Tcl form")
+    p.add_argument("--out", default=None, help="write the converted form here")
     p.set_defaults(func=cmd_cdc)
 
     p = sub.add_parser("singularity",
