@@ -176,6 +176,16 @@ def cmd_cdc(args) -> int:
         from .cdc_standard import check, parse
         col = parse(_read(args.standard))
 
+        if args.sva:
+            # Clause 8: emit the closed-box assertions the collateral justifies.
+            from .cdc_sva import emit as emit_sva
+            sv = emit_sva(col)
+            Path(args.sva).write_text(sv)
+            n = sv.count("assert property")
+            print(f"  wrote {args.sva} ({len(sv)} bytes, {n} assertion(s))")
+            print("  these check declared data stability, not that a crossing is safe")
+            return 0
+
         if args.to_ipxact:
             # Clause 6 -> Clause 7: package the collateral as an IP-XACT component.
             from .cdc_ipxact import check_scr, to_ipxact
@@ -917,6 +927,8 @@ def main(argv=None) -> int:
     p.add_argument("--from-ipxact", dest="from_ipxact", default=None, metavar="XML",
                    help="read an IP-XACT CDC component and print the Tcl form")
     p.add_argument("--out", default=None, help="write the converted form here")
+    p.add_argument("--sva", default=None, metavar="SV",
+                   help="with --standard: emit Clause 8 CDC assertions here")
     p.set_defaults(func=cmd_cdc)
 
     p = sub.add_parser("singularity",
