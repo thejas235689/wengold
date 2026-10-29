@@ -291,7 +291,7 @@ def cmd_propose(args) -> int:
 
 
 def cmd_desktop(args) -> int:
-    """Serve the local WENGOLD app and open it as a window."""
+    """Open the WENGOLD app: the native window if it can be, a browser if not."""
     from .desktop import find_app_browser, install_shortcut, serve
 
     if args.install_shortcut:
@@ -299,6 +299,22 @@ def cmd_desktop(args) -> int:
         if target:
             print(f"  shortcut installed: {target}")
         return 0
+
+    # Native first. A Qt window is the real thing; a Chrome --app window is a
+    # browser without its toolbars, which is not what "desktop app" means. The
+    # browser path stays as the fallback for a machine without PyQt6, because an
+    # app that refuses to start over a packaging detail is worse than a tab.
+    want_native = args.native if args.native is not None else True
+    if want_native:
+        try:
+            from . import native
+            return native.main(args.path)
+        except Exception as exc:
+            if args.native:
+                print(f"  the native app could not start: {exc}")
+                return 1
+            print(f"  native app unavailable ({type(exc).__name__}); "
+                  f"using a browser window")
 
     if not args.no_app and not find_app_browser():
         print("  no Chrome/Edge found for app mode; falling back to a browser tab")
@@ -983,6 +999,11 @@ def main(argv=None) -> int:
                    help="open a normal browser tab instead of an app window")
     p.add_argument("--app", dest="no_app", action="store_false",
                    help=argparse.SUPPRESS)
+    p.add_argument("--native", dest="native", action="store_true",
+                   help="open the native Qt window instead of a browser")
+    p.add_argument("--browser", dest="native", action="store_false",
+                   help="force the browser window")
+    p.set_defaults(native=None)
     p.add_argument("--window-size", dest="window_size", default="1280,860")
     p.add_argument("--install-shortcut", dest="install_shortcut",
                    action="store_true",
