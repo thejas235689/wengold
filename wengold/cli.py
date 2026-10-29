@@ -865,10 +865,29 @@ def cmd_agent(args) -> int:
             print("  stopped before a check is spent, not discovered at run time.")
         return 0
 
+    if getattr(args, "real", False):
+        from .agent.runners import ToolRunner, Toolchain
+        from .graph.model import NodeKind as _NK
+        _files_by_id = {}
+        for n, d in graph.nodes.items():
+            if d.kind is _NK.RTL and getattr(d, "path", None):
+                _files_by_id[n] = d.path
+        tc = Toolchain(getattr(args, "tools", None))
+        runner = ToolRunner(graph, {r.id: r for r in results}, args.path,
+                            toolchain=tc)
+        print(f"runner: real tools — {tc.describe()}")
+        missing = tc.missing()
+        if missing:
+            print(f"  not installed: {', '.join(missing)} — those checks report "
+                  f"tool_missing, never a pass")
+        print()
+    else:
+        runner = SimulatedRunner()
+
     bandit = Bandit(seed=args.seed)
     agent = Agent(graph, results, bandit=bandit, seed=args.seed)
     for ep in range(max(1, args.episodes)):
-        run = agent.run(changed, SimulatedRunner(), strategy=args.strategy,
+        run = agent.run(changed, runner, strategy=args.strategy,
                         adaptive=(args.strategy is None), budget=args.budget)
         if ep == 0:
             print(run.render())
@@ -1124,6 +1143,11 @@ def main(argv=None) -> int:
                    help="fix a planning strategy instead of learning one")
     p.add_argument("--budget", type=int, default=None,
                    help="cap the number of checks")
+    p.add_argument("--real", action="store_true",
+                   help="act with the installed tools instead of a simulated runner")
+    p.add_argument("--tools", default=None, metavar="DIR",
+                   help="directory holding verilator/iverilog/yosys (e.g. an OSS "
+                        "CAD Suite bin)")
     p.add_argument("--mode", default="stages",
                    choices=["stages", "react", "search", "orchestrate"],
                    help="stages: perceive→reason→plan→act→reflect→adapt; "
