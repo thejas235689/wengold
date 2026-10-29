@@ -20,7 +20,7 @@ __all__ = ["Tensor", "matmul", "add", "add_bias", "scale", "softmax",
            "layer_norm", "relu", "transpose", "embedding", "cross_entropy",
            "mean_rows", "mask_fill", "backward", "sgd_step",
            # needed by the LSTM
-           "sigmoid", "tanh", "mul", "slice_cols",
+           "sigmoid", "tanh", "mul", "div", "neg", "slice_cols",
            # needed by the generative models
            "binary_cross_entropy", "gaussian_kl", "concat_cols", "split_cols",
            "reparameterise"]
@@ -67,6 +67,57 @@ class Tensor:
     def __repr__(self) -> str:
         return f"Tensor{self.shape}"
 
+    # -- operators -----------------------------------------------------------
+    # These delegate to the free functions so each operation has exactly one
+    # backward pass. A second implementation here would be a second thing to keep
+    # correct, and the gradient checks only cover one of them.
+    def _lift(self, other) -> "Tensor":
+        """A scalar or array becomes a constant Tensor of the same shape."""
+        if isinstance(other, Tensor):
+            return other
+        arr = np.asarray(other, dtype=np.float64)
+        if arr.ndim == 0:
+            arr = np.full(self.shape, float(arr))
+        elif arr.ndim == 1:
+            arr = arr.reshape(-1, 1)
+        return Tensor(np.broadcast_to(arr, self.shape))
+
+    def __add__(self, other):
+        return add(self, self._lift(other))
+
+    def __radd__(self, other):
+        return add(self._lift(other), self)
+
+    def __sub__(self, other):
+        return add(self, neg(self._lift(other)))
+
+    def __rsub__(self, other):
+        return add(self._lift(other), neg(self))
+
+    def __mul__(self, other):
+        if isinstance(other, Tensor):
+            return mul(self, other)
+        # a scalar multiply is `scale`, which is cheaper and already checked
+        return scale(self, float(np.asarray(other)))
+
+    def __rmul__(self, other):
+        return self.__mul__(other)
+
+    def __truediv__(self, other):
+        if isinstance(other, Tensor):
+            return div(self, other)
+        return scale(self, 1.0 / float(np.asarray(other)))
+
+    def __rtruediv__(self, other):
+        return div(self._lift(other), self)
+
+    def __neg__(self):
+        return neg(self)
+
+    def __matmul__(self, other):
+        return matmul(self, self._lift(other) if not isinstance(other, Tensor)
+                      else other)
+
 
 # ---- operations ------------------------------------------------------------
 def matmul(a: Tensor, b: Tensor) -> Tensor:
@@ -93,6 +144,28 @@ def add(a: Tensor, b: Tensor) -> Tensor:
 
     node._backward = _backward
     return node
+
+
+def div(a: Tensor, b: Tensor) -> Tensor:
+    """Elementwise quotient, same shape.
+
+    d/da (a/b) = 1/b, d/db (a/b) = -a/b^2. The second term is the one that is easy
+    to forget and produces a model that trains but trains something else.
+    """
+    node = Tensor(a.data / b.data, a.requires_grad or b.requires_grad, (a, b))
+
+    def _backward():
+        if a.requires_grad:
+            a.grad += node.grad / b.data
+        if b.requires_grad:
+            b.grad += -node.grad * a.data / (b.data ** 2)
+
+    node._backward = _backward
+    return node
+
+
+def neg(a: Tensor) -> Tensor:
+    return scale(a, -1.0)
 
 
 def add_bias(a: Tensor, bias: Tensor) -> Tensor:
