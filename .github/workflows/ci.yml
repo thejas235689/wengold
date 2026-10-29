@@ -43,6 +43,9 @@ jobs:
           # pyslang is a moving API, and a green local run plus a red CI run is
           # the least useful signal a project can produce.
           pip install "pytest>=8,<9" "z3-solver>=4.13,<6" "pyslang==12.1.0" "numpy>=1.26,<3"
+          # the native desktop app; optional at runtime, so the suite skips its
+          # tests if this ever fails, but installed here so CI covers it
+          pip install "PyQt6>=6.6,<7" || echo "PyQt6 unavailable; native tests will skip"
 
       - name: Show what was installed
         run: |
@@ -54,6 +57,32 @@ jobs:
         run: |
           python -m pytest -q -p no:cacheprovider tests --tb=short -rf \
             2>&1 | tee /tmp/pytest.log
+
+      - name: Render the native window offscreen
+        # Qt renders without a display, so the real desktop window can be built and
+        # screenshotted on a headless runner. This catches a window that fails to
+        # construct — which the structural tests would also catch, but a picture
+        # proves the layout came out as well.
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          python -m wengold.native examples --screenshot /tmp/native.png
+          python -c "
+          import struct
+          data = open('/tmp/native.png','rb').read()
+          assert data[:8] == b'\x89PNG\r\n\x1a\n', 'not a PNG'
+          w, h = struct.unpack('>II', data[16:24])
+          print(f'native window rendered {w}x{h}')
+          assert w > 800 and h > 500, (w, h)
+          "
+
+      - name: Upload the native screenshot
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-window
+          path: /tmp/native.png
+          if-no-files-found: warn
 
       - name: Upload the pytest log
         # so a failure can be read without guessing, including from outside CI
