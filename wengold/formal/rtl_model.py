@@ -46,7 +46,7 @@ TOKEN_RE = re.compile(r"""
   | (?P<fill>'[01xXzZ](?![\w']))
   | (?P<string>"[^"\\]*(?:\\.[^"\\]*)*")
   | (?P<id>[A-Za-z_]\w*|\$\w+)
-  | (?P<op><<=|>>=|===|!==|==|!=|<=|>=|<<|>>|&&|\|\||\*\*|[-+*/%&|^~!<>=?:;,.(){}\[\]@#`'])
+  | (?P<op><<=|>>=|===|!==|==|!=|<=|>=|<<|>>|&&|\|\||\*\*|::|[-+*/%&|^~!<>=?:;,.(){}\[\]@#`'])
 """, re.VERBOSE | re.DOTALL)
 
 # Preprocessor directives. Real RTL starts with `include / `define, which carry no
@@ -225,6 +225,11 @@ class _P:
             return ("num", parse_number(self.take()))
         if re.match(r"^[A-Za-z_]\w*$", tok):
             name = self.take()
+            if self.peek() == "::":
+                # `pkg::NAME` — a package-scoped constant or enum member. It is
+                # one symbol; the package name is not a value here.
+                self.take()
+                name = self.take()
             if self.accept("["):
                 hi = self.expr()
                 if self.accept(":"):
@@ -318,6 +323,8 @@ class RtlModule:
     # saying what was skipped is more useful than declining the whole file.
     instances: list = field(default_factory=list)
     typedefs: list = field(default_factory=list)
+    arrays: list = field(default_factory=list)
+    comb_blocks: list = field(default_factory=list)
 
     @property
     def registered(self) -> set[str]:
@@ -474,6 +481,12 @@ def parse_module(text: str) -> RtlModule:
             i = _parse_decls_at(toks, i, m)
         elif tok == "assign":
             i = _parse_assign(toks, i + 1, m)
+        elif tok in ("always_comb", "always_latch"):
+            # Combinational logic has no clock edge, and modelling it as clocked
+            # would be wrong. It is recorded and skipped, so the module's own
+            # assigns and properties can still be proved.
+            i = _skip_block(toks, i)
+            m.comb_blocks.append(tok)
         elif tok in ("always_ff", "always"):
             i = _parse_always(toks, i + 1, m)
         elif tok == ";":
@@ -487,18 +500,35 @@ def parse_module(text: str) -> RtlModule:
             end = _skip_statement(toks, i)
             m.instances.append(toks[i])
             i = end
-        elif (tok not in _KEYWORDS and i + 2 < len(toks)
-              and (toks[i + 1][:1].isalpha() or toks[i + 1][:1] == "_")
-              and toks[i + 2] == ";"):
-            # `state_t st;` — a declaration of a user-defined type. Record the
-            # signal at 1 bit (the width of a typedef is not modelled) and move on.
-            m.signals.setdefault(toks[i + 1], 1)
-            i += 3
+        elif tok not in _KEYWORDS and _user_type_decl(toks, i):
+            # `state_t st;`, `fsm_t state, state_nxt;`, `pkg::t x;` — a declaration
+            # of a user-defined type. Each name is recorded at 1 bit; the width of
+            # a typedef is not modelled.
+            i = _record_user_decl(toks, i, m)
         elif tok == "generate" or tok == "endgenerate":
             raise UnsupportedConstruct("generate blocks are not supported by the formal front-end")
         else:
             raise UnsupportedConstruct(f"unsupported construct {tok!r}")
     return m
+
+
+def _skip_block(toks: list[str], i: int) -> int:
+    """Advance past `begin ... end` (or a single statement) starting at `i`."""
+    j = i
+    while j < len(toks) and toks[j] not in ("begin", "end", "endmodule", ";"):
+        j += 1
+    if j >= len(toks) or toks[j] != "begin":
+        return _skip_statement(toks, j)
+    depth = 0
+    while j < len(toks):
+        if toks[j] == "begin":
+            depth += 1
+        elif toks[j] == "end":
+            depth -= 1
+            if depth == 0:
+                return j + 1
+        j += 1
+    return j
 
 
 def _skip_statement(toks: list[str], i: int) -> int:
@@ -514,6 +544,42 @@ def _skip_statement(toks: list[str], i: int) -> int:
             return i + 1
         i += 1
     return i
+
+
+def _skip_scope(toks: list[str], i: int) -> int:
+    """`pkg::type` -> index just past `type`."""
+    if i + 2 < len(toks) and toks[i + 1] == "::":
+        return i + 2
+    return i
+
+
+def _user_type_decl(toks: list[str], i: int) -> bool:
+    """`type name[, name]* ;` where `type` may be `pkg::type`."""
+    j = _skip_scope(toks, i)
+    if j + 1 >= len(toks):
+        return False
+    if not (toks[j + 1][:1].isalpha() or toks[j + 1][:1] == "_"):
+        return False
+    j += 2
+    while j < len(toks) and toks[j] == ",":
+        if j + 1 < len(toks) and (toks[j + 1][:1].isalpha()
+                                  or toks[j + 1][:1] == "_"):
+            j += 2
+        else:
+            return False
+    return j < len(toks) and toks[j] == ";"
+
+
+def _record_user_decl(toks: list[str], i: int, m: RtlModule) -> int:
+    # start *after* the type: `fsm_t state, nxt;` records state and nxt, never
+    # the type name itself
+    j = _skip_scope(toks, i) + 1
+    while j < len(toks) and toks[j] != ";":
+        tok = toks[j]
+        if tok[:1].isalpha() or tok[:1] == "_":
+            m.signals.setdefault(tok, 1)
+        j += 1
+    return j + 1
 
 
 def _looks_like_instantiation(toks: list[str], i: int) -> bool:
@@ -583,6 +649,20 @@ def _parse_decls_at(toks: list[str], i: int, m: RtlModule) -> int:
         if direction:
             m.directions[name] = direction
         i += 1
+        if i < len(toks) and toks[i] == "[":
+            # unpacked array dimension: the element width is what we track, and
+            # the depth is not modelled — recorded so the caller can see it
+            depth = 0
+            while i < len(toks):
+                if toks[i] == "[":
+                    depth += 1
+                elif toks[i] == "]":
+                    depth -= 1
+                    if depth == 0:
+                        i += 1
+                        break
+                i += 1
+            m.arrays.append(name)
         if i < len(toks) and toks[i] == ",":
             i += 1
             # a following name without a new direction inherits
