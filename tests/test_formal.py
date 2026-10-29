@@ -36,10 +36,18 @@ module counter_bad (input logic clk, input logic rst_n, input logic en);
 endmodule
 """
 
+# A construct the front-end still refuses *on purpose*: `generate` changes
+# elaboration, and taking one branch silently would be a wrong answer.
+#
+# The previous sample here was an unpacked array, which is now supported — the
+# test was pinning a gap rather than a decision, so it was changed to a decision.
 UNSUPPORTED = """
 module weird (input logic clk);
-    logic [7:0] mem [0:15];
-    always_ff @(posedge clk) mem[0] <= 8'd1;
+    generate
+        if (1) begin : g
+            logic x;
+        end
+    endgenerate
 endmodule
 """
 
@@ -82,8 +90,29 @@ def test_model_stepping():
 def test_unsupported_construct_is_explicit():
     with pytest.raises(UnsupportedConstruct):
         parse_module(UNSUPPORTED)
+    # conditional compilation is still refused: it changes which code exists
     with pytest.raises(UnsupportedConstruct):
-        parse_module("module m; always_comb y = a & b; endmodule")
+        parse_module("module m; `ifdef F\n assign y = 1;\n `endif endmodule")
+
+
+def test_an_unpacked_array_is_now_supported_and_recorded():
+    """It used to raise. The element width is tracked; the depth is not modelled,
+    so the name is recorded in `arrays` rather than silently forgotten."""
+    m = parse_module("module m(input logic clk);\n"
+                     "  logic [7:0] mem [0:15];\n"
+                     "  always_ff @(posedge clk) mem[0] <= 8'd1;\n"
+                     "endmodule\n")
+    assert m.signals.get("mem") == 8
+    assert "mem" in m.arrays
+
+
+def test_an_always_comb_block_is_recorded_not_refused():
+    """Combinational logic has no clock edge; modelling it as clocked would be
+    wrong, so it is skipped and declared."""
+    m = parse_module("module m(input logic a, output logic y);\n"
+                     "  always_comb begin y = a; end\n"
+                     "endmodule\n")
+    assert m.comb_blocks == ["always_comb"]
 
 
 # ---- explicit engine ----------------------------------------------------
