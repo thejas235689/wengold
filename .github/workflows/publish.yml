@@ -1,0 +1,61 @@
+name: Publish
+
+# Publishes to PyPI when a version tag is pushed.
+#
+# It builds first and installs the built wheel before uploading anything, so a
+# package that does not import cannot reach PyPI. The check is the same one run by
+# hand when v0.42.1 was verified: build the wheel, install it into a throwaway
+# directory, then run a real command from it.
+#
+# Requires a repository secret named PYPI_API_TOKEN (a PyPI API token). Without it
+# this workflow fails at the upload step and nothing is published — it does not
+# fall back to a password or skip the step.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+jobs:
+  build-and-publish:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Build the distribution
+        run: |
+          python -m pip install --upgrade pip build
+          python -m build
+
+      - name: Verify the wheel installs and runs
+        # A package that cannot be imported is worse than no release, so this runs
+        # before anything is uploaded.
+        run: |
+          python -m pip install --no-deps --target /tmp/verify dist/*.whl
+          PYTHONPATH=/tmp/verify python -c "import wengold; print('version', wengold.__version__)"
+          PYTHONPATH=/tmp/verify python -m wengold.cli --help > /dev/null
+          mkdir -p /tmp/run && cd /tmp/run
+          PYTHONPATH=/tmp/verify python -m wengold.cli index "$GITHUB_WORKSPACE/examples"
+
+      - name: Check the tag matches the package version
+        run: |
+          python - <<'PY'
+          import os, pathlib, re, sys
+          tag = os.environ["GITHUB_REF_NAME"].lstrip("v")
+          text = pathlib.Path("wengold/__init__.py").read_text()
+          version = re.search(r'__version__\s*=\s*"([^"]+)"', text).group(1)
+          if tag != version:
+              sys.exit(f"tag {tag} does not match package version {version}")
+          print("tag and package version agree:", version)
+          PY
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          password: ${{ secrets.PYPI_API_TOKEN }}
