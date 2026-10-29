@@ -100,3 +100,40 @@ def test_a_fill_literal_is_not_folded_to_a_number():
     from wengold.formal.rtl_model import eval_int
     with pytest.raises(UnsupportedConstruct):
         eval_int(("fill", "'1"), {}, {})
+
+
+# ---- the second pass: user types, scope, arrays, always_comb --------------
+def test_a_typedefd_type_with_several_names():
+    """`fsm_t state, state_nxt;` blocked five qeciphy files."""
+    m = parse_module("module t(input logic clk);\n"
+                     "  fsm_t state, state_nxt;\n"
+                     "  assign state = state_nxt;\nendmodule\n")
+    assert {"state", "state_nxt"} <= set(m.signals)
+    assert "fsm_t" not in m.signals, "the type name is not a signal"
+
+
+def test_a_package_scoped_type():
+    m = parse_module("module t(input logic clk);\n"
+                     "  qeciphy_pkg::vd_pkt_t vd_pkt;\nendmodule\n")
+    assert "vd_pkt" in m.signals
+    assert "vd_pkt_t" not in m.signals
+
+
+def test_an_unpacked_array_keeps_its_element_width():
+    m = parse_module("module t(input logic clk);\n"
+                     "  logic [3:0] dxor [15:0];\nendmodule\n")
+    assert m.signals["dxor"] == 4
+    assert "dxor" in m.arrays
+
+
+def test_a_package_scoped_constant_in_an_expression():
+    m = parse_module("module t(input logic clk);\n"
+                     "  assign x = qeciphy_pkg::NO_ERROR;\nendmodule\n")
+    assert len(m.assigns) == 1
+
+
+def test_always_comb_is_skipped_not_modelled():
+    m = parse_module("module t(input logic a, output logic y);\n"
+                     "  always_comb begin y = a; end\nendmodule\n")
+    assert m.comb_blocks == ["always_comb"]
+    assert not m.always_ff, "combinational logic must not be recorded as clocked"
