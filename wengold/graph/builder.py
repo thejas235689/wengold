@@ -105,12 +105,23 @@ class GraphBuilder:
             for mod in unit.modules:
                 self.graph.add_node(Node(id=mod, kind=NodeKind.RTL, path=path,
                                          meta={"frontend": "slang"}))
-                if unit.parse_errors:
+                # Mark only the modules that actually contain an error. Marking
+                # every module in the file made one broken module in Veer EL2's
+                # beh_lib.sv poison the other 28.
+                n_err = (getattr(unit, "error_modules", {}) or {}).get(mod, 0)
+                if n_err:
                     self.graph.mark_unresolved(
-                        mod, f"{unit.parse_errors} parse error(s) in {path}",
-                        kind="parse_error", file=path,
-                        construct=", ".join(sorted({str(d.code) for d in unit.diagnostics[:3]}))
-                        if getattr(unit, "diagnostics", None) else "parse errors")
+                        mod, f"{n_err} parse error(s) in {path}",
+                        kind="parse_error", file=path, construct="parse errors")
+                elif getattr(unit, "file_level_errors", 0) and not getattr(
+                        unit, "error_modules", None):
+                    # errors outside every module (a broken package, a stray
+                    # token) still taint the file, because we cannot say which
+                    # module they affect
+                    self.graph.mark_unresolved(
+                        mod, f"{unit.file_level_errors} file-level parse error(s) "
+                             f"in {path}", kind="parse_error", file=path,
+                        construct="parse errors")
                 for pkg in unit.imports:
                     if pkg in defined:
                         # `import X::*` where X is a module is not a package
