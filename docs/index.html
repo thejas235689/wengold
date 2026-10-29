@@ -74,8 +74,30 @@
     <a class="card" href="https://github.com/thejas235689/wengold">
       <div class="k">Code</div>
       <h2>Repository</h2>
-      <p>The kernel, graph, ledger, agents and MCP server — with 160 tests, and a real SystemVerilog front-end.</p>
+      <p>The kernel, graph, ledger, agents and MCP server — with 583 tests, a
+         SystemVerilog front-end, and CI that runs both on every push.</p>
     </a>
+    <a class="card" href="https://github.com/thejas235689/wengold/blob/main/RESULTS.md">
+      <div class="k">Evidence</div>
+      <h2>30 repositories measured</h2>
+      <p>Every project the tool has been run against, with the numbers and the reason
+         for each gap — OpenPiton at 891 blocks, frost at 98% coverage, riscduino's
+         169 unresolved nodes and why.</p>
+    </a>
+    <a class="card" href="https://github.com/thejas235689/wengold/tree/main/vscode-extension">
+      <div class="k">Editor</div>
+      <h2>VS Code and Cursor</h2>
+      <p>The graph, the unresolved nodes and the singular configurations in the
+         sidebar, with a squiggle on the line that instantiates something missing.</p>
+    </a>
+  </div>
+
+  <div class="q" style="margin-top:26px">
+     <strong>What it does not do.</strong> The formal front-end accepts 11 of 27 files
+     on a modern UVM project and refuses the rest rather than guessing — <code>`ifdef</code>,
+     <code>generate</code> and multiple clock domains are out of scope. The CDC work reads
+     and writes the Accellera format; it does not decide whether a crossing is safe.
+     Every number on this site can be reproduced from the repository.
   </div>
 
   <h2 style="font-size:22px;margin:44px 0 12px;">Install</h2>
