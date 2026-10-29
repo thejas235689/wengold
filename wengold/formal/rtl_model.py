@@ -28,12 +28,25 @@ import re
 from dataclasses import dataclass, field
 from typing import Callable
 
+# Tokens that begin a statement the body loop already handles. Anything else that
+# starts with an identifier and is followed by another identifier is treated as an
+# instantiation.
+_KEYWORDS = frozenset({
+    "assign", "always_ff", "always", "always_comb", "initial", "parameter",
+    "localparam", "generate", "endgenerate", "endmodule", "input", "output",
+    "inout", "logic", "wire", "reg", "bit", "integer", "typedef", "function",
+    "endfunction", "task", "endtask", "if", "else", "for", "case", "endcase",
+    "begin", "end", "return", "import", "export", "package", "endpackage",
+})
+
 TOKEN_RE = re.compile(r"""
     (?P<ws>\s+)
   | (?P<comment>//[^\n]*|/\*.*?\*/)
   | (?P<num>\d*'[sS]?[bBoOdDhH][0-9a-fA-FxXzZ_]+|\d+)
-  | (?P<id>[A-Za-z_]\w*)
-  | (?P<op><<=|>>=|===|!==|==|!=|<=|>=|<<|>>|&&|\|\||[-+*/%&|^~!<>=?:;,.()\[\]@#`])
+  | (?P<fill>'[01xXzZ](?![\w']))
+  | (?P<string>"[^"\\]*(?:\\.[^"\\]*)*")
+  | (?P<id>[A-Za-z_]\w*|\$\w+)
+  | (?P<op><<=|>>=|===|!==|==|!=|<=|>=|<<|>>|&&|\|\||\*\*|[-+*/%&|^~!<>=?:;,.(){}\[\]@#`'])
 """, re.VERBOSE | re.DOTALL)
 
 # Preprocessor directives. Real RTL starts with `include / `define, which carry no
@@ -179,6 +192,35 @@ class _P:
             node = self.expr()
             self.expect(")")
             return node
+        if re.match(r"^'[01xXzZ]$", tok):
+            # `'0` / `'1` fill every bit. `'0` is a constant zero; `'1` is all
+            # ones, whose value depends on the width, so it stays symbolic.
+            lit = self.take().lower()
+            return ("num", 0) if lit == "'0" else ("fill", lit)
+        if tok == "{":
+            # concatenation on the right-hand side. The value needs the widths of
+            # its parts, which are not always known, so it parses here and refuses
+            # only at evaluation.
+            self.take()
+            parts = []
+            if self.peek() != "}":
+                parts.append(self.expr())
+                while self.accept(","):
+                    parts.append(self.expr())
+            self.expect("}")
+            return ("concat", parts)
+        if tok == "'" and self.peek(1) == "(":
+            # `'(expr)` is a signed cast; the type carries no value here
+            self.take()
+            self.take()
+            node = self.expr()
+            self.expect(")")
+            return node
+        if tok == "(":
+            self.take()
+            node = self.expr()
+            self.expect(")")
+            return node
         if re.match(r"^\d", tok):
             return ("num", parse_number(self.take()))
         if re.match(r"^[A-Za-z_]\w*$", tok):
@@ -207,6 +249,13 @@ def eval_int(node, env: dict, params: dict) -> int:
     kind = node[0]
     if kind == "num":
         return node[1]
+    if kind == "concat":
+        raise UnsupportedConstruct(
+            "concatenation needs the width of every part to evaluate")
+    if kind == "fill":
+        # `'1` is all-ones at the signal's width; without the width it is not a
+        # number, so it must not be silently folded to something wrong
+        raise UnsupportedConstruct(f"fill literal {node[1]!r} needs a width")
     if kind == "id":
         name = node[1]
         if name in env:
@@ -264,6 +313,11 @@ class RtlModule:
     assigns: list[tuple[str, tuple]] = field(default_factory=list)
     always_ff: list[tuple[str, list]] = field(default_factory=list)
     clock: str | None = None
+    # Instances and typedefs the prover does not model. They are recorded rather
+    # than refused: a module's own assigns and properties can still be proved, and
+    # saying what was skipped is more useful than declining the whole file.
+    instances: list = field(default_factory=list)
+    typedefs: list = field(default_factory=list)
 
     @property
     def registered(self) -> set[str]:
@@ -424,11 +478,85 @@ def parse_module(text: str) -> RtlModule:
             i = _parse_always(toks, i + 1, m)
         elif tok == ";":
             i += 1
+        elif tok == "typedef":
+            # a typedef names a type; it carries no behaviour the prover models
+            end = _skip_statement(toks, i)
+            m.typedefs.append(" ".join(toks[i:end]))
+            i = end
+        elif _looks_like_instantiation(toks, i):
+            end = _skip_statement(toks, i)
+            m.instances.append(toks[i])
+            i = end
+        elif (tok not in _KEYWORDS and i + 2 < len(toks)
+              and (toks[i + 1][:1].isalpha() or toks[i + 1][:1] == "_")
+              and toks[i + 2] == ";"):
+            # `state_t st;` — a declaration of a user-defined type. Record the
+            # signal at 1 bit (the width of a typedef is not modelled) and move on.
+            m.signals.setdefault(toks[i + 1], 1)
+            i += 3
         elif tok == "generate" or tok == "endgenerate":
             raise UnsupportedConstruct("generate blocks are not supported by the formal front-end")
         else:
             raise UnsupportedConstruct(f"unsupported construct {tok!r}")
     return m
+
+
+def _skip_statement(toks: list[str], i: int) -> int:
+    """Advance past one statement, respecting (), [] and {} nesting."""
+    depth = 0
+    while i < len(toks):
+        tok = toks[i]
+        if tok in ("(", "[", "{"):
+            depth += 1
+        elif tok in (")", "]", "}"):
+            depth = max(0, depth - 1)
+        elif tok == ";" and depth == 0:
+            return i + 1
+        i += 1
+    return i
+
+
+def _looks_like_instantiation(toks: list[str], i: int) -> bool:
+    """`mod inst (...)`, `mod #(...) inst (...)`, or `mod inst [3:0] (...)`.
+
+    A user-defined type declaration — `state_t st;` — looks like the first two
+    tokens of an instantiation but has no port list, so the `(` is required. That
+    distinction is what stops a typedef'd variable being recorded as an instance.
+    """
+    if i >= len(toks) or toks[i] in _KEYWORDS:
+        return False
+    j = i + 1
+    if j < len(toks) and toks[j] == "#":
+        j += 1
+        if j < len(toks) and toks[j] == "(":
+            depth = 0
+            while j < len(toks):
+                if toks[j] == "(":
+                    depth += 1
+                elif toks[j] == ")":
+                    depth -= 1
+                    if depth == 0:
+                        j += 1
+                        break
+                j += 1
+    if j >= len(toks):
+        return False
+    ident = toks[j]
+    if not (ident[:1].isalpha() or ident[:1] == "_"):
+        return False
+    j += 1
+    if j < len(toks) and toks[j] == "[":
+        depth = 0
+        while j < len(toks):
+            if toks[j] == "[":
+                depth += 1
+            elif toks[j] == "]":
+                depth -= 1
+                if depth == 0:
+                    j += 1
+                    break
+            j += 1
+    return j < len(toks) and toks[j] == "("
 
 
 def _parse_decls(toks: list[str], m: RtlModule) -> None:
