@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "wengold"
-version = "0.43.0"
+version = "0.44.0"
 description = "The open-source validity kernel for silicon verification."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -16,6 +16,9 @@ authors = [{ name = "The WENGOLD Authors" }]
 dependencies = ["numpy>=1.24"]
 
 [project.optional-dependencies]
+# the native desktop app. Optional: `wengold desktop`
+# falls back to a browser window without it.
+native = ["PyQt6>=6.6,<7"]
 open = ["cocotb>=1.8", "cocotb-coverage>=1.2"]
 formal = ["z3-solver>=4.12"]   # optional symbolic backend
 slang = ["pyslang>=9"]         # optional real SystemVerilog front-end
