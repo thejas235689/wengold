@@ -54,6 +54,11 @@ jobs:
           python -c "import z3; print('z3', z3.get_version_string())"
 
       - name: Run the test suite
+        env:
+          # Qt segfaults at exit without a display; the native tests set this
+          # themselves, but setting it here too means a test that imports Qt
+          # directly cannot crash the runner.
+          QT_QPA_PLATFORM: offscreen
         run: |
           python -m pytest -q -p no:cacheprovider tests --tb=short -rf \
             2>&1 | tee /tmp/pytest.log
@@ -82,6 +87,32 @@ jobs:
           print(f'native window rendered {w}x{h}')
           assert w > 800 and h > 500, (w, h)
           "
+
+      - name: Install and uninstall the Linux app
+        # The installer is a shell script, so nothing above exercises it. This runs
+        # it for real into a throwaway HOME and then removes it again.
+        run: |
+          export HOME=/tmp/fakehome && mkdir -p "$HOME"
+          sh linux/install.sh
+          test -x "$HOME/.local/bin/wengold"
+          test -f "$HOME/.local/share/applications/wengold.desktop"
+          PYTHONPATH="$HOME/.local/share/wengold" python3 -c "import wengold; print('installed', wengold.__version__)"
+          sh linux/uninstall.sh
+          test ! -e "$HOME/.local/bin/wengold"
+
+      - name: Build the Debian package
+        run: |
+          sh linux/build-deb.sh
+          dpkg-deb --info dist/wengold_*_all.deb | head -12
+          dpkg-deb -c dist/wengold_*_all.deb | grep -c '^' || true
+
+      - name: Upload the Debian package
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: wengold-deb
+          path: dist/*.deb
+          if-no-files-found: warn
 
       - name: Upload the native screenshot
         if: always()
