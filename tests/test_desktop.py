@@ -171,7 +171,11 @@ def test_the_shortcut_is_a_valid_desktop_entry(tmp_path):
     assert body.startswith("[Desktop Entry]")
     for key in ("Type=Application", "Name=WENGOLD", "Exec=", "Icon="):
         assert key in body
-    assert "app_mode=True" in body, "the shortcut must open the app, not a tab"
+    # It used to assert `app_mode=True`, which meant "open a Chrome window with no
+    # toolbars". The shortcut now launches the native Qt app, which is the stronger
+    # claim: no browser is involved at all.
+    assert "-m wengold.native" in body, "the shortcut must open the native app"
+    assert " -c " not in body, "a quoted -c string breaks on paths with quotes"
 
 
 def test_the_icon_is_self_contained():
