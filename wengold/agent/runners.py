@@ -41,6 +41,31 @@ __all__ = ["ToolRunner", "Toolchain"]
 # hang the agent.
 DEFAULT_TIMEOUT = 120
 
+# Errors that mean "the runner handed the tool the wrong inputs", not "the design
+# is broken". A missing include, a missing module, a wrong-language file or a
+# file-order violation are all our fault; reporting them as a design failure is the
+# same confident-wrong-answer shape this module exists to avoid.
+_INPUT_PROBLEMS = (
+    "must be read before",                     # file order
+    "cannot find file containing module",      # module outside our file set
+    "cannot find file:",
+    "no such file",
+    "unexpected identifier-for",               # a VHDL file fed to Verilator
+    "define or directive not defined",         # a macro we were not given
+    "pinnotfound",                             # a testbench pin with no module
+    "pin not found",
+)
+
+# The honest consequence of that list: without a project's own build metadata —
+# filelist, `define`s, include paths — a lint cannot tell "the design is broken"
+# from "we handed the tool an incomplete project". When it cannot tell, it must not
+# say "broken". That is why the sweep below settles nothing.
+
+
+def _is_input_problem(log: str) -> bool:
+    low = log.lower()
+    return any(p in low for p in _INPUT_PROBLEMS)
+
 
 class Toolchain:
     """Which of the tools this runner can use are actually installed."""
@@ -101,6 +126,12 @@ class ToolRunner:
         self.timeout = timeout
         self.on_step = on_step
         self.calls: list[str] = []
+        # Elaboration is a property of the whole design, so every result on a
+        # project asks the identical question. Without this the sweep ran Verilator
+        # once per block — 345 identical lint runs on a core like ibex — which is
+        # both slow and pointless. Keyed by the exact argv, so a cache hit can only
+        # return the answer the tool already gave for the same command.
+        self._cache: dict[tuple, tuple[int, str, float]] = {}
 
     # -- mapping a result to files -----------------------------------------
     def files_for(self, rid: str) -> list[str]:
@@ -132,7 +163,13 @@ class ToolRunner:
                 out.append(str(p))
         return out
 
-    def project_files(self) -> list[str]:
+    # Verilator reads SystemVerilog. Handing it a `.vhd` produces a wall of syntax
+    # errors that look like a broken design and are in fact a wrong tool — which is
+    # what the first sweep did to neorv32, whose cache is VHDL.
+    VERILOG_SUFFIXES = (".v", ".sv", ".vh", ".svh")
+    VHDL_SUFFIXES = (".vhd", ".vhdl")
+
+    def project_files(self, language: str = "verilog") -> list[str]:
         """Every design file in the graph.
 
         Elaboration is a whole-design property: `soc_top` instantiates `dma`, so
@@ -153,12 +190,26 @@ class ToolRunner:
                 if not candidate.exists():
                     candidate = p.resolve()
                 p = candidate
+            suffix = p.suffix.lower()
+            if language == "verilog" and suffix in self.VHDL_SUFFIXES:
+                continue
+            if language == "vhdl" and suffix in self.VERILOG_SUFFIXES:
+                continue
             if p.exists() and str(p) not in seen:
                 seen.append(str(p))
         return sorted(seen)
 
     # -- running -----------------------------------------------------------
     def _run(self, argv: list[str]) -> tuple[int, str, float]:
+        key = tuple(argv)
+        if key in self._cache:
+            rc, out, _secs = self._cache[key]
+            return rc, out, 0.0          # cached: no time spent this call
+        result = self._run_uncached(argv)
+        self._cache[key] = result
+        return result
+
+    def _run_uncached(self, argv: list[str]) -> tuple[int, str, float]:
         started = time.monotonic()
         try:
             proc = subprocess.run(argv, capture_output=True, text=True,
@@ -217,6 +268,11 @@ class ToolRunner:
         if rc == 124:
             return self._outcome(rid, kind, "verilator", "inconclusive", rc, log,
                                  secs, "verilator timed out")
+        if _is_input_problem(log):
+            # our file list, our order or our language choice — not the design
+            return self._outcome(
+                rid, kind, "verilator", "inconclusive", rc, log, secs,
+                "the tool rejected the file list, not the design")
         # a real elaboration error is a real failure
         return self._outcome(rid, kind, "verilator", "fail", rc, log, secs,
                              "elaboration failed, so the check cannot pass")
