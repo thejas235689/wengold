@@ -478,11 +478,24 @@ def _agent(state: dict, q: str) -> dict:
             "summary": summary, "change": v["change"], "counts": counts}
 
 
+# Shell syntax has no meaning here — there is no shell. But `summary && rm -rf /`
+# used to be *accepted*: the first word matched the whitelist, the rest was
+# dropped, and the reply said `ok: true`. Nobody was harmed (nothing else ran) but
+# the answer implied the whole line had executed. A compound line is now refused
+# so the reply cannot be misread.
+_SHELL_SYNTAX = ("&&", "||", ";", "|", "&", "`", "$(", ">", "<", "\n")
+
+
 def _exec(state: dict, line: str) -> dict:
     """Run one whitelisted command against the indexed state."""
-    parts = line.strip().split()
-    if not parts:
+    raw = line.strip()
+    if not raw:
         return {"ok": True, "output": ""}
+    for token in _SHELL_SYNTAX:
+        if token in raw:
+            return {"ok": False,
+                    "output": "one command per line — shell syntax is not supported"}
+    parts = raw.split()
     verb, args = parts[0].lower(), parts[1:]
     if verb not in CLI_COMMANDS:
         return {"ok": False, "output": f"unknown command: {verb}. try: help"}
@@ -743,8 +756,11 @@ def install_shortcut(port: int, root: str, dest: str | None = None,
 
     python = sys.executable or "python3"
     repo = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    cmd = f'{python} -c "import sys;sys.path.insert(0,{repo!r});' \
-          f'from wengold.desktop import serve;serve({root!r},port={port},app_mode=True)"'
+    # `-m wengold.native` rather than a `-c` string with the path interpolated:
+    # the old form embedded a quoted path inside a quoted argument, which breaks
+    # the moment a path contains a quote or a space. A module invocation has no
+    # quoting to get wrong.
+    cmd = f'{python} -m wengold.native {root}'
 
     if not sys.platform.startswith("linux"):
         print("  no automatic shortcut on this platform. To make one:")
