@@ -38,7 +38,11 @@ jobs:
           # pyslang is the SystemVerilog front-end; z3 is the formal engine.
           # Both are load-bearing: without them large parts of the suite fail for
           # reasons that have nothing to do with the code under test.
-          pip install pytest z3-solver pyslang numpy
+          #
+          # Pinned to the versions the suite was measured against. An unpinned
+          # pyslang is a moving API, and a green local run plus a red CI run is
+          # the least useful signal a project can produce.
+          pip install "pytest>=8,<9" "z3-solver>=4.13,<6" "pyslang==12.1.0" "numpy>=1.26,<3"
 
       - name: Show what was installed
         run: |
@@ -47,7 +51,18 @@ jobs:
           python -c "import z3; print('z3', z3.get_version_string())"
 
       - name: Run the test suite
-        run: python -m pytest -q -p no:cacheprovider tests
+        run: |
+          python -m pytest -q -p no:cacheprovider tests --tb=short -rf \
+            2>&1 | tee /tmp/pytest.log
+
+      - name: Upload the pytest log
+        # so a failure can be read without guessing, including from outside CI
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pytest-log
+          path: /tmp/pytest.log
+          if-no-files-found: warn
 
       - name: Check the CLI starts and reports its version
         run: |
