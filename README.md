@@ -761,16 +761,41 @@ design.
 
 ## Status
 
-**v0.28.0 — 431 tests passing.** The graph, kernel, ledger, MCP server, formal
-loop, register-map and CDC front-ends, the VHDL front-end, root cause, the IDE with
-waveforms, the ML methods, the text-to-spec front-end, failure reproduction and
-singularity analysis are all implemented and tested. See
+**v0.42.1 — 583 tests passing, and CI runs them on every push.** The graph, kernel,
+ledger, MCP server, formal loop, register-map and CDC front-ends, the VHDL
+front-end, root cause, the IDE with waveforms, the text-to-spec front-end, failure
+reproduction, singularity analysis and the Accellera CDC/RDC standard (Clauses 4,
+6, 7, 8 and the Annex C fixtures) are all implemented and tested. There is also a
+desktop app (`wengold desktop`) and a VS Code / Cursor extension. See
 [`docs/roadmap.md`](docs/roadmap.md).
 
-Thirty repositories have been indexed (table above), and the four defects that
-running against new projects exposed — a `complete: True` on 4.5% coverage, a note
-printed six times, a transitive invalidation mis-explained, and duplicate module
-definitions merged silently — are all fixed and pinned by tests.
+Thirty repositories have been indexed (table above). The defects that running
+against real projects exposed are all fixed and pinned by tests, and each was a
+**silent wrong answer rather than a crash** — the shape this project has had to
+learn to look for:
+
+| defect | how it was found |
+| --- | --- |
+| `complete: True` on 4.5% coverage | riscv-dv |
+| one note printed six times | wave_rerunner |
+| a transitive invalidation explained as "cannot explain it" | Anvil-Pro |
+| duplicate module definitions merged silently | rustdv/rustdv |
+| **one bad module marking every module in its file unresolved** | Veer EL2: 41 unresolved → 5 |
+| the MCP server serving an empty graph and crashing on `[1,2,3]` | security audit |
+
+### What is not done
+
+Stated here rather than discovered by a reader:
+
+- **The formal front-end accepts 11 of 27 files** on a modern UVM project. It
+  refuses the rest rather than guessing: `` `ifdef ``, `generate` and multiple
+  clock domains are out of scope.
+- **The CDC work does not decide whether a crossing is safe.** It reads and writes
+  the Accellera format and checks the collateral against the RTL; a passing
+  assertion means the declared data stability held, not that the design is correct.
+- **The ML layer does not beat a majority baseline** against simulation ground
+  truth. It is measured, reported, and kept behind the CLI.
+- **No design partner yet.** Every number here is self-assessed.
 
 ## Documentation
 
