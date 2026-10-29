@@ -40,6 +40,12 @@ class SlangUnit:
     includes: list[str] = field(default_factory=list)
     unresolved: list[str] = field(default_factory=list)
     parse_errors: int = 0
+    # module name -> number of parse errors inside that module's span. A file with
+    # one broken module used to mark every module in it unresolved, which on
+    # Veer EL2 turned one bad module in beh_lib.sv into 41 unresolved nodes.
+    error_modules: dict = field(default_factory=dict)
+    # errors that fall outside every module (a bad `package`, a stray token)
+    file_level_errors: int = 0
 
     def as_dict(self) -> dict:
         return {"path": self.path, "modules": self.modules,
@@ -48,7 +54,9 @@ class SlangUnit:
                 "packages": self.packages, "imports": self.imports,
                 "parameters": [list(p) for p in self.parameters],
                 "includes": self.includes, "unresolved": self.unresolved,
-                "parse_errors": self.parse_errors}
+                "parse_errors": self.parse_errors,
+                "error_modules": self.error_modules,
+                "file_level_errors": self.file_level_errors}
 
 
 def _walk(node):
@@ -186,6 +194,39 @@ def extract(text: str, name: str = "source") -> SlangUnit:
     unit = SlangUnit(path=name)
     tree = S.SyntaxTree.fromText(text, name=name)
     unit.parse_errors = len(tree.diagnostics)
+
+    # Map every module declaration to the byte range it occupies, then attribute
+    # each error to the module containing it. Modules are laid out in source
+    # order, so a module owns the range from its own start to the next start.
+    spans = []
+    for member in getattr(tree.root, "members", []):
+        if getattr(member, "kind", None) != S.SyntaxKind.ModuleDeclaration:
+            continue
+        mod_name = _text(getattr(getattr(member, "header", None), "name", None))
+        try:
+            start = member.sourceRange.start.offset
+        except Exception:
+            continue
+        if mod_name:
+            spans.append((start, mod_name))
+    spans.sort()
+    if spans:
+        for diag in tree.diagnostics:
+            try:
+                off = diag.location.offset
+            except Exception:
+                unit.file_level_errors += 1
+                continue
+            owner = None
+            for start, mod_name in spans:
+                if start <= off:
+                    owner = mod_name
+                else:
+                    break
+            if owner is None:
+                unit.file_level_errors += 1
+            else:
+                unit.error_modules[owner] = unit.error_modules.get(owner, 0) + 1
     consts = _const_int(text)
     for n in _walk(tree.root):
         kind = n.kind
