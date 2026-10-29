@@ -1,0 +1,14 @@
+[Desktop Entry]
+Type=Application
+Version=1.5
+Name=WENGOLD
+GenericName=Silicon Verification
+Comment=Keep every verification result that still holds after a change
+Exec=@BIN@ %f
+Icon=@ICON@
+Terminal=false
+Categories=Development;Electronics;IDE;
+Keywords=verilog;systemverilog;vhdl;rtl;verification;cdc;formal;fpga;
+StartupNotify=true
+StartupWMClass=wengold
+MimeType=text/x-systemverilog;text/x-verilog;text/x-vhdl;
