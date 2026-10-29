@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- WENGOLD mark: a bounded square (the design) with one highlighted cell
+     (the result that no longer holds). Crimson on white, per the app palette. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <rect width="64" height="64" rx="12" fill="#FFFFFF"/>
+  <rect x="1" y="1" width="62" height="62" rx="11.5" fill="none" stroke="#E4E4E7" stroke-width="1"/>
+  <g fill="#18181B">
+    <rect x="14" y="14" width="12" height="12" rx="2"/>
+    <rect x="30" y="14" width="12" height="12" rx="2"/>
+    <rect x="14" y="30" width="12" height="12" rx="2"/>
+    <rect x="30" y="30" width="12" height="12" rx="2" opacity="0.35"/>
+    <rect x="14" y="46" width="12" height="12" rx="2" opacity="0.35"/>
+    <rect x="30" y="46" width="12" height="12" rx="2"/>
+  </g>
+  <rect x="46" y="14" width="4" height="44" rx="2" fill="#C81E1E"/>
+</svg>
