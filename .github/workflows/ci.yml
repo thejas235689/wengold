@@ -46,6 +46,10 @@ jobs:
           # the native desktop app; optional at runtime, so the suite skips its
           # tests if this ever fails, but installed here so CI covers it
           pip install "PyQt6>=6.6,<7" || echo "PyQt6 unavailable; native tests will skip"
+          # GHDL's LLVM backend refuses to start without `cc`. Runners usually have
+          # one; this makes sure the VHDL tests run either way, because a test that
+          # silently skips is a test that stops protecting anything.
+          pip install "ziglang" || echo "ziglang unavailable; VHDL tests will skip"
 
       - name: Show what was installed
         run: |
@@ -62,6 +66,26 @@ jobs:
         run: |
           python -m pytest -q -p no:cacheprovider tests --tb=short -rf \
             2>&1 | tee /tmp/pytest.log
+
+      - name: Give GHDL a C compiler
+        # neorv32 analyses 54 of 54 VHDL units once GHDL can start. Without `cc` it
+        # reports "installation problem" and reads as a broken toolchain.
+        run: |
+          if command -v cc >/dev/null 2>&1; then
+            echo "cc already present: $(command -v cc)"
+            exit 0
+          fi
+          sh tools/cc-shim.sh "$RUNNER_TEMP/ccbin"
+          echo "$RUNNER_TEMP/ccbin" >> "$GITHUB_PATH"
+
+      - name: Check GHDL starts and analyses a VHDL unit
+        run: |
+          if ! command -v ghdl >/dev/null 2>&1; then
+            echo "ghdl not installed on this runner — skipping"
+            exit 0
+          fi
+          ghdl --version | head -1
+          python -m pytest -q -p no:cacheprovider tests/test_vhdl.py -v
 
       - name: Render the native window offscreen
         # Qt renders without a display, so the real desktop window can be built and
