@@ -30,6 +30,7 @@ is the honest direction, and the benchmark in `docs/` reports both.
 from __future__ import annotations
 
 import os
+import re
 import shlex
 import shutil
 import subprocess
@@ -425,11 +426,17 @@ class ToolRunner:
             workdir.mkdir(exist_ok=True)
         except OSError:
             workdir = self.root
+        # neorv32's sources say `library neorv32;`, so the units must be analysed
+        # into a library of that name and that library must be on the search path.
+        # Analysing everything into `work` produced 49 failures out of 54 with
+        # "cannot find resource library 'neorv32'" — the sources were fine.
+        lib = self._vhdl_library(design)
         logs, failed = [], 0
         started = time.monotonic()
         for f in design:
-            rc, log, _ = self._run([self.tools.found["ghdl"], "-a", "--std=08",
-                                    f"--workdir={workdir}", f])
+            rc, log, _ = self._run(
+                [self.tools.found["ghdl"], "-a", "--std=08",
+                 f"--work={lib}", f"--workdir={workdir}", f"-P{workdir}", f])
             if rc != 0:
                 failed += 1
                 logs.append(log)
@@ -437,7 +444,9 @@ class ToolRunner:
                     return self._outcome(
                         rid, kind, "ghdl", "tool_missing", rc, log,
                         time.monotonic() - started,
-                        "ghdl could not start — it needs a C compiler")
+                        "ghdl could not start: it needs a C compiler (`cc`). "
+                        "tools/cc-shim.sh makes one from zig if no compiler is "
+                        "installed")
                 break
         secs = time.monotonic() - started
         log = "\n".join(logs)
@@ -452,6 +461,26 @@ class ToolRunner:
             rid, kind, "ghdl", "inconclusive", 0, "", secs,
             f"analysed {len(design)} VHDL unit(s) from the {source} — "
             f"the design compiles, but the check was not run")
+
+    def _vhdl_library(self, design: list[str]) -> str:
+        """The library name the sources expect.
+
+        A VHDL project that says `library neorv32;` needs its units analysed into a
+        library called `neorv32`, with that directory on the search path. Guessing
+        `work` made 49 of neorv32's 54 units fail on a name that was never wrong.
+        """
+        from collections import Counter
+        seen = Counter()
+        for f in design[:40]:
+            try:
+                text = Path(f).read_text(errors="replace")
+            except OSError:
+                continue
+            for m in re.finditer(r"^\s*library\s+([A-Za-z_]\w*)\s*;", text, re.M):
+                name = m.group(1).lower()
+                if name not in ("ieee", "std", "work"):
+                    seen[name] += 1
+        return seen.most_common(1)[0][0] if seen else "work"
 
     def _elaborate(self, rid, kind, files):
         if not self.tools.has("yosys"):
