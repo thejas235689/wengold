@@ -69,6 +69,21 @@ def _is_input_problem(log: str) -> bool:
     return any(p in low for p in _INPUT_PROBLEMS)
 
 
+# Errors about the *machine*, not the design and not our file list. GHDL's LLVM
+# backend needs a working linker and a matching libc; where it has neither, the
+# tool cannot run at all and the design is not implicated.
+_ENVIRONMENT_PROBLEMS = (
+    "unable to find dynamic system library",
+    "installation problem",
+    "cannot find -l",
+)
+
+
+def _is_environment_problem(log: str) -> bool:
+    low = log.lower()
+    return any(p in low for p in _ENVIRONMENT_PROBLEMS)
+
+
 FILELIST_SUFFIXES = (".f", ".flist")
 
 
@@ -361,7 +376,10 @@ class ToolRunner:
                 rid, kind, "none", "inconclusive", 0, "",
                 0.0, "the result names no existing design file")
 
-        if kind in ("lint", "sim", "elaborate"):
+        if kind in ("sim", "simulation"):
+            # a simulation is the only check that can settle as PASSING
+            return self._simulate(rid, kind, files)
+        if kind in ("lint", "elaborate"):
             # A VHDL design is not a Verilator problem. neorv32 is 54 `.vhd` files;
             # handing them to a SystemVerilog linter produced a wall of syntax errors
             # that read as broken RTL.
@@ -461,6 +479,135 @@ class ToolRunner:
             rid, kind, "ghdl", "inconclusive", 0, "", secs,
             f"analysed {len(design)} VHDL unit(s) from the {source} — "
             f"the design compiles, but the check was not run")
+
+    # A testbench is only worth running if it can fail. `neorv32_tb.vhd` has zero
+    # assertions — it loads an external program and is checked by looking at the
+    # output — so running it proves nothing and must not settle anything.
+    TB_PATTERN = re.compile(r"(^|/)(tb_|.*_tb\.[a-z]+$)", re.IGNORECASE)
+    # A self-checking testbench has to be able to fail. VHDL says `assert`; a
+    # Verilog testbench usually says `$fatal` or `$error` inside an `if`, and
+    # matching only the word "assert" classified counter_tb.sv as uncheckable
+    # when it fails correctly.
+    ASSERT_PATTERN = re.compile(r"\bassert\b|\$fatal|\$error", re.IGNORECASE)
+
+    def testbench(self) -> tuple[str | None, bool]:
+        """The first testbench file, and whether it contains assertions."""
+        for lang in ("vhdl", "verilog"):
+            for f in self.project_files(lang):
+                if self.TB_PATTERN.search(f):
+                    try:
+                        text = Path(f).read_text(errors="replace")
+                    except OSError:
+                        continue
+                    return f, bool(self.ASSERT_PATTERN.search(text))
+        return None, False
+
+    def _simulate(self, rid, kind, files):
+        """Run a self-checking testbench. This is the only path that can settle a
+        check as *passing*: the assertions either held or they did not."""
+        tb, has_asserts = self.testbench()
+        if tb is None:
+            return self._outcome(rid, kind, "none", "inconclusive", 0, "", 0.0,
+                                 "no testbench found, so there is nothing to run")
+        if not has_asserts:
+            return self._outcome(
+                rid, kind, "none", "inconclusive", 0, "", 0.0,
+                f"{Path(tb).name} contains no assertions, so running it would "
+                f"prove nothing")
+        if self.dominant_language() == "vhdl":
+            return self._run_vhdl_sim(rid, kind, tb)
+        return self._run_verilog_sim(rid, kind, tb)
+
+    def _run_vhdl_sim(self, rid, kind, tb):
+        if not self.tools.has("ghdl"):
+            return self._outcome(rid, kind, "ghdl", "tool_missing", 127, "", 0.0,
+                                 "ghdl is not on PATH")
+        design, _ = self.ordered_files("vhdl")
+        if tb not in design:
+            design = design + [tb]
+        lib = self._vhdl_library(design)
+        workdir = self.root / ".wengold-ghdl"
+        try:
+            workdir.mkdir(exist_ok=True)
+        except OSError:
+            workdir = self.root
+        started = time.monotonic()
+        # GHDL takes the command word first: `ghdl -a --std=08 ...`. Putting an
+        # option before it fails with "unknown command '--std=08'".
+        opts = ["--std=08", f"--work={lib}", f"--workdir={workdir}", f"-P{workdir}"]
+        ghdl = self.tools.found["ghdl"]
+        for f in design:
+            rc, log, _ = self._run([ghdl, "-a", *opts, f])
+            if rc != 0:
+                if _is_environment_problem(log):
+                    return self._outcome(
+                        rid, kind, "ghdl", "inconclusive", rc, log,
+                        time.monotonic() - started,
+                        "ghdl cannot link in this environment: its LLVM backend "
+                        "needs a working linker and matching libc. Analysis "
+                        "works; simulation does not.")
+                return self._outcome(
+                    rid, kind, "ghdl", "inconclusive" if _is_input_problem(log)
+                    else "fail", rc, log, time.monotonic() - started,
+                    "the design did not analyse, so it could not be simulated")
+        entity = self._tb_entity(tb)
+        rc, log, _ = self._run([ghdl, "-e", *opts, entity])
+        if rc != 0:
+            note = f"could not elaborate {entity}"
+            if _is_environment_problem(log):
+                note = (f"could not elaborate {entity}: GHDL's LLVM backend needs a "
+                        f"working linker and matching libc, which this environment "
+                        f"does not have. Analysis works; simulation does not.")
+            return self._outcome(rid, kind, "ghdl", "inconclusive", rc, log,
+                                 time.monotonic() - started, note)
+        rc, log, secs = self._run([ghdl, "-r", *opts, entity,
+                                   "--assert-level=error", "--stop-time=1ms"])
+        if rc == 0:
+            return self._outcome(
+                rid, kind, "ghdl", "pass", rc, log, secs,
+                f"simulation of {entity} ran to completion with no assertion firing")
+        if rc == 124:
+            return self._outcome(rid, kind, "ghdl", "inconclusive", rc, log, secs,
+                                 "the simulation timed out")
+        return self._outcome(rid, kind, "ghdl", "fail", rc, log, secs,
+                             f"an assertion fired in {entity}")
+
+    def _run_verilog_sim(self, rid, kind, tb):
+        if not (self.tools.has("iverilog") and self.tools.has("vvp")):
+            return self._outcome(rid, kind, "iverilog", "tool_missing", 127, "",
+                                 0.0, "iverilog/vvp is not on PATH")
+        design, _ = self.ordered_files("verilog")
+        if tb not in design:
+            design = design + [tb]
+        out = self.root / ".wengold-sim.vvp"
+        started = time.monotonic()
+        rc, log, _ = self._run([self.tools.found["iverilog"], "-g2012", "-o",
+                                str(out), *design])
+        if rc != 0:
+            return self._outcome(
+                rid, kind, "iverilog", "inconclusive" if _is_input_problem(log)
+                else "fail", rc, log, time.monotonic() - started,
+                "the design did not compile, so it could not be simulated")
+        rc, log, secs = self._run([self.tools.found["vvp"], str(out)])
+        if rc == 0:
+            return self._outcome(
+                rid, kind, "iverilog", "pass", rc, log, secs,
+                f"simulation of {Path(tb).name} ran to completion with no "
+                f"assertion firing")
+        if rc == 124:
+            return self._outcome(rid, kind, "iverilog", "inconclusive", rc, log,
+                                 secs, "the simulation timed out")
+        return self._outcome(rid, kind, "iverilog", "fail", rc, log, secs,
+                             "an assertion fired")
+
+    def _tb_entity(self, tb: str) -> str:
+        """The entity name a VHDL testbench elaborates as."""
+        try:
+            text = Path(tb).read_text(errors="replace")
+        except OSError:
+            return Path(tb).stem
+        m = re.search(r"^\s*entity\s+([A-Za-z_]\w*)\s+is", text, re.M)
+        return m.group(1) if m else Path(tb).stem
 
     def _vhdl_library(self, design: list[str]) -> str:
         """The library name the sources expect.
