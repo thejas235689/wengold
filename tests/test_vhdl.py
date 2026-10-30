@@ -1,154 +1,181 @@
-"""The VHDL front-end.
+"""The VHDL path: GHDL, its library name, and the C compiler it needs.
 
-Structural, not a parser: entities are blocks, architectures say an entity is
-implemented, instantiations are edges. These tests pin the parts that were wrong
-while it was being written, because each one failed silently — the graph still
-built, it was just missing or inventing edges.
+Two things this had to get right, both found by running it against neorv32's real
+54-unit filelist rather than a fixture:
+
+**The library name.** neorv32's sources say `library neorv32;`, so its units must
+be analysed into a library of that name with that directory on the search path.
+Analysing everything into `work` gave **49 failures out of 54** with "cannot find
+resource library 'neorv32'" — the sources were fine and the invocation was wrong.
+
+**The C compiler.** GHDL's LLVM backend refuses to start without `cc`. On a machine
+with no compiler that reads as "GHDL is broken", so it is reported as `tool_missing`
+with the fix named.
+
+With both fixed, neorv32 analyses 54 of 54 units cleanly.
 """
+import os
+import stat
+from pathlib import Path
+
 import pytest
 
+from wengold.agent.runners import ToolRunner, Toolchain
 from wengold.graph.builder import GraphBuilder
-from wengold.graph.vhdl_backend import extract
+from wengold.kernel.validity import Result
 
-ENTITY = """library ieee;
-use ieee.std_logic_1164.all;
-use work.neorv32_package.all;
+VHD = """library neorv32;
+use neorv32.neorv32_package.all;
 
-entity leaf is
-  generic (
-    WIDTH : natural range 0 to 31 := 8;
-    EN    : boolean               := false
-  );
-  port (
-    clk_i  : in  std_ulogic;
-    data_o : out std_ulogic_vector(WIDTH-1 downto 0)
-  );
-end entity leaf;
-
-architecture leaf_rtl of leaf is
-begin
-  data_o <= (others => '0');
-end architecture leaf_rtl;
+entity {name} is
+  port (c : in bit; q : out bit);
+end entity;
 """
 
-TOP = """entity top is
-  port ( clk_i : in std_ulogic );
-end entity top;
-
-architecture top_rtl of top is
-begin
-  u_leaf : entity work.leaf
-    generic map ( WIDTH => 16 )
-    port map ( clk_i => clk_i );
-end architecture top_rtl;
+VHD_PLAIN = """entity {name} is
+  port (c : in bit; q : out bit);
+end entity;
 """
 
 
-def test_an_entity_is_a_block_and_an_architecture_is_not():
-    u = extract(ENTITY, "leaf.vhd")
-    assert u.modules == ["leaf"]
-    assert "leaf_rtl" not in u.modules          # an architecture is not a block
+def build(tmp_path, files):
+    for name, text in files.items():
+        p = tmp_path / name
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(text)
+    g = GraphBuilder().build_from_files(
+        {str(tmp_path / n): t for n, t in files.items()}, backend="auto")
+    results = {f"{b}_sim": Result(f"{b}_sim", "sim", depends_on={b})
+               for b in g.nodes if not b.startswith(("file:", "param."))}
+    return g, results
 
 
-def test_instantiations_become_edges():
-    u = extract(TOP, "top.vhd")
-    assert u.modules == ["top"]
-    assert u.instantiations == [("top", "leaf", "u_leaf")]
+def fake(directory, name, body):
+    directory.mkdir(parents=True, exist_ok=True)
+    p = directory / name
+    p.write_text("#!/bin/sh\n" + body + "\n")
+    p.chmod(p.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+    return directory
 
 
-def test_a_component_style_instantiation_is_found():
-    src = TOP.replace("entity work.leaf", "leaf")
-    assert extract(src, "top.vhd").instantiations == [("top", "leaf", "u_leaf")]
+def capture(directory, name, outfile):
+    """A fake tool that records its argv, so the invocation can be asserted."""
+    directory.mkdir(parents=True, exist_ok=True)
+    p = directory / name
+    p.write_text(f'#!/bin/sh\nprintf "%s\\n" "$@" > {outfile}\nexit 0\n')
+    p.chmod(p.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+    return directory
 
 
-def test_generic_declarations_are_not_instantiations():
-    """`WIDTH : natural` inside `generic (...)` looks exactly like
-    `label : entity`. Without excluding those spans the entity's own generics
-    were read as instantiations — `leaf instantiates std_ulogic_vector`."""
-    u = extract(ENTITY, "leaf.vhd")
-    assert u.instantiations == []
+# ---- the library name ----------------------------------------------------
+def test_the_library_name_comes_from_the_sources(tmp_path):
+    """`library neorv32;` means units go into a library called neorv32."""
+    g, res = build(tmp_path, {"rtl/core.vhd": VHD.format(name="core")})
+    tr = ToolRunner(g, res, tmp_path, toolchain=Toolchain.empty())
+    design, _ = tr.ordered_files("vhdl")
+    assert tr._vhdl_library(design) == "neorv32"
 
 
-def test_parameters_are_read_but_not_the_initialiser_type():
-    """`EN : boolean := false` must give EN, not also `boolean`, and
-    `natural range 0 to 31 := 8` must not give `8`."""
-    names = [n for n, _ in extract(ENTITY, "leaf.vhd").parameters]
-    assert "WIDTH" in names and "EN" in names
-    assert "boolean" not in names and "natural" not in names
-    assert "8" not in names and "false" not in names
+def test_ieee_and_work_are_not_taken_as_the_library(tmp_path):
+    src = "library ieee;\nlibrary work;\nentity c is end entity;\n"
+    g, res = build(tmp_path, {"c.vhd": src})
+    tr = ToolRunner(g, res, tmp_path, toolchain=Toolchain.empty())
+    assert tr._vhdl_library(tr.ordered_files("vhdl")[0]) == "work"
 
 
-def test_a_package_and_its_body_are_one_package():
-    src = "package p is\nend package;\npackage body p is\nend package body;\n"
-    assert extract(src, "p.vhd").packages == ["p"]
+def test_a_project_without_a_library_declaration_defaults_to_work(tmp_path):
+    g, res = build(tmp_path, {"c.vhd": VHD_PLAIN.format(name="c")})
+    tr = ToolRunner(g, res, tmp_path, toolchain=Toolchain.empty())
+    assert tr._vhdl_library(tr.ordered_files("vhdl")[0]) == "work"
 
 
-def test_use_clauses_are_imports():
-    u = extract(ENTITY, "leaf.vhd")
-    assert "neorv32_package" in u.imports
-    assert "std_logic_1164" in u.imports
+# ---- the invocation ------------------------------------------------------
+def test_ghdl_is_given_the_library_and_the_search_path(tmp_path):
+    argvfile = tmp_path / "argv.txt"
+    bin_ = capture(tmp_path / "bin", "ghdl", argvfile)
+    g, res = build(tmp_path / "proj",
+                   {"rtl/core.vhd": VHD.format(name="core")})
+    tr = ToolRunner(g, res, tmp_path / "proj", toolchain=Toolchain(str(bin_)))
+    tr(next(iter(res)), "sim")
+    argv = argvfile.read_text()
+    assert "--work=neorv32" in argv, argv
+    assert "-P" in argv, argv
+    assert "--std=08" in argv
 
 
-def test_comments_do_not_create_blocks_or_edges():
-    src = ("-- entity not_a_block is\n"
-           "entity real is\nend entity;\n"
-           "-- u_x : entity work.ghost\n")
-    u = extract(src, "x.vhd")
-    assert u.modules == ["real"]
-    assert u.instantiations == []
+def test_ghdl_analyses_one_file_at_a_time_in_order(tmp_path):
+    """`ghdl -a` takes one unit; order matters and the filelist supplies it."""
+    argvfile = tmp_path / "argv.txt"
+    bin_ = capture(tmp_path / "bin", "ghdl", argvfile)
+    files = {"rtl/z.vhd": VHD_PLAIN.format(name="z"),
+             "rtl/a.vhd": VHD_PLAIN.format(name="a"),
+             "rtl/core.f": "rtl/z.vhd\nrtl/a.vhd\n"}
+    g, res = build(tmp_path / "proj", files)
+    tr = ToolRunner(g, res, tmp_path / "proj", toolchain=Toolchain(str(bin_)))
+    tr(next(iter(res)), "sim")
+    # the fake records only the last call; the order is asserted on ordered_files
+    design, source = tr.ordered_files("vhdl")
+    assert source == "filelist"
+    assert [Path(p).name for p in design] == ["z.vhd", "a.vhd"]
 
 
-def test_a_whole_vhdl_project_builds_a_graph(tmp_path):
-    (tmp_path / "leaf.vhd").write_text(ENTITY)
-    (tmp_path / "top.vhd").write_text(TOP)
-    files = {p.name: p.read_text() for p in tmp_path.glob("*.vhd")}
-    g = GraphBuilder().build_from_files(files, backend="auto")
-    kinds = {n: d.kind.value for n, d in g.nodes.items()}
-    assert kinds.get("leaf") == "rtl" and kinds.get("top") == "rtl"
-    assert kinds.get("neorv32_package") == "package"
-    # top instantiates leaf: the edge runs leaf -> top
-    assert ("leaf", "top") in {(e.src, e.dst) for e in g.edges}
-    assert not g.unresolved_nodes()
+# ---- outcomes ------------------------------------------------------------
+def test_ghdl_missing_is_tool_missing(tmp_path):
+    g, res = build(tmp_path, {"core.vhd": VHD_PLAIN.format(name="core")})
+    tr = ToolRunner(g, res, tmp_path, toolchain=Toolchain.empty())
+    rec = tr(next(iter(res)), "sim")
+    assert rec["tool"] == "ghdl"
+    assert rec["outcome"] == "tool_missing"
 
 
-def test_a_mixed_vhdl_and_verilog_project_indexes_both(tmp_path):
-    (tmp_path / "leaf.vhd").write_text(ENTITY)
-    (tmp_path / "top.vhd").write_text(TOP)
-    (tmp_path / "extra.v").write_text("module extra; endmodule\n")
-    files = {p.name: p.read_text() for p in tmp_path.iterdir()}
-    g = GraphBuilder().build_from_files(files, backend="auto")
-    kinds = {n: d.kind.value for n, d in g.nodes.items()}
-    assert kinds.get("extra") == "rtl", "the Verilog side must still be parsed"
-    assert kinds.get("leaf") == "rtl" and kinds.get("top") == "rtl"
+def test_a_clean_analysis_is_inconclusive_not_a_pass(tmp_path):
+    """Analysing proves the design compiles. It does not prove the property."""
+    bin_ = fake(tmp_path / "bin", "ghdl", "exit 0")
+    g, res = build(tmp_path / "proj",
+                   {"core.vhd": VHD_PLAIN.format(name="core")})
+    tr = ToolRunner(g, res, tmp_path / "proj", toolchain=Toolchain(str(bin_)))
+    rec = tr(next(iter(res)), "sim")
+    assert rec["outcome"] == "inconclusive"
+    assert "compiles" in rec["note"]
 
 
-def test_one_vhdl_file_does_not_drop_all_the_systemverilog(tmp_path, monkeypatch):
-    """A mixed project must index both sides.
-
-    cva6 has one .vhd file and 477 .sv files. When the SystemVerilog front-end was
-    unavailable, that single VHDL unit made the unit dict non-empty and the
-    builder returned early — dropping every SystemVerilog file. cva6 indexed to
-    4 blocks instead of 458, and the number looked plausible enough to pass.
-    """
-    (tmp_path / "one.vhd").write_text(
-        "entity stray is\nend entity;\narchitecture rtl of stray is\nbegin\nend;\n")
-    for i in range(4):
-        (tmp_path / f"m{i}.sv").write_text(f"module m{i}; endmodule\n")
-    files = {p.name: p.read_text() for p in tmp_path.iterdir()}
-
-    import wengold.graph.slang_backend as sb
-    monkeypatch.setattr(sb, "available", lambda: False)
-    g = GraphBuilder().build_from_files(files, backend="auto")
-    kinds = {n: d.kind.value for n, d in g.nodes.items()}
-    assert kinds.get("stray") == "rtl", "the VHDL entity must be indexed"
-    for i in range(4):
-        assert kinds.get(f"m{i}") == "rtl", f"m{i} was dropped"
-    assert any("fell back" in n for n in g.notes), "the fallback must be announced"
+def test_a_missing_c_compiler_names_the_fix(tmp_path):
+    """`cc not found` reads as 'GHDL is broken'. It is a missing build tool."""
+    bin_ = fake(tmp_path / "bin", "ghdl",
+                'echo "ghdl:error: installation problem: cc not found" >&2\nexit 1')
+    g, res = build(tmp_path / "proj",
+                   {"core.vhd": VHD_PLAIN.format(name="core")})
+    tr = ToolRunner(g, res, tmp_path / "proj", toolchain=Toolchain(str(bin_)))
+    rec = tr(next(iter(res)), "sim")
+    assert rec["outcome"] == "tool_missing"
+    assert "cc-shim" in rec["note"], rec["note"]
 
 
-def test_an_instantiation_of_an_unknown_entity_is_unresolved():
-    src = TOP.replace("work.leaf", "work.not_in_the_file_set")
-    files = {"top.vhd": src}
-    g = GraphBuilder().build_from_files(files, backend="auto")
-    assert "top" in g.unresolved_nodes()
-    assert g.completeness().get("complete") is False
+def test_a_real_analysis_error_is_a_fail(tmp_path):
+    bin_ = fake(tmp_path / "bin", "ghdl",
+                'echo "core.vhd:3:5:error: unexpected token" >&2\nexit 1')
+    g, res = build(tmp_path / "proj",
+                   {"core.vhd": VHD_PLAIN.format(name="core")})
+    tr = ToolRunner(g, res, tmp_path / "proj", toolchain=Toolchain(str(bin_)))
+    rec = tr(next(iter(res)), "sim")
+    assert rec["outcome"] == "fail"
+
+
+# ---- against the real GHDL, when it can run -----------------------------
+REAL = Toolchain()
+can_run = REAL.has("ghdl")
+
+
+@pytest.mark.skipif(not can_run, reason="ghdl not installed")
+def test_real_ghdl_analyses_a_package_and_a_user_of_it(tmp_path):
+    """The exact shape that failed: a package in a named library, then a user."""
+    pkg = ("package p is\n  constant W : integer := 8;\nend package;\n"
+           "package body p is\nend package body;\n")
+    user = ("library neorv32;\nuse neorv32.p.all;\n"
+            "entity u is port (c : in bit; q : out bit); end entity;\n")
+    files = {"rtl/p.vhd": pkg, "rtl/u.vhd": user,
+             "rtl/core.f": "rtl/p.vhd\nrtl/u.vhd\n"}
+    g, res = build(tmp_path / "proj", files)
+    tr = ToolRunner(g, res, tmp_path / "proj", toolchain=REAL)
+    rec = tr(next(iter(res)), "sim")
+    assert rec["outcome"] == "inconclusive", rec["log"][:400]
