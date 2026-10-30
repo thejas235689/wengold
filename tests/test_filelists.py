@@ -143,7 +143,7 @@ def test_a_verilog_core_with_some_vhdl_routes_to_verilator(tmp_path):
 def test_ghdl_absent_is_tool_missing_not_a_failure(tmp_path):
     g, res = build(tmp_path, {"core.vhd": VHD.format(name="core")})
     tr = ToolRunner(g, res, tmp_path, toolchain=Toolchain.empty())
-    rec = tr(next(iter(res)), "sim")
+    rec = tr(next(iter(res)), "elaborate")
     assert rec["tool"] == "ghdl"
     assert rec["outcome"] == "tool_missing"
     assert rec["outcome"] != "pass"
@@ -161,6 +161,6 @@ def test_a_rejected_file_list_is_inconclusive(tmp_path):
     tool.chmod(tool.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
     g, res = build(tmp_path / "proj", {"a.sv": SV.format(name="a")})
     tr = ToolRunner(g, res, tmp_path / "proj", toolchain=Toolchain(str(bin_)))
-    rec = tr(next(iter(res)), "sim")
+    rec = tr(next(iter(res)), "elaborate")
     assert rec["outcome"] == "inconclusive"
     assert "file list" in rec["note"]
