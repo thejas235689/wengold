@@ -323,6 +323,21 @@ def cmd_desktop(args) -> int:
     return 0
 
 
+def cmd_vibe(args) -> int:
+    """Describe it, get RTL, and see it simulated before you trust it."""
+    from .vibe import render, vibe
+
+    rec = vibe(args.text_or_spec, args.out, tools=args.tools)
+    print(render(rec))
+    if not rec.get("ok"):
+        return 1
+    print()
+    print("  The block was simulated, not just generated. A pass means the")
+    print("  testbench's checks held — reset values, writes and read-backs —")
+    print("  not that the design does everything you meant.")
+    return 0
+
+
 def cmd_generate(args) -> int:
     """Spec in, SystemVerilog out — and then check the code against the spec."""
     from .generate.emit import emit_map, emit_props, emit_rtl
@@ -1031,6 +1046,16 @@ def main(argv=None) -> int:
     p.add_argument("--define", action="append", default=[])
     p.add_argument("--backend", default="auto", choices=["auto", "slang", "regex"])
     p.set_defaults(func=cmd_desktop)
+
+    p = sub.add_parser("vibe",
+                       help="describe a block in words or a spec, generate it, "
+                            "and simulate it before you see it")
+    p.add_argument("text_or_spec",
+                   help="a spec file, or a sentence in the register-block grammar")
+    p.add_argument("--out", default="./vibe-out")
+    p.add_argument("--tools", default=None, metavar="DIR",
+                   help="directory holding iverilog/vvp (e.g. an OSS CAD Suite bin)")
+    p.set_defaults(func=cmd_vibe)
 
     p = sub.add_parser("generate",
                        help="generate SystemVerilog from a spec, then check it")
