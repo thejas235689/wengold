@@ -75,7 +75,7 @@ def test_a_clean_lint_is_inconclusive_not_a_pass(tmp_path):
     tool = fake_tool(tmp_path / "bin", "verilator", "exit 0")
     g, results = build(tmp_path / "proj", {"a.sv": HDL.format(name="a")})
     r = ToolRunner(g, results, tmp_path / "proj", toolchain=Toolchain(str(tool)))
-    rec = r(next(iter(results)), "sim")
+    rec = r(next(iter(results)), "lint")
     assert rec["outcome"] == "inconclusive"
     assert "elaborates" in rec["note"]
 
@@ -85,7 +85,7 @@ def test_an_elaboration_error_is_a_real_fail(tmp_path):
                      'echo "%Error: syntax" >&2\nexit 1')
     g, results = build(tmp_path / "proj", {"a.sv": HDL.format(name="a")})
     r = ToolRunner(g, results, tmp_path / "proj", toolchain=Toolchain(str(tool)))
-    rec = r(next(iter(results)), "sim")
+    rec = r(next(iter(results)), "lint")
     assert rec["outcome"] == "fail"
     assert rec["rc"] == 1
 
@@ -93,7 +93,7 @@ def test_an_elaboration_error_is_a_real_fail(tmp_path):
 def test_a_missing_tool_is_never_a_pass(tmp_path):
     g, results = build(tmp_path / "proj", {"a.sv": HDL.format(name="a")})
     r = ToolRunner(g, results, tmp_path / "proj", toolchain=Toolchain.empty())
-    rec = r(next(iter(results)), "sim")
+    rec = r(next(iter(results)), "lint")
     assert rec["outcome"] == "tool_missing"
     assert rec["outcome"] != "pass"
 
@@ -112,7 +112,7 @@ def test_a_result_with_no_file_is_inconclusive(tmp_path):
     g, results = build(tmp_path / "proj", {"a.sv": HDL.format(name="a")})
     results["ghost"] = Result("ghost", "sim", depends_on={"not_a_node"})
     r = ToolRunner(g, results, tmp_path / "proj", toolchain=Toolchain(str(tool)))
-    assert r("ghost", "sim")["outcome"] == "inconclusive"
+    assert r("ghost", "lint")["outcome"] == "inconclusive"
 
 
 def test_a_timeout_is_inconclusive_not_a_fail(tmp_path):
@@ -121,7 +121,7 @@ def test_a_timeout_is_inconclusive_not_a_fail(tmp_path):
     g, results = build(tmp_path / "proj", {"a.sv": HDL.format(name="a")})
     r = ToolRunner(g, results, tmp_path / "proj", toolchain=Toolchain(str(tool)),
                    timeout=1)
-    rec = r(next(iter(results)), "sim")
+    rec = r(next(iter(results)), "lint")
     assert rec["outcome"] == "inconclusive"
     assert rec["rc"] == 124
 
@@ -159,7 +159,7 @@ def test_the_outcome_records_what_it_ran(tmp_path):
     seen = []
     r = ToolRunner(g, results, tmp_path / "proj", toolchain=Toolchain(str(tool)),
                    on_step=seen.append)
-    rec = r(next(iter(results)), "sim")
+    rec = r(next(iter(results)), "lint")
     assert seen and seen[0]["result"] == rec["result"]
     for key in ("result", "tool", "outcome", "rc", "kind", "secs"):
         assert key in rec
@@ -175,12 +175,12 @@ has_verilator = pytest.mark.skipif(not REAL.has("verilator"),
 def test_real_verilator_accepts_a_good_module(tmp_path):
     g, results = build(tmp_path / "proj", {"a.sv": HDL.format(name="a")})
     r = ToolRunner(g, results, tmp_path / "proj", toolchain=REAL)
-    assert r(next(iter(results)), "sim")["outcome"] == "inconclusive"
+    assert r(next(iter(results)), "lint")["outcome"] == "inconclusive"
 
 
 @has_verilator
 def test_real_verilator_rejects_a_broken_module(tmp_path):
     g, results = build(tmp_path / "proj", {"b.sv": BROKEN.format(name="b")})
     r = ToolRunner(g, results, tmp_path / "proj", toolchain=REAL)
-    rec = r(next(iter(results)), "sim")
+    rec = r(next(iter(results)), "lint")
     assert rec["outcome"] == "fail", rec["log"][:300]
