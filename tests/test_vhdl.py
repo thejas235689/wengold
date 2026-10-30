@@ -96,7 +96,7 @@ def test_ghdl_is_given_the_library_and_the_search_path(tmp_path):
     g, res = build(tmp_path / "proj",
                    {"rtl/core.vhd": VHD.format(name="core")})
     tr = ToolRunner(g, res, tmp_path / "proj", toolchain=Toolchain(str(bin_)))
-    tr(next(iter(res)), "sim")
+    tr(next(iter(res)), "elaborate")
     argv = argvfile.read_text()
     assert "--work=neorv32" in argv, argv
     assert "-P" in argv, argv
@@ -112,7 +112,7 @@ def test_ghdl_analyses_one_file_at_a_time_in_order(tmp_path):
              "rtl/core.f": "rtl/z.vhd\nrtl/a.vhd\n"}
     g, res = build(tmp_path / "proj", files)
     tr = ToolRunner(g, res, tmp_path / "proj", toolchain=Toolchain(str(bin_)))
-    tr(next(iter(res)), "sim")
+    tr(next(iter(res)), "elaborate")
     # the fake records only the last call; the order is asserted on ordered_files
     design, source = tr.ordered_files("vhdl")
     assert source == "filelist"
@@ -123,7 +123,7 @@ def test_ghdl_analyses_one_file_at_a_time_in_order(tmp_path):
 def test_ghdl_missing_is_tool_missing(tmp_path):
     g, res = build(tmp_path, {"core.vhd": VHD_PLAIN.format(name="core")})
     tr = ToolRunner(g, res, tmp_path, toolchain=Toolchain.empty())
-    rec = tr(next(iter(res)), "sim")
+    rec = tr(next(iter(res)), "elaborate")
     assert rec["tool"] == "ghdl"
     assert rec["outcome"] == "tool_missing"
 
@@ -134,7 +134,7 @@ def test_a_clean_analysis_is_inconclusive_not_a_pass(tmp_path):
     g, res = build(tmp_path / "proj",
                    {"core.vhd": VHD_PLAIN.format(name="core")})
     tr = ToolRunner(g, res, tmp_path / "proj", toolchain=Toolchain(str(bin_)))
-    rec = tr(next(iter(res)), "sim")
+    rec = tr(next(iter(res)), "elaborate")
     assert rec["outcome"] == "inconclusive"
     assert "compiles" in rec["note"]
 
@@ -146,7 +146,7 @@ def test_a_missing_c_compiler_names_the_fix(tmp_path):
     g, res = build(tmp_path / "proj",
                    {"core.vhd": VHD_PLAIN.format(name="core")})
     tr = ToolRunner(g, res, tmp_path / "proj", toolchain=Toolchain(str(bin_)))
-    rec = tr(next(iter(res)), "sim")
+    rec = tr(next(iter(res)), "elaborate")
     assert rec["outcome"] == "tool_missing"
     assert "cc-shim" in rec["note"], rec["note"]
 
@@ -157,7 +157,7 @@ def test_a_real_analysis_error_is_a_fail(tmp_path):
     g, res = build(tmp_path / "proj",
                    {"core.vhd": VHD_PLAIN.format(name="core")})
     tr = ToolRunner(g, res, tmp_path / "proj", toolchain=Toolchain(str(bin_)))
-    rec = tr(next(iter(res)), "sim")
+    rec = tr(next(iter(res)), "elaborate")
     assert rec["outcome"] == "fail"
 
 
@@ -177,5 +177,5 @@ def test_real_ghdl_analyses_a_package_and_a_user_of_it(tmp_path):
              "rtl/core.f": "rtl/p.vhd\nrtl/u.vhd\n"}
     g, res = build(tmp_path / "proj", files)
     tr = ToolRunner(g, res, tmp_path / "proj", toolchain=REAL)
-    rec = tr(next(iter(res)), "sim")
+    rec = tr(next(iter(res)), "elaborate")
     assert rec["outcome"] == "inconclusive", rec["log"][:400]
