@@ -205,6 +205,32 @@ def cmd_cdc(args) -> int:
 
     rep = analyse(text, Path(args.file).stem)
     print(f"domains: {rep.domains}")
+
+    if args.classify:
+        # The detector above finds the crossings; this says whether each is
+        # synchronised, which the report alone cannot answer.
+        from .cdc_analysis import analyse_text, classify
+        a = analyse_text(text, args.file)
+        classified = classify(rep, a)
+        for c in classified:
+            warn = ""
+            if c.verdict == "synchronised" and c.multi_bit:
+                warn = "  [multi-bit: 2FF does not make a bus coherent]"
+            print(f"  {c.signal} [{c.width}]: {c.from_clock} -> {c.to_clock}"
+                  f"   {c.verdict}{warn}")
+            if c.detail:
+                print(f"    {c.detail}")
+        bad = [c for c in classified if c.verdict != "synchronised"]
+        if rep.unresolved:
+            print(f"  unresolved (no determinable domain): {rep.unresolved}")
+        if not classified:
+            print("  no crossings found — that is not the same as clean")
+        print()
+        print("  this reads syntax, not elaboration: a generate block or a macro "
+              "that changes connectivity is invisible to it, and a synchronised "
+              "verdict is not a sign-off")
+        return 0 if not bad and not rep.unresolved else 1
+
     for c in rep.crossings:
         print(f"  crossing {c.signal}: {c.from_domain} -> {c.to_domain} ({c.kind})")
     if rep.unresolved:
@@ -974,6 +1000,9 @@ def main(argv=None) -> int:
                         "this RTL instead of analysing crossings")
     p.add_argument("--to-ipxact", dest="to_ipxact", default=None, metavar="XML",
                    help="with --standard: also write the IP-XACT form (Clause 7)")
+    p.add_argument("--classify", action="store_true",
+                   help="say whether each crossing is synchronised (2-FF) — this is "
+                        "the analysis, not just the detection")
     p.add_argument("--from-ipxact", dest="from_ipxact", default=None, metavar="XML",
                    help="read an IP-XACT CDC component and print the Tcl form")
     p.add_argument("--out", default=None, help="write the converted form here")
