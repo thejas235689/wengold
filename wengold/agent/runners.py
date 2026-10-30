@@ -30,6 +30,7 @@ is the honest direction, and the benchmark in `docs/` reports both.
 from __future__ import annotations
 
 import os
+import shlex
 import shutil
 import subprocess
 import time
@@ -65,6 +66,53 @@ _INPUT_PROBLEMS = (
 def _is_input_problem(log: str) -> bool:
     low = log.lower()
     return any(p in low for p in _INPUT_PROBLEMS)
+
+
+FILELIST_SUFFIXES = (".f", ".flist")
+
+
+def parse_filelist(text: str, base: Path, env: dict | None = None) -> list[str]:
+    """Read a `.f` filelist into paths, preserving the project's own order.
+
+    Order is the whole point: Verilator rejects a design whose files are read out of
+    the order the project intends ("picosoc.v must be read before picorv32.v"), and
+    no heuristic ordering recovers it — reordering picorv32's files by hand still
+    left 28 errors. Only the project knows.
+
+    Handles what real filelists contain: comments, blank lines, `+incdir+`,
+    `+define+`, `$VARIABLE` expansions and quoted paths.
+    """
+    env = env if env is not None else os.environ
+    out: list[str] = []
+    for raw in text.splitlines():
+        line = raw.split("//")[0].strip()
+        if not line or line.startswith("#"):
+            continue
+        # shlex, not split(): a real filelist can quote a path containing spaces,
+        # and splitting on whitespace turns one path into two that both fail.
+        try:
+            tokens = shlex.split(line)
+        except ValueError:
+            tokens = line.split()
+        for token in tokens:
+            if token.startswith(("+incdir+", "+define+", "-I", "-D")):
+                continue
+            token = token.strip('"').strip("'")
+            # $NEORV32_HOME/rtl/core/x.vhd -> expand from the environment
+            while "$" in token:
+                head, _, rest = token.partition("$")
+                name, sep, tail = rest.partition("/")
+                value = env.get(name)
+                if value is None:
+                    break
+                token = head + value + sep + tail
+            if "$" in token:
+                continue                      # an unexpanded variable: skip it
+            p = Path(token)
+            if not p.is_absolute():
+                p = (base / p)
+            out.append(str(p))
+    return out
 
 
 class Toolchain:
@@ -132,6 +180,7 @@ class ToolRunner:
         # both slow and pointless. Keyed by the exact argv, so a cache hit can only
         # return the answer the tool already gave for the same command.
         self._cache: dict[tuple, tuple[int, str, float]] = {}
+        self.filelist = self.find_filelist()
 
     # -- mapping a result to files -----------------------------------------
     def files_for(self, rid: str) -> list[str]:
@@ -168,6 +217,76 @@ class ToolRunner:
     # what the first sweep did to neorv32, whose cache is VHDL.
     VERILOG_SUFFIXES = (".v", ".sv", ".vh", ".svh")
     VHDL_SUFFIXES = (".vhd", ".vhdl")
+
+    def find_filelist(self) -> str | None:
+        """The project's own filelist, if it ships one."""
+        for p in sorted(self.root.rglob("*")):
+            if p.suffix.lower() in FILELIST_SUFFIXES and p.is_file():
+                return str(p)
+        return None
+
+    def ordered_files(self, language: str = "verilog") -> tuple[list[str], str]:
+        """Design files in the project's intended order.
+
+        Returns `(files, source)` where source is "filelist" or "sorted". A filelist
+        is authoritative; sorted order is a fallback that Verilator may reject, and
+        when it does the outcome is `inconclusive` rather than `fail`.
+        """
+        fl = self.filelist
+        if fl:
+            try:
+                text = Path(fl).read_text()
+            except OSError:
+                text = ""
+            env = dict(os.environ)
+            env.setdefault("NEORV32_HOME", str(self.root))
+            # Filelists disagree about what a relative path is relative to: some
+            # projects mean the filelist's own directory, others the project root.
+            # Try the filelist's directory, then the root, and keep what exists.
+            files = parse_filelist(text, Path(fl).parent, env)
+            fixed = []
+            for f in files:
+                if Path(f).exists():
+                    fixed.append(f)
+                    continue
+                name = Path(f).name
+                for base in (self.root, Path(fl).parent):
+                    cand = Path(base) / name
+                    if cand.exists():
+                        fixed.append(str(cand.resolve()))
+                        break
+            files = fixed
+            if language == "verilog":
+                files = [f for f in files
+                         if Path(f).suffix.lower() not in self.VHDL_SUFFIXES]
+            else:
+                files = [f for f in files
+                         if Path(f).suffix.lower() in self.VHDL_SUFFIXES]
+            if files:
+                return files, "filelist"
+        return self.project_files(language), "sorted"
+
+    def dominant_language(self) -> str:
+        """Which language the design's own blocks are written in.
+
+        Counting files is wrong: neorv32 is a VHDL core that also ships nine
+        Verilog files (vendor models, wrappers), so `any VHDL file exists` routed it
+        to Verilator and produced a wall of syntax errors. The blocks decide.
+        """
+        vhdl = verilog = 0
+        for node in self.graph.nodes.values():
+            path = getattr(node, "path", None)
+            if not path:
+                continue
+            suffix = Path(str(path)).suffix.lower()
+            if suffix in self.VHDL_SUFFIXES:
+                vhdl += 1
+            elif suffix in self.VERILOG_SUFFIXES:
+                verilog += 1
+        return "vhdl" if vhdl > verilog else "verilog"
+
+    def has_vhdl(self) -> bool:
+        return bool(self.project_files("vhdl"))
 
     def project_files(self, language: str = "verilog") -> list[str]:
         """Every design file in the graph.
@@ -242,6 +361,11 @@ class ToolRunner:
                 0.0, "the result names no existing design file")
 
         if kind in ("lint", "sim", "elaborate"):
+            # A VHDL design is not a Verilator problem. neorv32 is 54 `.vhd` files;
+            # handing them to a SystemVerilog linter produced a wall of syntax errors
+            # that read as broken RTL.
+            if self.dominant_language() == "vhdl":
+                return self._ghdl(rid, kind, files)
             return self._lint(rid, kind, files)
         if kind in ("formal", "proof", "assertion"):
             return self._elaborate(rid, kind, files)
@@ -255,8 +379,11 @@ class ToolRunner:
         if not self.tools.has("verilator"):
             return self._outcome(rid, kind, "verilator", "tool_missing", 127, "",
                                  0.0, "verilator is not on PATH")
-        # the whole design, not just this result's files — see project_files()
-        design = self.project_files() or files
+        # the project's own filelist when it ships one; sorted order otherwise.
+        # Elaboration is a whole-design property, so every result asks the same
+        # question — and only the project knows the order Verilator needs.
+        design, source = self.ordered_files("verilog")
+        design = design or files
         argv = [self.tools.found["verilator"], "--lint-only", "-Wno-fatal", *design]
         rc, log, secs = self._run(argv)
         if rc == 0:
@@ -264,7 +391,8 @@ class ToolRunner:
             # property holds, so it settles nothing.
             return self._outcome(
                 rid, kind, "verilator", "inconclusive", rc, log, secs,
-                "linted clean — the design elaborates, but the check was not run")
+                f"linted clean from the {source} — the design elaborates, but the "
+                f"check was not run")
         if rc == 124:
             return self._outcome(rid, kind, "verilator", "inconclusive", rc, log,
                                  secs, "verilator timed out")
@@ -276,6 +404,54 @@ class ToolRunner:
         # a real elaboration error is a real failure
         return self._outcome(rid, kind, "verilator", "fail", rc, log, secs,
                              "elaboration failed, so the check cannot pass")
+
+    def _ghdl(self, rid, kind, files):
+        """Analyse a VHDL design with GHDL, in the project's own order.
+
+        `ghdl -a` compiles one design unit at a time and order matters, which is
+        why the filelist path exists. It needs a C compiler to be installed for
+        its runtime; without one GHDL fails at startup and that is reported as
+        `tool_missing`, not as a broken design.
+        """
+        if not self.tools.has("ghdl"):
+            return self._outcome(rid, kind, "ghdl", "tool_missing", 127, "", 0.0,
+                                 "ghdl is not on PATH")
+        design, source = self.ordered_files("vhdl")
+        if not design:
+            return self._outcome(rid, kind, "ghdl", "inconclusive", 0, "", 0.0,
+                                 "no VHDL files found")
+        workdir = self.root / ".wengold-ghdl"
+        try:
+            workdir.mkdir(exist_ok=True)
+        except OSError:
+            workdir = self.root
+        logs, failed = [], 0
+        started = time.monotonic()
+        for f in design:
+            rc, log, _ = self._run([self.tools.found["ghdl"], "-a", "--std=08",
+                                    f"--workdir={workdir}", f])
+            if rc != 0:
+                failed += 1
+                logs.append(log)
+                if "installation problem" in log.lower():
+                    return self._outcome(
+                        rid, kind, "ghdl", "tool_missing", rc, log,
+                        time.monotonic() - started,
+                        "ghdl could not start — it needs a C compiler")
+                break
+        secs = time.monotonic() - started
+        log = "\n".join(logs)
+        if failed:
+            if _is_input_problem(log):
+                return self._outcome(rid, kind, "ghdl", "inconclusive", 1, log,
+                                     secs, "the tool rejected the file list, "
+                                           "not the design")
+            return self._outcome(rid, kind, "ghdl", "fail", 1, log, secs,
+                                 "analysis failed, so the check cannot pass")
+        return self._outcome(
+            rid, kind, "ghdl", "inconclusive", 0, "", secs,
+            f"analysed {len(design)} VHDL unit(s) from the {source} — "
+            f"the design compiles, but the check was not run")
 
     def _elaborate(self, rid, kind, files):
         if not self.tools.has("yosys"):
