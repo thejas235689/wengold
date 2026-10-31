@@ -153,7 +153,7 @@ def build_window(state: dict):
             self.transcript.setReadOnly(True)
             self.input = QtWidgets.QLineEdit()
             self.input.setPlaceholderText(
-                "summary · files · blocks · verdicts · singularity · help")
+                "summary · files · blocks · verdicts · singularity · vibe · help")
             self.input.returnPressed.connect(self._run)
 
             bottom = QtWidgets.QWidget()
