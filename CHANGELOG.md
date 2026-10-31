@@ -49,7 +49,9 @@ was wrong, not the check.
 | selecting any file in the tree | its source, with line numbers |
 | a file over 400 lines | truncated, and says so |
 
-**694 tests passing** locally (18 in the vibe suite).
+**686 tests passing**, 8 skipped, verified from a fresh checkout of `main` by
+`tools/verify-release.sh` (18 in the vibe suite). The skips are the real-tool tests,
+which need `iverilog`/`vvp` on PATH; the working tree had 694 because it has them.
 
 ---
 
