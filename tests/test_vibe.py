@@ -274,3 +274,46 @@ def test_the_generated_header_names_the_input_the_user_gave(tmp_path):
         pytest.skip("generator unavailable")
     text = (tmp_path / "out" / "timer.sv").read_text()
     assert ".spec.yaml" not in text, "the header should not cite a temporary file"
+
+
+# ---- the line count is kept, not just shown ------------------------------
+@pytest.mark.skipif(not HAS_SIM, reason="iverilog/vvp not installed")
+def test_the_line_count_is_recorded_and_written_to_a_manifest(tmp_path):
+    """The count used to be computed for the detail pane and thrown away, so
+    closing the app lost it."""
+    import json
+    spec = tmp_path / "t.yaml"
+    spec.write_text(TIMER_YAML)
+    out = tmp_path / "out"
+    rec = vibe(str(spec), str(out))
+    assert rec["ok"], rec.get("output") or rec.get("note")
+
+    assert rec["lines"]["timer.sv"] == len(
+        (out / "timer.sv").read_text().splitlines())
+    assert rec["total_lines"] == sum(rec["lines"].values())
+
+    m = json.loads((out / "manifest.json").read_text())
+    assert m["module"] == "timer"
+    assert m["total_lines"] == rec["total_lines"]
+    assert m["outcome"] == rec["outcome"]
+    assert set(m["files"]) == {"timer.sv", "timer_tb.sv"}
+
+
+def test_the_report_shows_the_line_count(tmp_path):
+    rec = {"module": "m", "ok": True, "outcome": "pass", "tool": "iverilog",
+           "spec_source": "file", "files": [], "note": "",
+           "lines": {"m.sv": 40, "m_tb.sv": 20}, "total_lines": 60}
+    text = render(rec)
+    assert "60 lines" in text
+    assert "m.sv 40" in text and "m_tb.sv 20" in text
+
+
+def test_a_failed_run_does_not_write_a_manifest(tmp_path):
+    """A manifest that claims a verdict for a run that never got there would be
+    the same class of error as a test count nobody checked."""
+    bad = tmp_path / "bad.yaml"
+    bad.write_text(REGS_YAML + "\nwidth: 8\n")
+    out = tmp_path / "out"
+    rec = vibe(str(bad), str(out))
+    assert rec["ok"] is False
+    assert not (out / "manifest.json").exists()
