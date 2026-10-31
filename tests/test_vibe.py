@@ -12,6 +12,8 @@ Both inputs — a YAML spec and a sentence — are loaded through the same path 
 up as a `ModuleSpec`, so the testbench is built from one representation rather than
 two dict shapes that could drift apart.
 """
+import re
+
 import pytest
 
 from wengold.generate.spec import load_spec
@@ -122,9 +124,15 @@ def test_a_w1c_register_is_checked_for_clearing_not_storing(tmp_path):
 
 
 def test_reset_is_checked_for_every_register(tmp_path):
+    """One `chk` call per register, each naming the register.
+
+    The checks used to be three lines each (read, mask-compare, fatal); they are
+    one call to a named task now, so the count is of calls, not of a literal
+    string inside a fatal message.
+    """
     s = mspec(tmp_path, REGS_YAML)
     tb = make_testbench(s, s.all_ports)
-    assert tb.count("reset: expected") == 3
+    assert len(re.findall(r'chk\([^;]*"\w+ reset"\)', tb)) == 3
 
 
 # ---- the loop ------------------------------------------------------------
