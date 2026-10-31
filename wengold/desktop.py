@@ -401,7 +401,8 @@ def _file_detail(state: dict, rel: str) -> dict:
 # with their design on disk, so it must never be a shell: only these verbs run, and
 # each one reads state the kernel already computed. Adding a verb here is a code
 # change, not a config option.
-CLI_COMMANDS = ("summary", "files", "blocks", "verdicts", "singularity", "help")
+CLI_COMMANDS = ("summary", "files", "blocks", "verdicts", "singularity",
+                "vibe", "help")
 
 
 def _page(state: dict) -> str:
@@ -508,6 +509,21 @@ def _exec(state: dict, line: str) -> dict:
             f"coverage {s['coverage']}%\n"
             f"complete {s['complete']}")}
 
+    if verb == "vibe":
+        # The one command that writes: it generates a block and simulates it.
+        # Everything else here reads state the kernel already computed.
+        from .vibe import render, vibe
+        target = " ".join(args) if args else ""
+        if not target:
+            return {"ok": False, "output":
+                    "vibe needs a spec file or a sentence, e.g.\n"
+                    "  vibe examples/timer/timer.spec.yaml\n"
+                    "  vibe a register block with a control and a status register"}
+        import os
+        outdir = os.path.join(state.get("path", "."), "vibe-out")
+        rec = vibe(target, outdir, tools=os.environ.get("WENGOLD_TOOLS"))
+        return {"ok": bool(rec.get("ok")), "output": render(rec).strip()}
+
     if verb == "help":
         return {"ok": True, "output":
                 "summary              graph counts and completeness\n"
@@ -515,6 +531,7 @@ def _exec(state: dict, line: str) -> dict:
                 "blocks               every RTL block, fan-in and fan-out\n"
                 "verdicts [id]        kernel verdicts after the change\n"
                 "singularity          conditioning and blast radii\n"
+                "vibe <spec|sentence> generate a block and simulate it\n"
                 "clear                clear the pane\n"
                 "help                 this list"}
 
