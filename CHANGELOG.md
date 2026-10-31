@@ -14,6 +14,46 @@ what the tags are for.
 
 ---
 
+## [0.53.2] — 2026-10-31
+
+### Changed
+- **The testbench checks are one line each, not three.**
+
+  Every check was the same three lines — read, mask-compare, `$fatal` — repeated
+  per register. They are one call to a named task now:
+
+  ```diff
+  -    rd(32'h00, d);
+  -    if ((d & 32'h0001ffff) !== 32'h00000012)
+  -      $fatal(1, "CTRL reset: expected %08x got %08x", 32'h00000012, d & 32'h0001ffff);
+  +    chk(32'h00, 32'h0001ffff, 32'h00000012, "CTRL reset");
+  ```
+
+  The message survives, and it is the part that tells you what broke.
+
+  | block | testbench before | after |
+  | --- | --- | --- |
+  | `timer` | 60 | **55** |
+  | `sec_ctrl` | 60 | **56** |
+
+  Net saving is 5 lines, not 13: the task itself costs 6. It pays off with more
+  registers, and it stops the pattern repeating.
+
+### Why this one was worth doing
+I flagged the testbench-to-RTL ratio as something to watch — 60 lines of checking
+against 72 of design. The ratio is now 55:72, and more importantly the checks are
+readable as a list rather than as a wall of identical triples.
+
+### A test updated, not weakened
+`test_reset_is_checked_for_every_register` counted the literal string
+`"reset: expected"`, which no longer appears because the message is now a parameter.
+It counts `chk(..., "X reset")` calls instead — the assertion is about there being
+one check per register, which is unchanged.
+
+**708 tests passing** locally.
+
+---
+
 ## [0.53.1] — 2026-10-31
 
 ### Added
