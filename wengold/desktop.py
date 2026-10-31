@@ -394,7 +394,23 @@ def _file_detail(state: dict, rel: str) -> dict:
             blocks.append({"name": b, "instantiates": len(g.rtl_ancestors(b)),
                            "instantiated_by": len(g.rtl_descendants(b))})
     notes = [n for n in dict.fromkeys(g.notes) if rel and rel in n]
-    return {"file": rel, "blocks": blocks, "notes": notes[:6]}
+
+    # The source itself. Without it the detail pane describes a file it will not
+    # show you, which is a strange thing for a tool whose job is reading RTL.
+    source, truncated = "", False
+    try:
+        text = (root / want).read_text(errors="replace")
+        lines = text.splitlines()
+        if len(lines) > 400:
+            text = "\n".join(lines[:400])
+            truncated = True
+        source = text
+    except OSError:
+        pass
+
+    return {"file": rel, "blocks": blocks, "notes": notes[:6],
+            "source": source, "truncated": truncated,
+            "lines": len(source.splitlines())}
 
 
 # A deliberately tiny command surface. The desktop app runs on the user's machine
@@ -522,7 +538,17 @@ def _exec(state: dict, line: str) -> dict:
         import os
         outdir = os.path.join(state.get("path", "."), "vibe-out")
         rec = vibe(target, outdir, tools=os.environ.get("WENGOLD_TOOLS"))
-        return {"ok": bool(rec.get("ok")), "output": render(rec).strip()}
+        # hand back the written files relative to the project, so the app can
+        # select one and show its source
+        written = []
+        root = Path(state.get("path", ".")).resolve()
+        for f in rec.get("files", []):
+            try:
+                written.append(str(Path(f).resolve().relative_to(root)))
+            except (ValueError, OSError):
+                written.append(str(f))
+        return {"ok": bool(rec.get("ok")), "output": render(rec).strip(),
+                "written": written}
 
     if verb == "help":
         return {"ok": True, "output":
