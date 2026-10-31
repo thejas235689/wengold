@@ -57,7 +57,10 @@ def get_json(port, path):
 def test_state_counts_the_design(state):
     assert state["files"] == 1
     assert state["blocks"] == 3
-    assert 0 <= state["coverage"] <= 100
+    # not "coverage": this is the share of files that contained a design unit,
+    # which is how much of the repository the graph can describe at all
+    assert 0 <= state["design_units"] <= state["files"]
+    assert 0 <= state["file_coverage"] <= 100
 
 
 def test_state_is_json_safe(state):
