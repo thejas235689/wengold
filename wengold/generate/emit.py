@@ -83,8 +83,11 @@ def _field_views(spec: ModuleSpec) -> str:
         for f in r.fields:
             sig = spec.field_signal(r, f)
             rng = "" if f.width == 1 else f"[{f.width - 1}:0] "
-            out.append(f"    wire {rng}{sig};   // {r.name}.{f.name} ({f.access})")
-            out.append(f"    assign {sig} = {r.signal}[{f.bits}];")
+            # one line, not two: `wire x = y;` is a net declaration with a
+            # continuous assignment. The name survives, which is what the
+            # conformance check points at — only the redundant `assign` goes.
+            out.append(f"    wire {rng}{sig} = {r.signal}[{f.bits}];"
+                       f"   // {r.name}.{f.name} ({f.access})")
     return "\n".join(out)
 
 
