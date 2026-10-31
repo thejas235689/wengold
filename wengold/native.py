@@ -63,6 +63,12 @@ class NativeUnavailable(RuntimeError):
     """PyQt6 is not installed, so the native window cannot be built."""
 
 
+def _esc(text: str) -> str:
+    """HTML-escape a line of source so `<=` and `&` survive the detail pane."""
+    import html
+    return html.escape(text, quote=False)
+
+
 def _qt():
     """Import Qt, or explain exactly how to get it."""
     try:
@@ -261,11 +267,26 @@ def build_window(state: dict):
             rows = "".join(
                 f"<tr><td>{b['name']}</td><td align=right>{b['instantiates']}</td>"
                 f"<td align=right>{b['instantiated_by']}</td></tr>" for b in blocks)
-            self.detail.setHtml(
-                f"<h3 style='margin:0 0 8px'>{rel}</h3>"
-                f"<p style='color:{MUTED}'>{len(blocks)} block(s)</p>"
-                + (f"<table width='100%' cellspacing=0>{rows}</table>" if rows
-                   else "<p>no modules in this file</p>"))
+            source = d.get("source") or ""
+            if source:
+                # show the code, with line numbers — the pane's job is reading RTL
+                body = "\n".join(
+                    f"<span style='color:{MUTED}'>{i:>4}</span>  {_esc(line)}"
+                    for i, line in enumerate(source.splitlines(), 1))
+                more = ("<p style='color:%s'>… truncated at 400 lines</p>" % MUTED
+                        if d.get("truncated") else "")
+                self.detail.setHtml(
+                    f"<h3 style='margin:0 0 2px'>{_esc(rel)}</h3>"
+                    f"<p style='color:{MUTED};margin:0 0 8px'>"
+                    f"{len(blocks)} block(s) · {d.get('lines', 0)} lines</p>"
+                    f"<pre style=\"font-family:monospace;font-size:12px;"
+                    f"white-space:pre;margin:0\">{body}</pre>{more}")
+            else:
+                self.detail.setHtml(
+                    f"<h3 style='margin:0 0 8px'>{_esc(rel)}</h3>"
+                    f"<p style='color:{MUTED}'>{len(blocks)} block(s)</p>"
+                    + (f"<table width='100%' cellspacing=0>{rows}</table>" if rows
+                       else "<p>no modules in this file</p>"))
 
         def _on_block(self):
             rows = self.table.selectedItems()
@@ -297,6 +318,27 @@ def build_window(state: dict):
             if out:
                 self._say("  " + out.replace("\n", "\n  "))
             self.input.clear()
+
+            # `vibe` writes files: reload the index and show what was made, so the
+            # generated RTL is on screen rather than a message saying it exists
+            if line.split()[0].lower() == "vibe" and res.get("ok"):
+                made = res.get("written") or []
+                self._reload()
+                if made:
+                    self._select_file(made[0])
+
+        def _select_file(self, rel: str):
+            """Select a file in the tree so the detail pane shows its source."""
+            for i in range(self.tree.topLevelItemCount()):
+                item = self.tree.topLevelItem(i)
+                if item.data(0, QtCore.Qt.ItemDataRole.UserRole) == rel:
+                    self.tree.setCurrentItem(item)
+                    return
+                for j in range(item.childCount()):
+                    child = item.child(j)
+                    if child.data(0, QtCore.Qt.ItemDataRole.UserRole) == rel:
+                        self.tree.setCurrentItem(child)
+                        return
 
         def _say(self, text: str):
             self.transcript.append(text)
