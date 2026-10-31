@@ -14,6 +14,52 @@ what the tags are for.
 
 ---
 
+## [0.53.3] — 2026-10-31
+
+### Fixed
+- **`100% cov` was not coverage of anything.**
+
+  The strip said `2 blocks · 4 nodes · 100% cov`. That number is the share of
+  **files that contained a design unit** — how much of the repository the graph can
+  describe at all. It is not test coverage, not code coverage, and not block
+  coverage. A reader would reasonably take it for one of those three.
+
+  It now says what it is, everywhere:
+
+  | where | before | after |
+  | --- | --- | --- |
+  | app strip | `100% cov` | `3/3 files are design units` |
+  | overview pane | `Coverage 100%` | `Design units 3/3` |
+  | CLI `summary` | `coverage 100%` | `design units 3 of 3 file(s)` |
+  | `wengold index --check` | `100% file coverage` | `3 of 3 file(s) are design units` |
+  | `/api/summary` | `"coverage": 100` | `"design_units": 3, "file_coverage": 100` |
+
+### A correction to what I told you
+Last turn I described this figure as **block coverage**. That was wrong — it is
+file coverage, and the code has always said `file_coverage`. The label was
+misleading enough that I repeated the misreading in my own explanation of it, which
+is the clearest evidence the label needed changing.
+
+### Why this is worth a release
+The number is useful and honest once named: 3 of 3 files contributing design units
+means the index saw everything. `100% cov` means nothing specific, and in a
+verification tool "coverage" already has two precise meanings it was borrowing.
+
+### A test updated, not weakened
+`test_state_counts_the_design` asserted `0 <= state["coverage"] <= 100`. It now
+asserts `0 <= design_units <= files` — the relationship that actually holds —
+rather than the range of a percentage.
+
+**696 tests passing**, 12 skipped, verified from a fresh checkout of `main` by
+`tools/verify-release.sh`.
+
+### Still missing
+`tests/test_native_app.py` is not on the branch — one of the files the write API
+refused before the backtick fix, never re-sent. The native window's labels changed
+here and are checked by rendering it, not by a test.
+
+---
+
 ## [0.53.2] — 2026-10-31
 
 ### Changed
