@@ -14,6 +14,61 @@ what the tags are for.
 
 ---
 
+## [0.53.0] — 2026-10-31
+
+### Changed
+- **Field views are one line each, not two.**
+
+  ```diff
+  -    wire ctrl_en_q;   // CTRL.EN (rw)
+  -    assign ctrl_en_q = ctrl_q[0];
+  +    wire ctrl_en_q = ctrl_q[0];   // CTRL.EN (rw)
+  ```
+
+  `wire x = y;` is a net declaration with a continuous assignment — the same
+  thing as `wire x; assign x = y;` in half the space. The **name survives**, which
+  is the part that matters: the conformance check reports
+  `STATUS.MATCH slice — expected status_q[16], found status_q[16]` because the
+  field has a name to point at.
+
+  | example | before | after |
+  | --- | --- | --- |
+  | `timer` | 77 | **72** |
+  | `sec_ctrl` | 81 | **75** |
+
+  One line saved per field. Small, and it is the only reduction available that
+  costs nothing.
+
+### What I got wrong first
+I said a `case` statement on the address would "cut real lines and be easier to
+read". **It would have added lines.** The if-chain costs one line per register
+(`end else if (...) begin`); a `case` costs two (label, `begin`). I measured it
+instead of shipping it.
+
+### The regression this caused, and the fix
+Changing the field views broke the **formal prover**, which is load-bearing:
+
+```
+UnsupportedConstruct: initialisers in declarations are not supported
+```
+
+`wire x = y;` was explicitly refused by `rtl_model.py`. Three tests failed,
+including `test_the_generated_register_block_is_not_proved_constant` — the
+soundness test — which went from `fail` to `unknown`.
+
+So the compact form was going to save six lines at the cost of the proof. The
+front-end now understands the form, because refusing it meant *any* generator
+emitting it could not be proved at all — a far worse outcome than two extra lines.
+
+### A test updated, not weakened
+`test_emitted_rtl_carries_the_field_slices` pinned the exact string
+`assign ctrl_en_q = ctrl_q[0];`. It now checks the binding with a pattern, so it
+holds whichever spelling is emitted. The contract is the slice, not the syntax.
+
+**705 tests passing**, 90 s, including the soundness test that caught this.
+
+---
+
 ## [0.52.0] — 2026-10-31
 
 ### Added
