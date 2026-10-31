@@ -14,6 +14,44 @@ what the tags are for.
 
 ---
 
+## [0.53.4] — 2026-10-31
+
+### Added
+- **`tests/test_native_app.py` finally lands.** It had been blocked from the branch
+  for many turns — one of the files the write API refused before the cause was
+  found (a backticked shell-looking string in a docstring). Until now the native
+  window was checked by rendering a screenshot and looking at it, which catches
+  layout and misses everything that is not visible.
+
+  The test that would have caught the most:
+
+  ```python
+  def test_the_hint_bar_lists_every_command(project):
+      """`review` and `vibe` both shipped missing from this bar. Twice."""
+      for cmd in CLI_COMMANDS:
+          assert cmd in hint, f"{cmd!r} is accepted by the pane but not in the hint"
+  ```
+
+  Both times I added a command and forgot the hint, I found it by reading a
+  screenshot. It is a test now.
+
+  Also covered: the window builds without an event loop, the three panes exist, the
+  strip says **design units** rather than `% cov`, a command lands in the
+  transcript and clears the input, an unknown command does not kill the window,
+  selecting a file shows its source, `&` in RTL is escaped rather than read as
+  markup, and the offscreen render works so CI can check the layout at all.
+
+### The vacuous-pass guard
+The hint test iterates `CLI_COMMANDS`, so an empty tuple would make it pass having
+checked nothing. It asserts the tuple has more than three entries and the hint is
+non-empty first. That is the same failure this project keeps finding — a check that
+reports success because it examined nothing.
+
+**706 tests passing**, 12 skipped, verified from a fresh checkout of `main` by
+`tools/verify-release.sh`.
+
+---
+
 ## [0.53.3] — 2026-10-31
 
 ### Fixed
