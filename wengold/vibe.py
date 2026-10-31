@@ -281,6 +281,13 @@ def vibe(text_or_spec: str, out: str = ".", tools: str | None = None,
     tb.write_text(make_testbench(mspec, mspec.all_ports))
     rec["files"] = [str(sv), str(tb)]
 
+    # The line count used to be computed for the detail pane and thrown away, so
+    # closing the app lost it. It is cheap to keep and the only measurement a run
+    # produces that nothing else records.
+    rec["lines"] = {sv.name: len(rtl.splitlines()),
+                    tb.name: len(tb.read_text().splitlines())}
+    rec["total_lines"] = sum(rec["lines"].values())
+
     # ---- 3. simulate ---------------------------------------------------
     from .cli import _collect
     from .graph.builder import GraphBuilder
@@ -299,6 +306,27 @@ def vibe(text_or_spec: str, out: str = ".", tools: str | None = None,
     rec["ok"] = outcome["outcome"] == "pass"
     rec["note"] = outcome["note"]
     rec["log"] = outcome.get("log", "")[-2000:]
+
+    # A run should leave a record, not only a transcript. Written last, so it
+    # carries the verdict as well as the sizes.
+    import json as _json
+    manifest = {
+        "module": mspec.name,
+        "spec_source": rec.get("spec_source"),
+        "input": text_or_spec,
+        "files": {Path(f).name: {"lines": rec["lines"].get(Path(f).name, 0)}
+                  for f in rec["files"]},
+        "total_lines": rec["total_lines"],
+        "tool": rec["tool"],
+        "outcome": rec["outcome"],
+        "note": rec["note"],
+    }
+    try:
+        (outdir / "manifest.json").write_text(
+            _json.dumps(manifest, indent=2) + "\n")
+        rec["manifest"] = str(outdir / "manifest.json")
+    except OSError:
+        pass
     return rec
 
 
@@ -317,7 +345,11 @@ def render(rec: dict) -> str:
                 lines.append(f"      {l[:110]}")
         return "\n".join(lines)
 
-    lines.append(f"  {name}  —  {rec['outcome']} ({rec['tool']})")
+    count = ""
+    if rec.get("total_lines"):
+        per = ", ".join(f"{n} {v}" for n, v in rec["lines"].items())
+        count = f", {rec['total_lines']} lines ({per})"
+    lines.append(f"  {name}  —  {rec['outcome']} ({rec['tool']}){count}")
     lines.append(f"    spec from: {rec.get('spec_source')}")
     for f in rec.get("files", []):
         lines.append(f"    wrote {f}")
