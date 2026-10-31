@@ -15,7 +15,7 @@ Endpoints:
 | route | what it returns |
 | --- | --- |
 | `/` | the UI |
-| `/api/summary` | files, nodes, edges, blocks, unresolved, coverage, complete |
+| `/api/summary` | files, nodes, edges, blocks, unresolved, design_units, complete |
 | `/api/blocks` | every RTL block with its fan-in and fan-out |
 | `/api/verdicts?change=X` | the kernel's verdict for every result after change X |
 | `/api/singularity` | condition number and the blocks with the largest blast radius |
@@ -191,7 +191,8 @@ async function boot(){
     const s=S.summary;
     // the strip reads like a revision line: project — tool — rev — size · mode
     $('tname').textContent=s.path.split('/').filter(Boolean).pop()||'design';
-    $('tdims').textContent=s.blocks+' blocks · '+s.nodes+' nodes · '+s.coverage+'% cov';
+    $('tdims').textContent=s.blocks+' blocks · '+s.nodes+' nodes · '+
+      s.design_units+'/'+s.files+' files are design units';
     $('tunres').textContent=s.unresolved?(s.unresolved+' unresolved'):'complete';
     $('s-msg').innerHTML=s.blocks+' blocks <span class="sep">·</span> '+
       s.nodes+' nodes <span class="sep">·</span> '+s.edges+' edges <span class="sep">·</span> '+
@@ -357,7 +358,11 @@ def build_state(path: str) -> dict:
         "path": str(path),
         "files": len(files), "nodes": len(g.nodes), "edges": len(g.edges),
         "blocks": len(blocks), "unresolved": len(c["unresolved"]),
-        "coverage": round(c["file_coverage"] * 100),
+        # "coverage" invited the reading "test coverage". It is the share of
+        # files that contained a design unit — how much of the repository the
+        # graph can even describe — so it is named that and reported as a ratio.
+        "design_units": c["contributing_files"],
+        "file_coverage": round(c["file_coverage"] * 100),
         "complete": bool(c["complete"]),
         "notes": [n for n in dict.fromkeys(g.notes)][:3],
         "graph": g, "block_names": blocks,
@@ -471,7 +476,7 @@ def _agent(state: dict, q: str) -> dict:
     c = state["graph"].completeness()
     step("Checked elaboration completeness", "wengold index --check",
          f"{len(c['unresolved'])} unresolved · "
-         f"{round(c['file_coverage'] * 100)}% file coverage")
+         f"{c['contributing_files']} of {c['files']} file(s) are design units")
 
     v = _verdicts(state)
     counts = v["counts"]
@@ -521,8 +526,8 @@ def _exec(state: dict, line: str) -> dict:
         s = state
         return {"ok": True, "output": (
             f"files {s['files']}  nodes {s['nodes']}  edges {s['edges']}\n"
-            f"blocks {s['blocks']}  unresolved {s['unresolved']}  "
-            f"coverage {s['coverage']}%\n"
+            f"blocks {s['blocks']}  unresolved {s['unresolved']}\n"
+            f"design units {s['design_units']} of {s['files']} file(s)\n"
             f"complete {s['complete']}")}
 
     if verb == "review":
