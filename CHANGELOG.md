@@ -69,8 +69,9 @@ afterwards, so it is a one-time cost per machine, but it is not instant and the 
 gives no progress bar for it. Typing a sentence the first time feels slow. That is
 the honest experience today.
 
-**690 tests passing** locally (14 in the vibe suite, including one that corrupts the
-generated RTL to prove the checker can fail).
+**683 tests passing**, 7 skipped, verified from a fresh checkout of `main` by
+`tools/verify-release.sh`. The skips are the real-tool tests, which need
+`iverilog`/`vvp` on PATH — the working tree had 690 because it has them.
 
 ---
 
