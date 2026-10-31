@@ -1,9 +1,0 @@
-    assert declared == wengold.__version__, (
-        f"pyproject says {declared}, the package says {wengold.__version__}")
-
-
-def test_the_version_is_three_numbers():
-    assert re.fullmatch(r"\d+\.\d+\.\d+", wengold.__version__), \
-        "a publish tag of the form vX.Y.Z must match this"
-
-
