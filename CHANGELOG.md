@@ -54,7 +54,7 @@ checked. The test asserts the file is absent when the build fails.
 | `timer` | 132 lines — 72 RTL, 60 testbench |
 | before v0.53.0 | 137 lines — the field-view merge saved 5 |
 
-**694 tests passing**, 11 skipped, verified from a fresh checkout of `main` by
+**696 tests passing**, 12 skipped, verified from a fresh checkout of `main` by
 `tools/verify-release.sh`. The working tree had 708 because it has `iverilog` on
 PATH.
 
