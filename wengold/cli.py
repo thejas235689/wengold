@@ -349,6 +349,31 @@ def cmd_desktop(args) -> int:
     return 0
 
 
+def cmd_review(args) -> int:
+    """Suggest better code — only from checks that ran."""
+    from .review import render, review
+
+    rep = review(args.path, tools=args.tools)
+    print(render(rep))
+    if args.apply:
+        want = args.apply
+        hit = [s for s in rep["suggestions"] if s.id == want]
+        if not hit:
+            print(f"\n  no suggestion with id {want!r}")
+            return 2
+        s = hit[0]
+        if not s.new_text:
+            print(f"\n  {want} has no mechanical fix — read the note above")
+            return 2
+        import pathlib
+        target = pathlib.Path(args.path) / s.path
+        target.write_text(s.new_text)
+        print(f"\n  applied {want} to {target}")
+        print("  re-run `wengold review` to see whether the check now passes")
+        return 0
+    return 0 if not rep["suggestions"] else 1
+
+
 def cmd_vibe(args) -> int:
     """Describe it, get RTL, and see it simulated before you trust it."""
     from .vibe import render, vibe
@@ -1075,6 +1100,15 @@ def main(argv=None) -> int:
     p.add_argument("--define", action="append", default=[])
     p.add_argument("--backend", default="auto", choices=["auto", "slang", "regex"])
     p.set_defaults(func=cmd_desktop)
+
+    p = sub.add_parser("review",
+                       help="suggest better code — only from checks that ran")
+    p.add_argument("path", nargs="?", default=".")
+    p.add_argument("--tools", default=None, metavar="DIR",
+                   help="directory holding iverilog/vvp")
+    p.add_argument("--apply", default=None, metavar="ID",
+                   help="write one suggestion's diff to the file")
+    p.set_defaults(func=cmd_review)
 
     p = sub.add_parser("vibe",
                        help="describe a block in words or a spec, generate it, "
