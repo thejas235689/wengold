@@ -37,15 +37,20 @@ def _load_spec(text_or_path: str, module: str | None = None) -> tuple[dict, str]
         import yaml
         return yaml.safe_load(p.read_text()), "file"
 
+    # The text front-end is a grammar reader, not a language model: it reads the
+    # register-block grammar it was trained on and refuses anything else. The
+    # model is cached on disk, so only the first use pays for training.
+    from .spec_frontend import draft_spec, load_or_train
+
+    model, vocab_list = load_or_train()
+    d = draft_spec(text_or_path, model, vocab_list)
+    if not d.ok:
+        raise ValueError(d.error)
     from .spec_frontend import to_module_spec
-    from .spec_text import canonical, parse_canonical
-    # the text front-end is a grammar reader; a sentence outside the grammar is
-    # refused by the parser rather than guessed at
-    toks = canonical(text_or_path)
-    return parse_canonical(toks), "text"
+    return to_module_spec(dict(d.spec), d.spec.get("register", "drafted")), "text"
 
 
-def _masks(reg: dict) -> dict:
+def _masks(reg) -> dict:
     """Bit masks by access mode, plus the reset value.
 
     `w1c` is the one that is easy to get wrong: writing 1 **clears** the bit, so a
@@ -54,17 +59,12 @@ def _masks(reg: dict) -> dict:
     as passing a broken one.
     """
     out = {"rw": 0, "w1c": 0, "ro": 0, "reset": 0, "mask": 0}
-    for f in reg.get("fields", []):
-        bits = str(f.get("bits", "0"))
-        if ":" in bits:
-            hi, lo = bits.split(":", 1)
-            hi, lo = int(hi, 0), int(lo, 0)
-        else:
-            hi = lo = int(bits, 0)
+    for f in getattr(reg, "fields", []):
+        hi, lo = int(f.hi), int(f.lo)
         m = ((1 << (hi - lo + 1)) - 1) << lo
-        access = str(f.get("access", "rw")).lower()
+        access = str(f.access).lower()
         out["mask"] |= m
-        out["reset"] |= (int(f.get("reset", 0)) << lo) & m
+        out["reset"] |= (int(f.reset) << lo) & m
         if access in ("rw",):
             out["rw"] |= m
         elif access in ("w1c",):
@@ -74,19 +74,14 @@ def _masks(reg: dict) -> dict:
     return out
 
 
-def _field_mask(reg: dict) -> tuple[int, int]:
+def _field_mask(reg) -> tuple[int, int]:
     """(mask, reset) for a register, from its fields."""
     mask = reset = 0
-    for f in reg.get("fields", []):
-        bits = str(f.get("bits", "0"))
-        if ":" in bits:
-            hi, lo = bits.split(":", 1)
-            hi, lo = int(hi, 0), int(lo, 0)
-        else:
-            hi = lo = int(bits, 0)
+    for f in getattr(reg, "fields", []):
+        hi, lo = int(f.hi), int(f.lo)
         m = ((1 << (hi - lo + 1)) - 1) << lo
         mask |= m
-        reset |= (int(f.get("reset", 0)) << lo) & m
+        reset |= (int(f.reset) << lo) & m
     return mask, reset
 
 
@@ -98,16 +93,16 @@ def make_testbench(spec: dict, all_ports=None) -> str:
       * every `rw` register accepts a write and returns what was written
       * every `ro` register ignores a write
     """
-    module = spec["module"]
+    module = spec.name
     # `all_ports` comes from the generator's ModuleSpec and includes the register
     # bus it adds. Reading the raw spec's port list instead produced a testbench
     # with no register ports at all — which compiled, ran, and checked nothing.
-    if all_ports:
-        ports = [{"name": p.name, "dir": p.direction, "width": p.width}
-                 for p in all_ports]
-    else:
-        ports = spec.get("ports", [])
-    regs = spec.get("registers", []) or []
+    # without an explicit port list, fall back to the spec's own ports — a block
+    # with no register interface is checked for undriven outputs instead
+    source_ports = all_ports if all_ports else getattr(spec, "ports", [])
+    ports = [{"name": p.name, "dir": p.direction, "width": p.width}
+             for p in source_ports]
+    regs = list(getattr(spec, "registers", []) or [])
 
     decls, conns = [], []
     for p in ports:
@@ -144,17 +139,17 @@ def make_testbench(spec: dict, all_ports=None) -> str:
         body.append("    // reset values")
         for r in regs:
             mask, reset = _field_mask(r)
-            addr = int(r["addr"])
+            addr = int(r.addr)
             body.append(f"    rd(32'h{addr:02x}, d);")
             body.append(f"    if ((d & 32'h{mask:08x}) !== 32'h{reset & mask:08x})")
-            body.append(f'      $fatal(1, "{r["name"]} reset: expected %08x got %08x",'
+            body.append(f'      $fatal(1, "{r.name} reset: expected %08x got %08x",'
                         f' 32\'h{reset & mask:08x}, d & 32\'h{mask:08x});')
 
         body.append("    // writes and read-backs")
         for r in regs:
             m = _masks(r)
-            addr = int(r["addr"])
-            name = r["name"]
+            addr = int(r.addr)
+            name = r.name
 
             # readable/writable: write a pattern, expect it back
             if m["rw"]:
@@ -237,7 +232,7 @@ def vibe(text_or_spec: str, out: str = ".", tools: str | None = None,
                         f"outside it is refused rather than guessed.")
         return rec
     rec["spec_source"] = source
-    rec["module"] = spec.get("module")
+    rec["module"] = spec.name if hasattr(spec, "name") else spec.get("module")
 
     # ---- 2. RTL --------------------------------------------------------
     # The generator has its own strict spec loader; a spec it cannot emit is
@@ -246,33 +241,36 @@ def vibe(text_or_spec: str, out: str = ".", tools: str | None = None,
     from .generate.spec import SpecError, load_spec
 
     outdir.mkdir(parents=True, exist_ok=True)
-    tmp = outdir / ".spec.yaml"
-    import yaml as _yaml
-    tmp.write_text(_yaml.safe_dump(spec))
-    try:
-        mspec = load_spec(str(tmp))
-    except SpecError as exc:
-        rec["stage"] = "generate"
-        rec["ok"] = False
-        rec["error"] = (f"{exc}. The generator emits register blocks: assigns, "
-                        f"registers, one clocked always_ff. A state machine, a "
-                        f"pipeline or an interface is refused rather than dropped.")
-        return rec
-    try:
-        tmp.unlink()
-    except OSError:
-        pass
+    if isinstance(spec, dict) and "registers" in spec:
+        # a YAML/JSON spec: the generator has its own strict loader
+        tmp = outdir / ".spec.yaml"
+        import yaml as _yaml
+        tmp.write_text(_yaml.safe_dump(spec))
+        try:
+            mspec = load_spec(str(tmp))
+        except SpecError as exc:
+            rec["stage"] = "generate"
+            rec["ok"] = False
+            rec["error"] = (f"{exc}. The generator emits register blocks: assigns, "
+                            f"registers, one clocked always_ff. A state machine, a "
+                            f"pipeline or an interface is refused rather than dropped.")
+            return rec
+        try:
+            tmp.unlink()
+        except OSError:
+            pass
+    else:
+        # a text draft is already a ModuleSpec
+        mspec = spec
 
     rtl = emit_rtl(mspec)
-    spec = dict(spec)
-    spec["module"] = mspec.name
     rec["module"] = mspec.name
 
     sv = outdir / f"{mspec.name}.sv"
     sv.write_text(rtl)
 
     tb = outdir / f"{mspec.name}_tb.sv"
-    tb.write_text(make_testbench(spec, mspec.all_ports))
+    tb.write_text(make_testbench(mspec, mspec.all_ports))
     rec["files"] = [str(sv), str(tb)]
 
     # ---- 3. simulate ---------------------------------------------------
