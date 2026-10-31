@@ -117,7 +117,7 @@ def build_window(state: dict):
             lay.addLayout(left)
             lay.addStretch(1)
             self.coverage = QtWidgets.QLabel(
-                f"{state['coverage']}% coverage")
+                f"{state['design_units']}/{state['files']} files are design units")
             self.coverage.setObjectName("revision")
             lay.addWidget(self.coverage)
 
@@ -251,7 +251,7 @@ def build_window(state: dict):
                 f"<h3 style='margin:0 0 8px'>{Path(s['path']).name}</h3>"
                 f"<p style='color:{MUTED}'>{s['files']} files · {s['blocks']} blocks"
                 f" · {s['nodes']} nodes · {s['edges']} edges</p>"
-                f"<p>Coverage <b>{s['coverage']}%</b> · "
+                f"<p>Design units <b>{s['design_units']}/{s['files']}</b> · "
                 f"complete <b>{s['complete']}</b> · "
                 f"unresolved <b>{s['unresolved']}</b></p>"
                 + (f"<ul>{notes}</ul>" if notes else "")
