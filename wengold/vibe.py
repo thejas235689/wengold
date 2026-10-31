@@ -241,7 +241,10 @@ def vibe(text_or_spec: str, out: str = ".", tools: str | None = None,
     from .generate.spec import SpecError, load_spec
 
     outdir.mkdir(parents=True, exist_ok=True)
-    if isinstance(spec, dict) and "registers" in spec:
+    # a dict means it came from a file; anything else is already a ModuleSpec.
+    # Keying on "registers" sent a register-less spec (the timer) down the wrong
+    # branch, where emit_rtl got a dict.
+    if isinstance(spec, dict):
         # a YAML/JSON spec: the generator has its own strict loader
         tmp = outdir / ".spec.yaml"
         import yaml as _yaml
@@ -263,6 +266,11 @@ def vibe(text_or_spec: str, out: str = ".", tools: str | None = None,
         # a text draft is already a ModuleSpec
         mspec = spec
 
+    # The header cites where the spec came from. After loading through a temporary
+    # file it named the temp path, which the reader never wrote and cannot find.
+    if getattr(mspec, "source", "").endswith(".spec.yaml"):
+        mspec.source = (text_or_spec if source == "file"
+                        else f"the sentence: {text_or_spec[:60]}")
     rtl = emit_rtl(mspec)
     rec["module"] = mspec.name
 
