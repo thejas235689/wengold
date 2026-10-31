@@ -47,8 +47,9 @@ checked nothing. It asserts the tuple has more than three entries and the hint i
 non-empty first. That is the same failure this project keeps finding — a check that
 reports success because it examined nothing.
 
-**706 tests passing**, 12 skipped, verified from a fresh checkout of `main` by
-`tools/verify-release.sh`.
+**706 tests passing**, 12 skipped, verified from a fresh checkout of `main`
+(671 + 35 across two runs, because the whole suite exceeds one call's limit).
+The native tests need `PyQt6`; without it they skip rather than fail.
 
 ---
 
