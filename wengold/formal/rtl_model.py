@@ -669,7 +669,23 @@ def _parse_decls_at(toks: list[str], i: int, m: RtlModule) -> int:
             if i < len(toks) and (toks[i] in _DIRECTIONS or toks[i] in _TYPES):
                 return _parse_decls_at(toks, i, m)
         elif i < len(toks) and toks[i] == "=":
-            raise UnsupportedConstruct("initialisers in declarations are not supported")
+            # `wire x = expr;` is exactly `wire x; assign x = expr;` — the same
+            # continuous assignment in a shorter form. Refusing it meant a
+            # generator that emitted the compact form could not be proved at all,
+            # which is a much worse outcome than the two extra lines.
+            i += 1
+            j = i
+            depth = 0
+            while j < len(toks):
+                if toks[j] == "[":
+                    depth += 1
+                elif toks[j] == "]":
+                    depth -= 1
+                elif toks[j] == ";" and depth == 0:
+                    break
+                j += 1
+            m.assigns.append((name, tuple(parse_expr(toks[i:j]))))
+            return j + 1
     return i + 1 if i < len(toks) else i
 
 
