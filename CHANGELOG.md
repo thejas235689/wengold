@@ -14,6 +14,52 @@ what the tags are for.
 
 ---
 
+## [0.53.1] — 2026-10-31
+
+### Added
+- **`vibe` keeps the line count.**
+
+  It was computed — the detail pane showed `1 block(s) · 77 lines` — and then
+  thrown away. Close the app and it was gone, because it was recomputed on every
+  selection and never stored.
+
+  ```
+  timer  —  pass (iverilog), 132 lines (timer.sv 72, timer_tb.sv 60)
+  ```
+
+  and a record next to the RTL:
+
+  ```json
+  {
+    "module": "timer",
+    "spec_source": "file",
+    "input": "examples/timer/timer.spec.yaml",
+    "files": {"timer.sv": {"lines": 72}, "timer_tb.sv": {"lines": 60}},
+    "total_lines": 132,
+    "tool": "iverilog",
+    "outcome": "pass"
+  }
+  ```
+
+  A run now leaves a record instead of only a transcript.
+
+### What is deliberately not written
+**A failed run writes no manifest.** A manifest that records a verdict for a run
+that never reached one would be the same class of error as a test count nobody
+checked. The test asserts the file is absent when the build fails.
+
+### Measured
+| | |
+| --- | --- |
+| `timer` | 132 lines — 72 RTL, 60 testbench |
+| before v0.53.0 | 137 lines — the field-view merge saved 5 |
+
+**694 tests passing**, 11 skipped, verified from a fresh checkout of `main` by
+`tools/verify-release.sh`. The working tree had 708 because it has `iverilog` on
+PATH.
+
+---
+
 ## [0.53.0] — 2026-10-31
 
 ### Changed
