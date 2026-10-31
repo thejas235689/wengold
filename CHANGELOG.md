@@ -65,7 +65,9 @@ emitting it could not be proved at all — a far worse outcome than two extra li
 `assign ctrl_en_q = ctrl_q[0];`. It now checks the binding with a pattern, so it
 holds whichever spelling is emitted. The contract is the slice, not the syntax.
 
-**705 tests passing**, 90 s, including the soundness test that caught this.
+**694 tests passing**, 11 skipped, verified from a fresh checkout of `main` by
+`tools/verify-release.sh`. The skips are the real-tool tests, which need
+`iverilog`/`vvp` on PATH; the working tree had 705 because it has them.
 
 ---
 
