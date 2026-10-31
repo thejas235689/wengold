@@ -14,6 +14,62 @@ what the tags are for.
 
 ---
 
+## [0.52.0] — 2026-10-31
+
+### Added
+- **`review` — suggest better code, from checks that ran.**
+
+  ```
+  › review
+    checks that ran: cdc, simulation
+
+    [error] reset q in the reset branch
+      why: the simulation reported this signal as X after reset, so its flop is
+           not reset. An unreset flop holds X until it happens to be written, and
+           X propagates into anything it feeds.
+      file: cnt.sv
+        +        q <= 4'd0;
+  ```
+
+  Also `wengold review <path>` and `wengold review <path> --apply <id>`.
+
+### What justifies a suggestion
+| suggestion | the check | what it said |
+| --- | --- | --- |
+| reset a flop | the simulation | `output q is X after reset` |
+| add a 2-FF synchroniser | the CDC analysis | the crossing is `unsynchronised` |
+| do not 2-FF a bus | the CDC analysis | the crossing is multi-bit |
+
+The first is the strongest, because it is the only one **proved by execution**: the
+simulator said the signal was X, so a flop is not reset, and the diff adds it.
+
+**Nothing is applied without being shown.** The diff comes first; `--apply` is a
+separate, explicit call.
+
+### The test that matters
+Not that a suggestion is produced — that **applying it turns the failing check into
+a passing one**. On a counter with an unreset flop: the design fails, `review`
+suggests `q <= 4'd0`, and after applying it the same testbench passes.
+
+### Two bugs, both false positives
+A false positive here is worse than a miss: it tells you to fix code that is already
+correct.
+
+- **A single-line reset was not recognised.** `if (!rst_n) q <= 1'b0;` has no
+  `begin`, and the matcher required one — so a correctly reset flop was reported as
+  unreset.
+- **Every crossing looked one bit wide.** The detector was labelled with the file
+  stem while the analysis keys by module name, so every width lookup missed and the
+  multi-bit warning never fired.
+
+### Fixed
+- A local `import os` in one branch of the app's command dispatcher made `os` local
+  to the whole function, so the new `review` branch hit `UnboundLocalError`.
+
+**705 tests passing** locally (11 in the review suite).
+
+---
+
 ## [0.51.1] — 2026-10-31
 
 ### Added
