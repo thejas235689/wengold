@@ -14,6 +14,45 @@ what the tags are for.
 
 ---
 
+## [0.51.1] — 2026-10-31
+
+### Added
+- **The detail pane shows the source.** Selecting a file now displays its RTL with
+  line numbers, instead of describing a file it would not show you — a strange
+  thing for a tool whose job is reading RTL.
+
+- **`vibe` selects the file it generated.** The app reloads its index after a vibe
+  and highlights the new `.sv`, so the code you just asked for is on screen rather
+  than a message saying it exists.
+
+### Fixed
+- **A spec with no `registers` key took the wrong branch.** The check was
+  `isinstance(spec, dict) and "registers" in spec`, so a register-less spec (the
+  timer) fell through to where `emit_rtl` received a raw dict and raised
+  `AttributeError: 'dict' object has no attribute 'source'`. Any dict came from a
+  file and belongs in the loader; that is the whole test.
+
+- **The generated header cited a temporary file.** Loading a spec writes it to a
+  temp path, and the header named that path — which the reader never wrote and
+  cannot find. It names the input you gave.
+
+### Found by the checker
+My own test fixture declared `match_o` as an output with nothing driving it. The
+generated testbench failed it with `output match_o is X after reset`. **That is the
+checker working**: a spec whose output is undriven is a broken spec, and the fixture
+was wrong, not the check.
+
+### Measured
+| action | result |
+| --- | --- |
+| `vibe examples/timer/timer.spec.yaml` from the app's CLI pane | **pass** — 77 lines of RTL in the pane |
+| selecting any file in the tree | its source, with line numbers |
+| a file over 400 lines | truncated, and says so |
+
+**694 tests passing** locally (18 in the vibe suite).
+
+---
+
 ## [0.51.0] — 2026-10-31
 
 ### Added
