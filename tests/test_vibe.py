@@ -17,6 +17,9 @@ import pytest
 from wengold.generate.spec import load_spec
 from wengold.vibe import _masks, make_testbench, render, vibe
 
+# `match_o` needs a driver: an output nothing drives is X after reset, and the
+# generated testbench correctly fails it. The first version of this fixture had
+# that bug and the checker caught it.
 TIMER_YAML = """
 module: timer
 clock: clk_i
@@ -26,6 +29,8 @@ ports:
   - {name: rst_ni, dir: input, width: 1}
   - {name: tick_i, dir: input, width: 1}
   - {name: match_o, dir: output, width: 1}
+assigns:
+  - {target: match_o, expr: "tick_i"}
 """
 
 REGS_YAML = """
@@ -221,3 +226,51 @@ registers:
     tr = ToolRunner(g, {"x": Result("x", "sim", depends_on={"counter"})},
                     str(out), toolchain=Toolchain())
     assert tr("x", "sim")["outcome"] == "fail"
+
+
+# ---- the app shows the code ---------------------------------------------
+def test_the_file_detail_carries_the_source(tmp_path):
+    """A detail pane that describes a file without showing it is a strange thing
+    for a tool whose job is reading RTL."""
+    proj = tmp_path / "p"
+    (proj / "rtl").mkdir(parents=True)
+    (proj / "rtl" / "a.sv").write_text("module a; endmodule\n")
+    from wengold.desktop import _file_detail, build_state
+    d = _file_detail(build_state(str(proj)), "rtl/a.sv")
+    assert d["source"].startswith("module a;")
+    assert d["lines"] == 1
+
+
+def test_a_long_file_is_truncated_and_says_so(tmp_path):
+    proj = tmp_path / "p"
+    (proj / "rtl").mkdir(parents=True)
+    (proj / "rtl" / "big.sv").write_text("\n".join(
+        f"// line {i}" for i in range(500)) + "\nmodule big; endmodule\n")
+    from wengold.desktop import _file_detail, build_state
+    d = _file_detail(build_state(str(proj)), "rtl/big.sv")
+    assert d["truncated"] is True
+    assert d["lines"] == 400
+
+
+@pytest.mark.skipif(not HAS_SIM, reason="iverilog/vvp not installed")
+def test_the_app_reports_the_files_it_wrote(tmp_path):
+    """The window selects the generated file, so it needs the relative paths."""
+    spec = tmp_path / "t.yaml"
+    spec.write_text(TIMER_YAML)
+    from wengold.desktop import _exec, build_state
+    r = _exec(build_state(str(tmp_path)), f"vibe {spec}")
+    assert r["ok"] is True, r["output"]
+    assert any(w.endswith("timer.sv") for w in r["written"])
+    assert any(w.endswith("timer_tb.sv") for w in r["written"])
+
+
+def test_the_generated_header_names_the_input_the_user_gave(tmp_path):
+    """After loading through a temporary file the header cited the temp path,
+    which the reader never wrote and cannot find."""
+    spec = tmp_path / "t.yaml"
+    spec.write_text(TIMER_YAML)
+    rec = vibe(str(spec), str(tmp_path / "out"))
+    if rec.get("stage") not in ("simulate", None):
+        pytest.skip("generator unavailable")
+    text = (tmp_path / "out" / "timer.sv").read_text()
+    assert ".spec.yaml" not in text, "the header should not cite a temporary file"
