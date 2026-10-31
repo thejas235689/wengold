@@ -579,7 +579,11 @@ class ToolRunner:
         design, _ = self.ordered_files("verilog")
         if tb not in design:
             design = design + [tb]
-        out = self.root / ".wengold-sim.vvp"
+        design = [str(Path(f).resolve()) for f in design]
+        # absolute: `_run` may execute with a different cwd, and iverilog then
+        # resolves a relative output path somewhere it cannot write — which
+        # surfaces as "Code generator failure" and reads as a broken design
+        out = (Path(self.root) / ".wengold-sim.vvp").resolve()
         started = time.monotonic()
         rc, log, _ = self._run([self.tools.found["iverilog"], "-g2012", "-o",
                                 str(out), *design])
