@@ -418,7 +418,7 @@ def _file_detail(state: dict, rel: str) -> dict:
 # each one reads state the kernel already computed. Adding a verb here is a code
 # change, not a config option.
 CLI_COMMANDS = ("summary", "files", "blocks", "verdicts", "singularity",
-                "vibe", "help")
+                "review", "vibe", "help")
 
 
 def _page(state: dict) -> str:
@@ -525,6 +525,12 @@ def _exec(state: dict, line: str) -> dict:
             f"coverage {s['coverage']}%\n"
             f"complete {s['complete']}")}
 
+    if verb == "review":
+        from .review import render as render_review, review
+        rep = review(state.get("path", "."),
+                     tools=os.environ.get("WENGOLD_TOOLS"))
+        return {"ok": True, "output": render_review(rep).strip()}
+
     if verb == "vibe":
         # The one command that writes: it generates a block and simulates it.
         # Everything else here reads state the kernel already computed.
@@ -535,7 +541,8 @@ def _exec(state: dict, line: str) -> dict:
                     "vibe needs a spec file or a sentence, e.g.\n"
                     "  vibe examples/timer/timer.spec.yaml\n"
                     "  vibe a register block with a control and a status register"}
-        import os
+        # `os` is imported at module level; a local import here made it local to
+        # the whole function, so the `review` branch above hit UnboundLocalError
         outdir = os.path.join(state.get("path", "."), "vibe-out")
         rec = vibe(target, outdir, tools=os.environ.get("WENGOLD_TOOLS"))
         # hand back the written files relative to the project, so the app can
@@ -557,6 +564,7 @@ def _exec(state: dict, line: str) -> dict:
                 "blocks               every RTL block, fan-in and fan-out\n"
                 "verdicts [id]        kernel verdicts after the change\n"
                 "singularity          conditioning and blast radii\n"
+                "review               suggest better code, from checks that ran\n"
                 "vibe <spec|sentence> generate a block and simulate it\n"
                 "clear                clear the pane\n"
                 "help                 this list"}
