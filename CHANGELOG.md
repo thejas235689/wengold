@@ -66,7 +66,10 @@ correct.
 - A local `import os` in one branch of the app's command dispatcher made `os` local
   to the whole function, so the new `review` branch hit `UnboundLocalError`.
 
-**705 tests passing** locally (11 in the review suite).
+**694 tests passing**, 11 skipped, verified from a fresh checkout of `main` by
+`tools/verify-release.sh` (11 in the review suite). The skips are the real-tool
+tests, which need `iverilog`/`vvp` on PATH; the working tree had 705 because it has
+them.
 
 ---
 
