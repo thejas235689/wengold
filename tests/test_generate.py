@@ -116,9 +116,15 @@ def test_emitted_rtl_parses_with_slang(spec):
 
 
 def test_emitted_rtl_carries_the_field_slices(spec):
+    """The slice is the contract, not the spelling.
+
+    A field view may be written `wire x = y;` or `wire x; assign x = y;` — both
+    are the same continuous assignment, and the check should hold either way.
+    """
+    import re
     rtl = emit_rtl(spec)
-    assert "assign ctrl_en_q = ctrl_q[0];" in rtl
-    assert "assign ctrl_mode_q = ctrl_q[3:1];" in rtl
+    assert re.search(r"ctrl_en_q\s*=\s*ctrl_q\[0\]", rtl)
+    assert re.search(r"ctrl_mode_q\s*=\s*ctrl_q\[3:1\]", rtl)
     assert "ctrl_q[3:1] <= reg_wdata_i[3:1];" in rtl
 
 
