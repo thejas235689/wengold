@@ -14,6 +14,56 @@ what the tags are for.
 
 ---
 
+## [0.54.2] — 2026-11-01
+
+### Fixed
+- **Ten of the sixteen command tables were still wrong.** v0.54.1 corrected the
+  four `define_*` tables I had noticed; the other twelve were guesses from the same
+  extraction and I did not check them.
+
+  Every table is now generated from the standard's own syntax tables (Tables 3
+  through 33) rather than written by hand:
+
+  | command | what was wrong |
+  | --- | --- |
+  | `assign_sm_fm` | invented `-dc_permanent`, `-dc_type`, `-latent`, `-metric`, `-sm_configurable`, `-comment`; missed all eight `-dc_*_estimated`/`_measured` forms |
+  | `assign_te_element` | invented `-element_size_total`, `-comment`; missed `-element_mapping_exclude`, `-element_size_transient_set` |
+  | `assign_te_fm` | invented seven; missed seven `-fm_size_*` and `-fm_mapping_exclude` |
+  | `create_fm` | invented sixteen; missed sixteen `-dc_*_expert`/`_measured`, `-perceived_*`, `-safeness_*` |
+  | `create_sm` | missed `-dc_transient`; `-configurable`, `-class`, `-parent_fmeda` had the wrong required/optional status |
+  | `create_te` | invented `-distribution`, `-mission_profile`, `-elements`, `-parent_fmeda`, `-comment`, `-version`; missed `-fr_permanent`, `-fr_transient`, `-fr_transient_set` and the three `-unit_design_element_size_*` |
+
+- **The test fixtures used the invented syntax too.** Every FSL sample in
+  `tests/test_fsl.py` was written against the tables I had guessed, so the suite
+  passed while the parser rejected real files. The fixtures are now built from the
+  standard's syntax and both a valid ISO 26262 file and a valid IEC 61508 file are
+  accepted.
+
+### The test that should have existed from the start
+`tests/fixtures/fsl_syntax_tables.json` holds the sixteen syntax tables extracted
+from the PDF, and `test_every_command_table_matches_the_standard` asserts the code
+agrees with them — argument sets, both directions.
+
+**A green suite over a guessed specification proves the guesses are self-consistent
+and nothing else.** That is exactly what happened here, twice, and the fixture is
+the only thing that makes the third time visible.
+
+### A second extraction bug, worth recording
+My first pass at extracting the tables matched the **table-of-contents** lines, so
+every command reported the same three "missing" arguments — it was reading
+`create_fmeda`'s syntax for all sixteen. The second pass filtered the dot-leader
+lines. A comparison that produces the same answer for every input is measuring
+nothing.
+
+### Still not done
+Metrics are collected and range-checked, not computed. Computing SPFM, LFM, PMHF
+and SFF needs the ISO 26262 and IEC 61508 formulas over per-failure-mode rates,
+which the standard references but does not restate.
+
+**728 tests passing** locally (32 in the FSL suite).
+
+---
+
 ## [0.54.1] — 2026-11-01
 
 ### Fixed
