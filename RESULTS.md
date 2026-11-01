@@ -4,18 +4,60 @@ Every project checked in this series, at **v0.27.1** unless marked otherwise.
 All rows at v0.27.0/v0.27.1 were taken from a single re-fetched build, so they are
 directly comparable.
 
-**This file has not been re-measured since v0.27.1.** The front-ends have changed
-substantially in the 27 releases since — whole-project elaboration, `.f` filelists,
-a VHDL front-end, the formal subset widened from 2 to 11 of 27 files, and a fix for
-one bad module poisoning every module in its file. Several numbers here are
-therefore likely to be pessimistic now. They are left as measured rather than
-refreshed or deleted: a stale number that says when it was taken is honest, and a
-fresh number nobody re-ran is not.
+### Re-measured at v0.54.5: the numbers reproduce
 
-One column needs a warning in particular: **`coverage` is not test coverage.** It is
-the share of files that contained a design unit — how much of the repository the
-graph can describe at all. `riscv-dv` at 4% means 4% of its files are modules,
-packages or interfaces, not that 4% of it was exercised.
+Six of these repositories have recorded coordinates and were re-run at v0.54.5 with
+`python tools/re-measure.py`:
+
+| repo | files | nodes | edges | blocks | unresolved | design-unit files |
+| --- | --- | --- | --- | --- | --- | --- |
+| neorv32 | 77 | 758 | 1,262 | 86 | 0 | 68/77 |
+| ibex | 661 | 960 | 2,079 | 345 | 12 | 373/661 |
+| cva6 | 478 | 1,219 | 3,260 | 458 | 26 | 326/478 |
+| cv32e40p | 181 | 402 | 872 | 154 | 7 | 150/181 |
+| picorv32 | 41 | 83 | 1,024 | 31 | 7 | 16/41 |
+| rocket-chip | 11 | 20 | 8 | 14 | 1 | 11/11 |
+
+**They match the v0.27.1 table exactly** — neorv32 at 758 nodes, 1,262 edges and 86
+blocks; ibex at 345 blocks; cva6 at 458. Twenty-seven releases of front-end work did
+not move them, which is the useful result: the table was not wrong, it was
+*unreproducible*, and those are different problems.
+
+### Why the rest were not re-measured
+
+The other 27 projects are named in the table below but **their repository
+coordinates were never recorded anywhere in this repository**. Re-measuring them
+would mean guessing an owner/repo, and a guess that fetches the wrong repository
+produces a number that looks real — worse than a number that says when it was taken.
+
+`tools/repositories.json` now holds the coordinates that are known, and
+`tools/re-measure.py` fetches and measures them. Adding a project means adding its
+coordinates there, which is the point.
+
+### The measurement depends on the backend, and this is not optional
+
+With `pyslang` installed the elaborator resolves most modules. Without it the code
+falls back to a bounded regex elaborator and reports very different numbers. Same
+trees, both measured:
+
+| repo | with pyslang | without |
+| --- | --- | --- |
+| ibex | 345 blocks, 12 unresolved | 338 blocks, 190 unresolved |
+| cva6 | 458 blocks, 26 unresolved | 503 blocks, 306 unresolved |
+
+Neither is wrong — they answer different questions — but only the first is
+comparable with the table. **`tools/re-measure.py` refuses to report numbers from
+the fallback**, because a table whose values depend silently on what happened to be
+installed is not a measurement.
+
+### One column is named wrongly in the tables below
+
+The `coverage` column is **not test coverage**. It is the share of files that
+contained a design unit — how much of the repository the graph can describe at all.
+`riscv-dv` at 4% means 4% of its files are modules, packages or interfaces, not that
+4% of it was exercised. The re-measured table above calls it `design-unit files`;
+the older rows keep the old heading so they are not mistaken for freshly measured
+ones.
 
 **33 attempted. 30 indexed. 3 could not be.**
 
