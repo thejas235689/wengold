@@ -14,6 +14,62 @@ what the tags are for.
 
 ---
 
+## [0.55.0] — 2026-11-01
+
+### Added
+- **`tools/re-measure.py` — RESULTS.md can be re-run at last.**
+
+  The table was taken at v0.27.1 and nobody could reproduce it, for two reasons that
+  are now fixed in the tool:
+
+  1. **The repository coordinates were never recorded.** The table named projects
+     but not where to get them, so re-measuring meant guessing an owner/repo — and a
+     guess that fetches the wrong repository produces a number that looks real,
+     which is worse than no number. `tools/repositories.json` now holds them.
+  2. **The measurement depends on the backend, silently.** With `pyslang` installed
+     the elaborator resolves most modules; without it the code falls back to the
+     bounded regex elaborator. Same trees, both measured:
+
+     | repo | with pyslang | without |
+     | --- | --- | --- |
+     | ibex | 345 blocks, 12 unresolved | 338 blocks, 190 unresolved |
+     | cva6 | 458 blocks, 26 unresolved | 503 blocks, 306 unresolved |
+
+     The tool **refuses to report numbers from the fallback**, exiting 2 with the
+     reason. A table whose values depend on what happened to be installed is not a
+     measurement.
+
+### The published numbers reproduce
+Six repositories have recorded coordinates and were re-run at v0.54.5:
+
+| repo | files | nodes | edges | blocks | unresolved | design-unit files |
+| --- | --- | --- | --- | --- | --- | --- |
+| neorv32 | 77 | 758 | 1,262 | 86 | 0 | 68/77 |
+| ibex | 661 | 960 | 2,079 | 345 | 12 | 373/661 |
+| cva6 | 478 | 1,219 | 3,260 | 458 | 26 | 326/478 |
+| cv32e40p | 181 | 402 | 872 | 154 | 7 | 150/181 |
+| picorv32 | 41 | 83 | 1,024 | 31 | 7 | 16/41 |
+| rocket-chip | 11 | 20 | 8 | 14 | 1 | 11/11 |
+
+**They match v0.27.1 exactly** — neorv32 at 758 nodes / 1,262 edges / 86 blocks, ibex
+at 345, cva6 at 458. Twenty-seven releases of front-end work did not move them. The
+table was not wrong; it was *unreproducible*, and those are different problems.
+
+### Still not re-measured, and why
+The other 27 projects are named in the table but their coordinates were never
+preserved. They stay at v0.27.1 and say so, rather than being refreshed with a guess.
+
+### The column that was named wrongly
+`coverage` in the old table is **not test coverage** — it is the share of files that
+contained a design unit. `riscv-dv` at 4% means 4% of its files are modules or
+packages, not that 4% of it was exercised. The re-measured table calls it
+`design-unit files`; the old rows keep the old heading so they are not mistaken for
+fresh measurements. This is the same misleading label fixed in the app at v0.53.3.
+
+**763 tests passing** locally (6 new).
+
+---
+
 ## [0.54.5] — 2026-11-01
 
 ### Changed
