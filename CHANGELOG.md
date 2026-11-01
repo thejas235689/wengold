@@ -14,6 +14,54 @@ what the tags are for.
 
 ---
 
+## [0.55.1] — 2026-11-01
+
+### Fixed
+- **22 of the 27 unmeasured repositories now have verified coordinates.**
+
+  v0.55.0 said the other 27 could not be re-measured because their coordinates died
+  with whatever session measured them. They were recovered by searching GitHub —
+  and then **verified by measuring each candidate against its recorded row**. A
+  coordinate was kept only if the numbers agreed:
+
+  | evidence | projects |
+  | --- | --- |
+  | **exact** — files, nodes, edges and blocks all equal the recorded row | 13 |
+  | **graph** — nodes, edges and blocks equal; only the file count moved | 5 |
+  | **blocks** — the block count equals the recorded row | 4 |
+  | **unmatched** — canonical repository, nothing to compare against | 3 |
+
+  The `graph` cases are the ones where a guess would have been wrong in a subtle
+  way. `qeciphy` now has 203 files where the table says 180, and `riscduino` 235
+  where it says 232 — but their node, edge and block counts are **identical**
+  (qeciphy 165 / 334 / 98, riscduino 1,564 / 40,797 / 304). Same graph; the
+  repository grew. That is stronger evidence than a name match.
+
+### Three candidates rejected for not matching
+Two other repositories are called `2D-systolic-array`. `tms4517/2D-Systolic-Array-Multiplier`
+measured 3 files / 8 nodes against a recorded 2 / 6, and `el-oggy/2D-systolic-array`
+measured 78 files / 49 blocks. `bodsvei/2D-systolic-array` matched exactly.
+
+**Searching for a name and taking the first hit would have produced a number that
+looked real and was wrong** — which is the exact failure this whole line of work has
+been about.
+
+### Still not recovered, with the reason recorded
+`minerva` (no repository by that name), `XiangShan` and `openpiton` (recorded as not
+reachable, still are), `Arbiter-Verification` and `logisim-cpu-project` (ambiguous
+names, not searched), `rustdv_fifo` (a directory, not a repository), `OpenTitan`
+(needs its own run). `tools/repositories.json` lists all seven with the reason rather
+than omitting them.
+
+### Tests
+Four new assertions on the manifest: every entry has coordinates, every entry says
+how it was verified, the strongest evidence is the common case (at least all but
+four), and the unrecovered projects are named with a reason rather than dropped.
+
+**772 tests passing** locally (9 in the re-measure suite).
+
+---
+
 ## [0.55.0] — 2026-11-01
 
 ### Added
