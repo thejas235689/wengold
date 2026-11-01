@@ -222,12 +222,13 @@ class Report:
         if self.ok:
             lines.append("  no errors")
         lines.append("")
-        lines.append("  declared values are collected and range-checked, not "
-                     "computed:")
-        lines.append("  SPFM, LFM, PMHF and SFF are arithmetic over failure rates "
-                     "the FMEDA")
-        lines.append("  supplies, and this reads structure. A clean report is not "
-                     "a safety case.")
+        lines.append("  this checks structure. Declared values are range-checked "
+                     "here;")
+        lines.append("  SPFM, LFM, PMHF and SFF are computed from them with "
+                     "--metrics, and")
+        lines.append("  neither checks a metric against an ASIL/SIL target. A clean "
+                     "report is")
+        lines.append("  not a safety case.")
         return "\n".join(lines)
 
 
