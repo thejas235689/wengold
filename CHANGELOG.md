@@ -14,6 +14,70 @@ what the tags are for.
 
 ---
 
+## [0.56.0] — 2026-11-01
+
+### Added
+- **`agentic` — an agent loop with no model in it.**
+
+  `vibe` and `review` are two commands you run. This decides *which* to run, in
+  what order, and when to stop — and re-perceives between steps, because acting
+  changes the graph.
+
+  ```sh
+  wengold agentic --design rtl/            # show the diffs, write nothing
+  wengold agentic --design rtl/ --apply    # take them
+  ```
+
+  ```
+  ok 1. stub the modules the graph knows are missing
+      fact:   instantiated but not defined: missing_block;
+              completeness() marks top unresolved as a consequence
+      action: propose a diff against wengold_stubs.sv
+      result: written to wengold_stubs.sv
+  done: nothing left that can be justified: 2 block(s) resolved, no result invalidated
+  ```
+
+  It is in the app too, as `agentic` in the CLI pane — which shows the diff and
+  writes nothing; only the CLI takes it.
+
+### The one rule
+**Every step names the fact that caused it.** There is no language model anywhere
+in this project, so a step without a fact is a guess wearing a lab coat. The facts
+available are the kernel's and the graph's: unresolved modules, invalidated results,
+failed checks. From those the loop can do four things — stub, suggest from `review`,
+generate with `vibe`, or stop — and it refuses everything else, saying so when it
+stops rather than inventing a fifth action.
+
+### A real bug this found in `propose_stubs`
+It stubbed `completeness()["unresolved"]`, which lists the modules that **contain**
+an unresolved instantiation — the dependents, which are defined and fine. On a
+one-file design it proposed a stub for `top`, a module that already existed. Applying
+that would have written a **duplicate definition**, which is the bug class this
+project hit at v0.27.1.
+
+The stub list now comes from the notes (`instantiation \`x\` has no definition`), and
+there is a regression test that a defined module is never stubbed. Three tests in
+`test_propose.py` were **updated, not weakened** — they had encoded the wrong
+contract, asserting that `unresolved` names get stubbed.
+
+### Two collisions found on the way
+- **`cmd_agent` was defined twice** in `cli.py` (lines 365 and 900); the second
+  shadowed the first, so one of the two agent loops was dead code. My first insert
+  made it three. The coding loop is now `agentic`, the six-stage loop stays `agent`,
+  and a test asserts only one `def cmd_agent` exists.
+- **The hint bar was a hardcoded string**, so `agentic` was missing from it. It is
+  now derived from `CLI_COMMANDS` and cannot drift again — the test that catches
+  this already existed and would have caught it.
+
+### Kept, deliberately
+`vibe` and `review` are untouched and still callable on their own. The point was to
+have both, not to replace one with the other. A test asserts all three are in the
+command list.
+
+**794 tests passing** locally (16 new in the agentic suite).
+
+---
+
 ## [0.55.1] — 2026-11-01
 
 ### Fixed
