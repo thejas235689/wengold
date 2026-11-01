@@ -58,7 +58,9 @@ Four new assertions on the manifest: every entry has coordinates, every entry sa
 how it was verified, the strongest evidence is the common case (at least all but
 four), and the unrecovered projects are named with a reason rather than dropped.
 
-**772 tests passing** locally (9 in the re-measure suite).
+**766 tests passing**, 13 skipped, verified from a fresh checkout of `main`
+(709 + 57 across two runs). `re-measure.py --only BorussCPU-Laibach` and
+`--only difftest` were run there too, both measuring cleanly.
 
 ---
 
