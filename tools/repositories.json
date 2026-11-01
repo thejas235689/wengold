@@ -1,11 +1,191 @@
 {
-  "_note": "Repository coordinates for the real-project table in RESULTS.md. These were never recorded, which is why the table could not be re-measured: a guess that fetches the wrong repository produces a number that looks real. Entries marked verified were fetched and measured at v0.54.5; the rest are named in RESULTS.md at v0.27.1 but their coordinates were not preserved, so they are deliberately absent rather than guessed.",
+  "_note": "Repository coordinates for the real-project table in RESULTS.md. These were never recorded, which is why the table could not be re-measured: a guess that fetches the wrong repository produces a number that looks real. Coordinates were recovered by searching GitHub and then VERIFYING each by measuring it against the recorded row — `match` records that evidence. A candidate whose numbers did not match was not added.",
+  "_evidence_legend": {
+    "exact": "files, nodes, edges and blocks all equal the recorded row",
+    "graph": "nodes, edges and blocks equal the recorded row; only the file count moved, because the repository gained files since v0.27.1",
+    "blocks": "the block count equals the recorded row (the only value recorded for that project)",
+    "unmatched": "canonical repository for the name, but its numbers were not compared against a recorded row"
+  },
   "repositories": [
-    {"name": "neorv32", "owner": "stnolting", "repo": "neorv32", "verified": true},
-    {"name": "ibex", "owner": "lowRISC", "repo": "ibex", "verified": true},
-    {"name": "cva6", "owner": "openhwgroup", "repo": "cva6", "verified": true},
-    {"name": "cv32e40p", "owner": "openhwgroup", "repo": "cv32e40p", "verified": true},
-    {"name": "picorv32", "owner": "YosysHQ", "repo": "picorv32", "verified": true},
-    {"name": "rocket-chip", "owner": "chipsalliance", "repo": "rocket-chip", "verified": true}
+    {
+      "name": "neorv32",
+      "owner": "stnolting",
+      "repo": "neorv32",
+      "match": "exact"
+    },
+    {
+      "name": "ibex",
+      "owner": "lowRISC",
+      "repo": "ibex",
+      "match": "exact"
+    },
+    {
+      "name": "cva6",
+      "owner": "openhwgroup",
+      "repo": "cva6",
+      "match": "exact"
+    },
+    {
+      "name": "cv32e40p",
+      "owner": "openhwgroup",
+      "repo": "cv32e40p",
+      "match": "exact"
+    },
+    {
+      "name": "picorv32",
+      "owner": "YosysHQ",
+      "repo": "picorv32",
+      "match": "exact"
+    },
+    {
+      "name": "rocket-chip",
+      "owner": "chipsalliance",
+      "repo": "rocket-chip",
+      "match": "exact"
+    },
+    {
+      "name": "Anvil-Pro",
+      "owner": "JohnH2448",
+      "repo": "Anvil-Pro",
+      "match": "exact"
+    },
+    {
+      "name": "wave_rerunner",
+      "owner": "avidan-efody",
+      "repo": "wave_rerunner",
+      "match": "exact"
+    },
+    {
+      "name": "rustdv/rustdv",
+      "owner": "rustdv",
+      "repo": "rustdv",
+      "match": "exact"
+    },
+    {
+      "name": "riscv-boom",
+      "owner": "riscv-boom",
+      "repo": "riscv-boom",
+      "match": "exact"
+    },
+    {
+      "name": "2D-systolic-array",
+      "owner": "bodsvei",
+      "repo": "2D-systolic-array",
+      "match": "exact"
+    },
+    {
+      "name": "verilog-pcie",
+      "owner": "alexforencich",
+      "repo": "verilog-pcie",
+      "match": "exact"
+    },
+    {
+      "name": "pcievhost",
+      "owner": "wyvernSemi",
+      "repo": "pcievhost",
+      "match": "blocks"
+    },
+    {
+      "name": "fwrisc-s",
+      "owner": "mballance",
+      "repo": "fwrisc-s",
+      "match": "blocks"
+    },
+    {
+      "name": "difftest",
+      "owner": "OpenXiangShan",
+      "repo": "difftest",
+      "match": "exact"
+    },
+    {
+      "name": "riscduino",
+      "owner": "dineshannayya",
+      "repo": "riscduino",
+      "match": "graph"
+    },
+    {
+      "name": "qeciphy",
+      "owner": "riverlane",
+      "repo": "qeciphy",
+      "match": "graph"
+    },
+    {
+      "name": "riscv-dv",
+      "owner": "chipsalliance",
+      "repo": "riscv-dv",
+      "match": "graph"
+    },
+    {
+      "name": "pyuvm",
+      "owner": "pyuvm",
+      "repo": "pyuvm",
+      "match": "graph"
+    },
+    {
+      "name": "Cores-VeeR-EL2",
+      "owner": "chipsalliance",
+      "repo": "Cores-VeeR-EL2",
+      "match": "graph"
+    },
+    {
+      "name": "lxp32-cpu",
+      "owner": "lxp32",
+      "repo": "lxp32-cpu",
+      "match": "blocks"
+    },
+    {
+      "name": "BorussCPU-Laibach",
+      "owner": "jwolak",
+      "repo": "BorussCPU-Laibach",
+      "match": "blocks"
+    },
+    {
+      "name": "fwrisc",
+      "owner": "featherweight-ip",
+      "repo": "fwrisc",
+      "match": "unmatched"
+    },
+    {
+      "name": "litex_wr_nic",
+      "owner": "enjoy-digital",
+      "repo": "litex_wr_nic",
+      "match": "unmatched"
+    },
+    {
+      "name": "openCologne-PCIE",
+      "owner": "chili-chips-ba",
+      "repo": "openCologne-PCIE",
+      "match": "unmatched"
+    }
+  ],
+  "_not_recovered": [
+    {
+      "name": "minerva",
+      "why": "no GitHub repository found by that name; the recorded row has only a block count and no coordinates"
+    },
+    {
+      "name": "XiangShan",
+      "why": "RESULTS.md records it as not reachable at master/main; the tarball fetch still fails"
+    },
+    {
+      "name": "openpiton",
+      "why": "same — recorded as not reachable, and still is"
+    },
+    {
+      "name": "Arbiter-Verification",
+      "why": "not searched; ambiguous name"
+    },
+    {
+      "name": "logisim-cpu-project",
+      "why": "not searched; ambiguous name"
+    },
+    {
+      "name": "rustdv_fifo",
+      "why": "a directory inside rustdv/rustdv, not a repository"
+    },
+    {
+      "name": "OpenTitan",
+      "why": "large enough that it needs its own run; the recorded row is from a different measurement path"
+    }
   ]
 }
