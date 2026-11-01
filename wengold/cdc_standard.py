@@ -52,9 +52,12 @@ COMMANDS = {
                  "-rdc_control", "-cdc_control", "-cdc_data_from_clock",
                  "-rdc_data_from_reset", "-rdc_data_to_reset", "-rdc_data_to_clock",
                  "-blocking_polarity", "-sampling_edge", "-cdc_control_setup",
-                 "-cdc_control_hold", "-cdc_control", "-polarity"},
+                 "-cdc_control_hold", "-cdc_control", "-polarity",
+                 # §5.2 / §5.3: named in the standard's own examples and never
+                 # in the code, so a conformant file using them was rejected
+                 "-frequency", "-virtual_port", "-rdc_clock_gate_location"},
     "set_clock_group": {"-name", "-clocks", "-polarity", "-logic"},
-    "set_reset_assertion_sequence": {"-name"},
+    "set_reset_assertion_sequence": {"-name", "-assert_sequence"},
 }
 
 
