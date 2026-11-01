@@ -177,6 +177,67 @@ wengold regmap examples/soc_top/spec/registers.rdl
 wengold cdc examples/cdc/mixed_clocks.sv
 ```
 
+## Standards conformance
+
+Two Accellera standards are implemented, both as *checkers that never claim more
+than they checked*. Each is verified against the standard rather than against my
+reading of it: a copy of the standard's own material lives in `tests/fixtures/` and
+a test compares the code to it. The two are not equally strong evidence — the FSL
+syntax tables are extracted verbatim from the standard's Tables 3–33, while the CDC
+attribute list comes from its clause text and worked examples, which is weaker. The
+registry in `tests/fixtures/input_formats.json` records which is which.
+
+**CDC/RDC Interface Standard v1.0** (`wengold cdc`) — reads and writes the
+`accellera_cdc::` Tcl format, and checks the collateral against itself and against
+the RTL: every referenced name must be declared, mandatory attributes must be
+present, port types must come from the defined set, and the declared port set must
+match the design. **It never says "CDC clean"** — deciding whether a crossing is
+safe needs the synchroniser structure, which the standard leaves to the tool.
+
+**Functional Safety Language v1.0** (`wengold fsl`) — sixteen Tcl commands that
+create FMEDA objects. Checked against the standard's clause numbers:
+
+| clause | rule |
+| --- | --- |
+| §5.4 | known command, no unknown arguments, required arguments present, no argument twice, enumerations matching **exactly** |
+| §5.5 | every referenced object already created; no object created twice |
+| §5.5.1 | the ISO 26262 and IEC 61508 argument sets are not interchangeable |
+| §5.5.2 | `create_fmeda` needs exactly one of `-asil`/`-sil` non-`none` |
+
+Plus one check no standard can specify: **if an FMEDA names an element that is not
+a block in the RTL, the analysis is describing a design that does not exist.** That
+is `--design`, and it is why this belongs in WENGOLD rather than in a standalone
+linter.
+
+```bash
+wengold cdc collateral.tcl --design rtl/
+wengold fsl design.fsl --design rtl/
+```
+
+Neither computes safety metrics. SPFM, LFM, PMHF and SFF are arithmetic over
+failure rates the FMEDA supplies; WENGOLD collects and range-checks the declared
+values and says so in every report. **A clean report is not a safety case.**
+
+## Generating RTL from a spec, and reviewing the result
+
+`wengold vibe` takes a sentence or a spec file, emits synthesizable RTL and a
+self-checking testbench, simulates it, and reports a verdict:
+
+```
+timer  —  pass (iverilog), 132 lines (timer.sv 72, timer_tb.sv 60)
+```
+
+It writes `manifest.json` next to the RTL — module, spec source, per-file line
+counts, tool and verdict — so a run leaves a record rather than only a transcript.
+**A failed run writes no manifest**: recording a verdict for a run that never
+reached one is the same error as a test count nobody checked.
+
+`wengold review` suggests a fix only from checks that actually ran — a flop that
+simulated as `X` gets a reset, an unsynchronised crossing gets a 2-FF synchroniser,
+and a multi-bit bus is told not to be given one. Applying the suggestion turns the
+failing check into a passing one. When no check ran, it produces nothing rather
+than a generic list.
+
 ## Machine learning, and what it is worth
 
 `wengold learn` ships five methods over the graph: clustering, supervised triage,
@@ -616,8 +677,13 @@ wengold formal ./counter.sv --property "count <= MAX" --sva
 wengold ide ./rtl --vcd wave.vcd
 wengold regmap ./registers.rdl            # SystemRDL or IP-XACT
 wengold cdc ./mixed_clocks.sv             # clock-domain crossings
+wengold cdc collateral.tcl --design rtl/  # check CDC collateral against the RTL
+wengold fsl design.fsl --design rtl/      # Accellera Functional Safety Language
+wengold vibe "an 8-bit timer with a match output"   # spec -> RTL -> testbench -> sim
+wengold review ./rtl --changed timer      # fix what a failed check actually showed
 wengold learn dbscan ./rtl                # clustering, triage, RL, regression
 wengold spec-from-text "..." --arch transformer
+wengold desktop                           # native Linux window
 wengold serve                             # run the MCP server over stdio
 ```
 
@@ -761,13 +827,32 @@ design.
 
 ## Status
 
-**v0.42.1 — 583 tests passing, and CI runs them on every push.** The graph, kernel,
-ledger, MCP server, formal loop, register-map and CDC front-ends, the VHDL
-front-end, root cause, the IDE with waveforms, the text-to-spec front-end, failure
-reproduction, singularity analysis and the Accellera CDC/RDC standard (Clauses 4,
-6, 7, 8 and the Annex C fixtures) are all implemented and tested. There is also a
-desktop app (`wengold desktop`) and a VS Code / Cursor extension. See
+**v0.54.5 — 757 tests passing**, 13 skipped, and CI runs them on every push. The
+graph, kernel, ledger, MCP server, formal loop, register-map and CDC front-ends,
+the VHDL front-end, root cause, the IDE with waveforms, the text-to-spec
+front-end, failure reproduction, singularity analysis, the Accellera CDC/RDC
+standard (Clauses 4, 6, 7, 8 and the Annex C fixtures), the Accellera Functional
+Safety Language v1.0, spec-to-RTL generation (`vibe`) and fix suggestion (`review`)
+are all implemented and tested. There is also a native desktop app
+(`wengold desktop`) and a VS Code / Cursor extension. See
 [`docs/roadmap.md`](docs/roadmap.md).
+
+### How the numbers are checked
+
+Every test count in this README was measured from a fresh checkout of the tag, not
+from a working tree. That is not fussiness: two releases published counts from a
+local tree that the branch did not match, and `tools/verify-release.sh` exists
+because of it — it downloads a tarball to a temporary directory, runs the suite
+with `PYTHONPATH` unset, and fails on a count mismatch.
+
+The accepted-syntax tables for the two standards are generated from the standards'
+own tables and compared against a checked-in copy of them
+(`tests/fixtures/fsl_syntax_tables.json`, `tests/fixtures/cdc_attributes.json`).
+That is also not fussiness: two releases shipped a parser that **rejected valid
+input**, because the tables were written from memory and the tests used the same
+invented tables. A green suite over a guessed specification proves the guesses are
+self-consistent and nothing else. `tests/test_input_formats.py` now refuses to let a
+format reject unknown input without saying what verifies its accepted set.
 
 Thirty repositories have been indexed (table above). The defects that running
 against real projects exposed are all fixed and pinned by tests, and each was a
@@ -793,6 +878,18 @@ Stated here rather than discovered by a reader:
 - **The CDC work does not decide whether a crossing is safe.** It reads and writes
   the Accellera format and checks the collateral against the RTL; a passing
   assertion means the declared data stability held, not that the design is correct.
+- **No safety metric is computed.** SPFM, LFM, PMHF and SFF need the ISO 26262 and
+  IEC 61508 formulas over per-failure-mode rates, which the FSL standard references
+  but does not restate. Declared values are collected and range-checked only.
+- **One soundness test is not stable across toolchains.** `test_slice_write_soundness`
+  reported `unknown` where it expects `fail` in one full-suite run that had the OSS
+  CAD Suite on `PATH`, and did not reproduce without it. It is written down here
+  rather than dropped, because a soundness check that changes answer with the
+  toolchain is the kind of thing this project should not lose track of.
+- **The generated testbench is checked, not proved.** `vibe` asserts reset values,
+  write/read-back, write-1-to-clear and read-only behaviour, and simulates. It does
+  not prove the RTL matches the spec — a passing run means the checks it generated
+  held.
 - **The ML layer does not beat a majority baseline** against simulation ground
   truth. It is measured, reported, and kept behind the CLI.
 - **No design partner yet.** Every number here is self-assessed.
