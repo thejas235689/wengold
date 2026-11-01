@@ -423,7 +423,7 @@ def _file_detail(state: dict, rel: str) -> dict:
 # each one reads state the kernel already computed. Adding a verb here is a code
 # change, not a config option.
 CLI_COMMANDS = ("summary", "files", "blocks", "verdicts", "singularity",
-                "review", "vibe", "help")
+                "review", "vibe", "agentic", "help")
 
 
 def _page(state: dict) -> str:
@@ -529,6 +529,17 @@ def _exec(state: dict, line: str) -> dict:
             f"blocks {s['blocks']}  unresolved {s['unresolved']}\n"
             f"design units {s['design_units']} of {s['files']} file(s)\n"
             f"complete {s['complete']}")}
+
+    if verb == "agentic":
+        # The agentic loop. Unlike `vibe`, which generates, this decides what to
+        # do from the kernel's facts and stops when nothing is justified. It writes
+        # only with `apply`, which the pane does not offer — the pane shows the
+        # diff and the CLI takes it.
+        from .agent.coding import code
+        goal = " ".join(args) if args else "make this design verify"
+        run = code(goal, state.get("path", "."),
+                   tools=os.environ.get("WENGOLD_TOOLS"), apply=False)
+        return {"ok": True, "output": run.render().strip()}
 
     if verb == "review":
         from .review import render as render_review, review
