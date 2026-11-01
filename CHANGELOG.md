@@ -14,6 +14,49 @@ what the tags are for.
 
 ---
 
+## [0.54.3] — 2026-11-01
+
+### Fixed
+- **The CDC attribute sets were never checked against the standard.** The FSL work
+  exposed the risk and I said the CDC side "got away with it" — so I extracted the
+  CDC standard's attribute names from its clause text and worked examples, and
+  diffed them against the code.
+
+  **Four attributes the standard defines were missing**, so a conformant collateral
+  file using any of them was rejected:
+
+  | attribute | where the standard uses it |
+  | --- | --- |
+  | `-frequency` | `set_port -name CLK -type clock -virtual_port p2 -frequency value` |
+  | `-virtual_port` | same example |
+  | `-rdc_clock_gate_location` | §5.2 item 5 — "location of the clock gate, internal or external" |
+  | `-assert_sequence` | `set_reset_assertion_sequence -name reset_seq_1 -assert_sequence {rst1_n_i rst0_n_i}` |
+
+  This is the same defect as v0.54.0's: **a checker failing a correct input**,
+  which is worse than one that misses an unknown attribute.
+
+### The guard, and a check that it works
+`tests/fixtures/cdc_attributes.json` records the attribute set the standard names
+per command, and `test_every_attribute_the_standard_names_is_accepted` asserts the
+code accepts every one.
+
+I verified the test is not decorative: removing the four attributes from the code
+makes **2 tests fail**, and restoring them makes them pass. A test that cannot fail
+is the failure mode this project keeps finding, so I checked rather than assumed.
+
+### What this cannot tell you
+The CDC standard defines **attributes per domain**, not command syntax tables, so
+there is no table to extract and diff the way there was for FSL. The attribute list
+here comes from the clause text and the worked examples, which is weaker evidence
+than a syntax table — `set_clock_group` is the clearest case: the code accepts
+`-polarity` and `-logic`, and I found no example using them. They are left in place
+because removing an attribute the standard does allow would break conformant files,
+but that is a judgement, not a verified fact.
+
+**730 tests passing** locally (20 in the CDC-standard suite).
+
+---
+
 ## [0.54.2] — 2026-11-01
 
 ### Fixed
