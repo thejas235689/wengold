@@ -60,7 +60,9 @@ Metrics are collected and range-checked, not computed. Computing SPFM, LFM, PMHF
 and SFF needs the ISO 26262 and IEC 61508 formulas over per-failure-mode rates,
 which the standard references but does not restate.
 
-**728 tests passing** locally (32 in the FSL suite).
+**728 tests passing**, 13 skipped, verified from a fresh checkout of `main`
+(32 + 661 + 35 across three runs, because the whole suite exceeds one call's
+limit). 32 of them are in the FSL suite.
 
 ---
 
