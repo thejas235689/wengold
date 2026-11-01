@@ -705,6 +705,16 @@ Palladium, Veloce, Vivado, Quartus, Yosys, vManager.
 **33 repositories attempted, 30 indexed.** Every number below came from running the
 tool on the project named; the full table is in [`RESULTS.md`](RESULTS.md).
 
+> **These were measured at v0.27.1 and have not been re-run since.** That is 27
+> releases ago, and the front-ends have changed substantially in the meantime —
+> whole-project elaboration, `.f` filelists, a VHDL front-end, the formal subset
+> widened from 2 to 11 of 27 files, and a fix for one bad module poisoning every
+> module in its file. Some of these numbers are therefore likely to be pessimistic,
+> and at least one (coverage) is a ratio of files that contained a design unit
+> rather than anything to do with testing. They are left as measured rather than
+> refreshed, because a number I have not re-taken is not one I should present as
+> current.
+
 ### Complete and clean (unresolved = 0)
 
 | project | blocks | edges | coverage |
