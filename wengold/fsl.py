@@ -36,90 +36,54 @@ __all__ = ["Command", "Finding", "Report", "parse", "check", "check_design"]
 # ---- the command set, from the syntax tables in §5.6 --------------------
 #: name -> (required args, optional args)
 COMMANDS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
-    "create_fmeda": (
-        ("-asil", "-sil", "-dc_aggregation_rule"),
-        ("-fmeda_description", "-creator_name", "-date", "-version",
-         "-language_version", "-master_fmeda", "-parent_fmeda", "-comment",
-         "-user_defined_arguments")),
-    "create_te": (
-        ("-te_type", "-source", "-distribution", "-mission_profile",
-         "-parent_fmeda", "-elements"),
-        ("-te_description", "-user_defined_arguments", "-comment", "-version")),
-    "create_sm": (
-        ("-parent_fmeda", "-class", "-dc_permanent", "-dc_latent_primary",
-         "-dc_latent_secondary"),
-        ("-sm_description", "-class_description", "-configurable",
-         "-user_defined_arguments", "-comment")),
+    "assign_fm_fme": (
+        ("-fm_name", "-fme_list", "-parent_fmeda", "-fme_weights",),
+        ("-user_defined_arguments", "-parent_element",)),
+    "assign_fm_sreq": (
+        ("-fm_name", "-sreq_name", "-parent_fmeda", "-safety_relevant", "-no_part",),
+        ("-user_defined_arguments", "-parent_element",)),
+    "assign_sm_fm": (
+        ("-sm_name", "-fm_name", "-parent_fmeda", "-active",),
+        ("-sm_parent_fmeda", "-dc_permanent_estimated", "-dc_transient_estimated", "-dc_latent_primary_estimated", "-dc_latent_secondary_estimated", "-dc_permanent_measured", "-dc_transient_measured", "-dc_latent_primary_measured", "-dc_latent_secondary_measured", "-user_defined_arguments", "-parent_element",)),
+    "assign_te_element": (
+        ("-te_name", "-parent_fmeda",),
+        ("-element_size_permanent", "-element_size_transient", "-element_size_transient_set", "-element_mapping_format", "-element_mapping", "-element_mapping_exclude", "-user_defined_arguments", "-element_name", "-parent_element",)),
+    "assign_te_fm": (
+        ("-te_name", "-fm_name", "-parent_fmeda", "-fm_size_type_assumption_based", "-fm_size_type_calculation_based",),
+        ("-fm_size_permanent_assumption_based", "-fm_size_transient_assumption_based", "-fm_size_transient_set_assumption_based", "-fm_size_permanent_calculation_based", "-fm_size_transient_calculation_based", "-fm_size_transient_set_calculation_based", "-fm_mapping_format", "-fm_mapping", "-fm_mapping_exclude", "-user_defined_arguments", "-parent_element",)),
     "create_element": (
-        ("-element_type", "-parent_fmeda"),
-        ("-element_description", "-parent_element", "-user_defined_arguments")),
+        ("-element_type", "-parent_fmeda",),
+        ("-element_description", "-parent_element", "-user_defined_arguments",)),
     "create_fm": (
-        ("-parent_element", "-parent_fmeda", "-safety_relevant", "-no_part",
-         "-distribution", "-fm_size_type_assumption_based",
-         "-fm_size_type_calculation_based", "-pvsg_permanent", "-pvsg_transient",
-         "-no_effect_permanent", "-no_effect_transient", "-fm_mapping_format",
-         "-fm_mapping", "-fm_description"),
-        ("-comment", "-user_defined_arguments", "-version", "-fm_size",
-         "-fm_mapping_file", "-fm_mapping_scope", "-latent", "-mission_profile",
-         "-fm_type", "-diagnostic", "-dc_type", "-metric")),
+        ("-parent_fmeda", "-safety_relevant", "-no_part", "-safeness_permanent_estimated", "-safeness_transient_estimated", "-pvsg_permanent", "-pvsg_transient", "-perceived_primary_permanent", "-perceived_primary_transient", "-perceived_secondary_permanent", "-perceived_secondary_transient", "-no_effect_permanent", "-no_effect_transient",),
+        ("-fm_description", "-safeness_permanent_measured", "-safeness_transient_measured", "-dc_permanent_expert", "-dc_transient_expert", "-dc_latent_primary_expert", "-dc_latent_secondary_expert", "-dc_permanent_measured", "-dc_transient_measured", "-dc_latent_primary_measured", "-dc_latent_secondary_measured", "-user_defined_arguments", "-parent_element",)),
     "create_fme": (
         ("-parent_fmeda",),
-        ("-fme_description", "-user_defined_arguments")),
+        ("-fme_description", "-user_defined_arguments",)),
+    "create_fmeda": (
+        ("-asil", "-sil", "-dc_aggregation_rule",),
+        ("-fmeda_description", "-creator_name", "-date", "-version", "-language_version", "-master_fmeda", "-parent_fmeda", "-comment", "-user_defined_arguments",)),
+    "create_sm": (
+        ("-configurable", "-dc_permanent", "-dc_transient", "-dc_latent_primary", "-dc_latent_secondary",),
+        ("-sm_description", "-parent_fmeda", "-class", "-class_description", "-user_defined_arguments",)),
     "create_sreq": (
         ("-sreq_type",),
-        ("-sreq_description", "-user_defined_arguments")),
-    "assign_te_element": (
-        ("-te_name", "-element_name", "-parent_element", "-parent_fmeda"),
-        ("-element_size_permanent", "-element_size_transient",
-         "-element_size_total", "-element_mapping", "-element_mapping_format",
-         "-user_defined_arguments", "-comment")),
-    "assign_te_fm": (
-        ("-te_name", "-fm_name", "-parent_element", "-parent_fmeda",
-         "-fm_size_type_assumption_based", "-fm_size_type_calculation_based"),
-        ("-fm_size", "-fm_distribution", "-fm_mapping", "-fm_mapping_format",
-         "-mission_profile", "-diagnostic", "-dc_type", "-metric",
-         "-user_defined_arguments", "-comment")),
-    "assign_sm_fm": (
-        ("-sm_name", "-fm_name", "-parent_element", "-parent_fmeda", "-active"),
-        ("-sm_parent_fmeda", "-dc_permanent", "-dc_latent_primary",
-         "-dc_latent_secondary", "-dc_type", "-metric", "-comment",
-         "-user_defined_arguments", "-sm_configurable", "-latent")),
-    "assign_fm_fme": (
-        ("-fm_name", "-parent_element", "-fme_list", "-parent_fmeda",
-         "-fme_weights"),
-        ("-user_defined_arguments",)),
-    "assign_fm_sreq": (
-        ("-fm_name", "-sreq_name", "-parent_element", "-parent_fmeda",
-         "-safety_relevant", "-no_part"),
-        ("-user_defined_arguments",)),
-    "define_fr_iso26262": (
-        ("-fr_type", "-dc_type", "-fmeda_type", "-scope", "-te_name",
-         "-analysis_type", "-parent_fmeda"),
-        ("-fmeda_name", "-sreq_name", "-element_name",
-         "-failure_mode_name", "-failure_mode_effect_name",
-         "-parent_element", "-fr_value",
-         "-user_defined_arguments")),
+        ("-sreq_description", "-user_defined_arguments",)),
+    "create_te": (
+        ("-fr_permanent", "-fr_transient", "-fr_transient_set", "-unit_design_element_size_permanent",),
+        ("-te_description", "-te_type", "-source", "-unit_design_element_size_transient", "-unit_design_element_size_transient_set", "-user_defined_arguments",)),
     "define_fr_iec61508": (
-        ("-fr_type", "-dc_type", "-fmeda_type", "-scope", "-te_name",
-         "-analysis_type", "-parent_fmeda"),
-        ("-fmeda_name", "-sreq_name", "-element_name",
-         "-failure_mode_name", "-failure_mode_effect_name",
-         "-parent_element", "-fr_value",
-         "-user_defined_arguments")),
-    "define_metric_iso26262": (
-        ("-metric_name", "-dc_type", "-fmeda_type", "-scope", "-te_name",
-         "-analysis_type", "-parent_fmeda"),
-        ("-fmeda_name", "-sreq_name", "-element_name",
-         "-failure_mode_name", "-failure_mode_effect_name",
-         "-parent_element", "-metric_value",
-         "-user_defined_arguments")),
+        ("-fr_type", "-dc_type", "-fmeda_type", "-scope", "-te_name", "-analysis_type", "-parent_fmeda",),
+        ("-fmeda_name", "-sreq_name", "-fr_value", "-user_defined_arguments", "-element_name", "-failure_mode_name", "-failure_mode_effect_name", "-parent_element",)),
+    "define_fr_iso26262": (
+        ("-fr_type", "-dc_type", "-fmeda_type", "-scope", "-te_name", "-analysis_type", "-parent_fmeda",),
+        ("-fmeda_name", "-sreq_name", "-fr_value", "-user_defined_arguments", "-element_name", "-failure_mode_name", "-failure_mode_effect_name", "-parent_element",)),
     "define_metric_iec61508": (
-        ("-metric_name", "-dc_type", "-fmeda_type", "-scope", "-te_name",
-         "-analysis_type", "-parent_fmeda"),
-        ("-fmeda_name", "-sreq_name", "-element_name",
-         "-failure_mode_name", "-failure_mode_effect_name",
-         "-parent_element", "-metric_value",
-         "-user_defined_arguments")),
+        ("-metric_name", "-dc_type", "-fmeda_type", "-scope", "-te_name", "-analysis_type", "-parent_fmeda",),
+        ("-fmeda_name", "-sreq_name", "-metric_value", "-user_defined_arguments", "-element_name", "-failure_mode_name", "-failure_mode_effect_name", "-parent_element",)),
+    "define_metric_iso26262": (
+        ("-metric_name", "-dc_type", "-fmeda_type", "-scope", "-te_name", "-analysis_type", "-parent_fmeda",),
+        ("-fmeda_name", "-sreq_name", "-metric_value", "-user_defined_arguments", "-element_name", "-failure_mode_name", "-failure_mode_effect_name", "-parent_element",)),
 }
 
 #: enumerated arguments and their exact literals (§5.4: "match exactly")
