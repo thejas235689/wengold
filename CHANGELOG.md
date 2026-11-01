@@ -66,7 +66,9 @@ packages, not that 4% of it was exercised. The re-measured table calls it
 `design-unit files`; the old rows keep the old heading so they are not mistaken for
 fresh measurements. This is the same misleading label fixed in the app at v0.53.3.
 
-**763 tests passing** locally (6 new).
+**763 tests passing**, 13 skipped, verified from a fresh checkout of `main`
+(706 + 57 across two runs). `tools/re-measure.py --only neorv32` was run
+there too, and reproduced 758 nodes / 1,262 edges / 86 blocks.
 
 ---
 
