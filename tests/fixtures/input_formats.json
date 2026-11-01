@@ -1,0 +1,33 @@
+{
+  "_note": "Every module that rejects unknown input, and what verifies its accepted set. A checker that refuses a valid input is worse than one that misses an unknown key, so each of these needs evidence that its table matches reality. A new format must be added here or the meta-test fails.",
+  "formats": {
+    "wengold/fsl.py": {
+      "what": "the sixteen FSL commands and their arguments",
+      "evidence": "external",
+      "source": "Accellera Functional Safety Language Standard v1.0, Tables 3-33",
+      "fixture": "tests/fixtures/fsl_syntax_tables.json",
+      "test": "tests/test_fsl.py::test_every_command_table_matches_the_standard"
+    },
+    "wengold/cdc_standard.py": {
+      "what": "the CDC/RDC attributes per command",
+      "evidence": "external",
+      "source": "Accellera CDC/RDC Interface Standard v1.0, clause text and worked examples",
+      "fixture": "tests/fixtures/cdc_attributes.json",
+      "test": "tests/test_cdc_standard.py::test_every_attribute_the_standard_names_is_accepted"
+    },
+    "wengold/generate/spec.py": {
+      "what": "the YAML spec keys, top level and nested",
+      "evidence": "own examples",
+      "source": "every examples/**/*.spec.yaml that ships",
+      "fixture": null,
+      "test": "tests/test_spec_keys.py::test_every_nested_key_is_known"
+    },
+    "wengold/desktop.py": {
+      "what": "the app's command list",
+      "evidence": "internal",
+      "source": "CLI_COMMANDS, checked against the hint bar it renders",
+      "fixture": null,
+      "test": "tests/test_native_app.py::test_the_hint_bar_lists_every_command"
+    }
+  }
+}
