@@ -14,6 +14,62 @@ what the tags are for.
 
 ---
 
+## [0.54.5] — 2026-11-01
+
+### Changed
+- **The two self-referential entries in the format registry are now cross-checks.**
+
+  v0.54.4 recorded where each accepted set's evidence comes from, and was honest
+  that only two of four were `external`. The other two compared a thing against
+  itself. They now compare against a **second implementation**:
+
+  | format | was | now |
+  | --- | --- | --- |
+  | `desktop.py` | `CLI_COMMANDS` vs a hint bar built from `CLI_COMMANDS` | `CLI_COMMANDS` vs the `if verb ==` dispatch chain — separate code, so they can drift |
+  | `generate/spec.py` | the loader vs our own examples | each accepted key's value is **perturbed** and the generated RTL must change, or the loader must reject it |
+
+  A verb in the tuple with no dispatch branch falls through and returns nothing; a
+  key the loader accepts but the emitter ignores is a spec that parses and silently
+  produces something else. Both are now failures.
+
+### Two bugs in my own probes
+- **Deleting a key was the wrong probe.** `clock` and `reset` default to `clk_i` and
+  `rst_ni`, which is exactly what the example uses, so deleting them changed
+  nothing — for a reason unrelated to being ignored. Perturbing the value has no
+  such blind spot.
+- **An earlier one-off run of the same idea was measuring the temp path.** The
+  generated header contains the source filename, and each run used a different
+  temp directory, so every comparison "changed". The test version reuses one
+  directory, which is what exposed the real answer.
+
+### A real gap the coverage test found
+`name:` is accepted as an alias for `module:` and **no shipped example uses it**,
+so the perturbation probe could never reach it. There is now a direct test that
+`name:` produces the module name, and an allowlist that must name a test that
+exists rather than exempting a key silently.
+
+### Verified that the guards bite
+- adding an ignored key to `_TOP_KEYS`: **1 failed**
+- adding a command with no dispatch branch: **1 failed**
+- restoring both: **15 passed**
+
+### An anomaly I could not reproduce, stated rather than hidden
+One full-suite run in this session reported **8 failures** in
+`test_slice_write_soundness.py` — `_status(...)` returning `unknown` where the test
+expects `fail`. It did not reproduce: the same tree then ran **700 passed, 6
+skipped**, and a pristine `main` checkout passes the same file. The failing run had
+the OSS CAD Suite on `PATH` (three fewer skips), so it is environment-dependent and
+predates this release — `wengold/desktop.py` and `wengold/generate/spec.py` are
+byte-identical to `main`.
+
+I am not claiming it is fixed. It is written down because a soundness test that
+reports `unknown` under one toolchain and `fail` under another is exactly the kind
+of thing this project should not lose track of.
+
+**757 tests passing**, 13 skipped (700 + 57 across two runs).
+
+---
+
 ## [0.54.4] — 2026-11-01
 
 ### Added
