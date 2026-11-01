@@ -16,16 +16,16 @@ ISO = """\
 create_fmeda top -asil b -sil none -dc_aggregation_rule max
 create_element cpu -element_type component -parent_fmeda top
 create_element alu -element_type subcomponent -parent_fmeda top -parent_element cpu
-create_te te1 -te_type digital -source iec_62380 -distribution uniform -mission_profile automotive -parent_fmeda top -elements alu
-create_fm fm1 -parent_element alu -parent_fmeda top -safety_relevant TRUE -distribution uniform -fm_size_type_assumption_based absolute -fm_size_type_calculation_based none -pvsg_permanent 0 -pvsg_transient 0 -fm_mapping_format sv -fm_mapping alu -fm_description "stuck at"
-create_sm sm1 -parent_fmeda top -class hw -dc_permanent 0.9 -dc_latent_primary 0 -dc_latent_secondary 0
+create_te te1 -te_type digital -source iec_62380 -fr_permanent 10.0 -fr_transient 5.0 -fr_transient_set 2.0 -unit_design_element_size_permanent 1000.0 -unit_design_element_size_transient 500.0 -unit_design_element_size_transient_set 200.0
+create_fm fm1 -parent_element alu -parent_fmeda top -safety_relevant TRUE -safeness_permanent_estimated 90.0 -safeness_transient_estimated 90.0 -pvsg_permanent 1.0 -pvsg_transient 1.0 -perceived_primary_permanent 10.0 -perceived_primary_transient 10.0 -perceived_secondary_permanent 5.0 -perceived_secondary_transient 5.0
+create_sm sm1 -configurable FALSE -dc_permanent 90.0 -dc_transient 90.0 -dc_latent_primary 60.0 -dc_latent_secondary 60.0
 assign_sm_fm -sm_name sm1 -fm_name fm1 -parent_element alu -parent_fmeda top -active TRUE
 """
 
 IEC = """\
 create_fmeda top -asil none -sil 2 -dc_aggregation_rule max
 create_element alu -element_type subcomponent -parent_fmeda top
-create_fm fm1 -parent_element alu -parent_fmeda top -no_part FALSE -distribution uniform -fm_size_type_assumption_based absolute -fm_size_type_calculation_based none -no_effect_permanent FALSE -no_effect_transient FALSE -fm_mapping_format sv -fm_mapping alu -fm_description "stuck at"
+create_fm fm1 -parent_element alu -parent_fmeda top -no_part FALSE -safeness_permanent_estimated 90.0 -safeness_transient_estimated 90.0 -no_effect_permanent 1.0 -no_effect_transient 1.0 -perceived_primary_permanent 10.0 -perceived_primary_transient 10.0 -perceived_secondary_permanent 5.0 -perceived_secondary_transient 5.0
 """
 
 
@@ -207,7 +207,7 @@ def test_analyse_cross_checks_a_real_design(tmp_path):
 # ---- metric and failure-rate reporting ----------------------------------
 ISO_METRIC = """\
 create_fmeda top -asil b -sil none -dc_aggregation_rule max
-create_te CMOS -te_type digital -source iec_62380 -distribution uniform -mission_profile automotive -parent_fmeda top -elements x
+create_te CMOS -te_type digital -source iec_62380 -fr_permanent 10.0 -fr_transient 5.0 -fr_transient_set 2.0 -unit_design_element_size_permanent 1000.0 -unit_design_element_size_transient 500.0 -unit_design_element_size_transient_set 200.0
 define_metric_iso26262 -metric_name spfm -dc_type estimated -fmeda_type assumption-based -scope fmeda -te_name CMOS -analysis_type permanent -parent_fmeda top -metric_value {value}
 """
 
@@ -258,3 +258,60 @@ def test_the_footer_does_not_claim_metrics_are_computed():
     text = check(ISO_METRIC.format(value="97.0")).render()
     assert "not computed" in text or "range-checked" in text
     assert "A clean report is not a safety case" in text
+
+
+# ---- the tables must match the standard, not my memory -------------------
+def test_every_command_table_matches_the_standard():
+    """The syntax tables are extracted from the PDF and checked in as a fixture.
+
+    v0.54.0 shipped four of these as guesses and the tests passed, because the
+    tests used the guessed syntax. A green suite over an invented specification
+    proves the invention is self-consistent and nothing else — so the ground truth
+    lives in a fixture and this asserts against it.
+    """
+    import json
+    import re
+    from pathlib import Path
+
+    from wengold.fsl import COMMANDS
+
+    path = Path(__file__).parent / "fixtures" / "fsl_syntax_tables.json"
+    tables = json.loads(path.read_text())
+    assert len(tables) == 16, f"the fixture should hold all 16, has {len(tables)}"
+
+    def parse(block):
+        req, opt, depth, i = [], [], 0, 0
+        while i < len(block):
+            ch = block[i]
+            if ch == "[":
+                depth += 1
+            elif ch == "]":
+                depth -= 1
+            elif ch == "-" and (i == 0 or block[i - 1] in " \n\t["):
+                m = re.match(r"-[a-z_0-9]+", block[i:])
+                if m:
+                    (opt if depth else req).append(m.group(0))
+                    i += len(m.group(0))
+                    continue
+            i += 1
+        return set(req), set(opt)
+
+    for cmd, block in tables.items():
+        want_req, want_opt = parse(block)
+        got_req, got_opt = COMMANDS[cmd]
+        got = set(got_req) | set(got_opt)
+        want = want_req | want_opt
+        assert got == want, (
+            f"{cmd}: missing {sorted(want - got)}, invented {sorted(got - want)}")
+
+
+def test_the_scope_dependent_arguments_are_optional_by_design():
+    """§5.5.1 makes `-element_name` and friends required only for the matching
+    `-scope`, so they are optional in the table and enforced by the scope rule.
+    This pins that decision rather than leaving it to look like a mistake."""
+    from wengold.fsl import COMMANDS
+
+    req, opt = COMMANDS["define_metric_iso26262"]
+    for a in ("-element_name", "-failure_mode_name",
+              "-failure_mode_effect_name", "-parent_element"):
+        assert a in opt and a not in req, a
