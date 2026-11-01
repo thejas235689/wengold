@@ -32,6 +32,37 @@ def test_every_manifest_entry_has_coordinates():
         assert r.get("name"), r
 
 
+def test_every_entry_says_how_it_was_verified():
+    """A coordinate recovered by searching must record what proved it right.
+
+    Fetching the wrong repository produces a number that looks real, so "found it
+    on GitHub" is not evidence. `match` records which recorded values agreed.
+    """
+    data = json.loads(MANIFEST.read_text())
+    legend = data["_evidence_legend"]
+    for r in data["repositories"]:
+        assert r.get("match") in legend, (
+            f"{r['name']}: match={r.get('match')!r} is not in the legend")
+
+
+def test_the_strongest_evidence_is_the_common_case():
+    """If most entries were `unmatched`, the manifest would be mostly guesses."""
+    data = json.loads(MANIFEST.read_text())
+    matches = [r["match"] for r in data["repositories"]]
+    strong = sum(1 for m in matches if m in ("exact", "graph", "blocks"))
+    assert strong >= len(matches) - 4, (
+        f"only {strong} of {len(matches)} have number-checked evidence")
+
+
+def test_unrecovered_projects_are_named_with_a_reason():
+    """Silently dropping a project from the table would be the old failure mode."""
+    data = json.loads(MANIFEST.read_text())
+    missing = data.get("_not_recovered") or []
+    assert missing, "the unmeasured projects must be listed, not omitted"
+    for m in missing:
+        assert m.get("name") and m.get("why"), m
+
+
 def test_the_manifest_says_what_is_missing():
     """The 27 unmeasured projects must be acknowledged, not silently absent."""
     note = json.loads(MANIFEST.read_text())["_note"]
