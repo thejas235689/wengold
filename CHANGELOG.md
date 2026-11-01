@@ -66,7 +66,16 @@ standard each came from — ISO 26262-5 for SPFM, LFM and PMHF, IEC 61508-2 for 
 - **LFM is reported as not computable when its denominator is zero** — every fault
   single-point or residual — rather than dividing by zero or silently returning 1.
 
-**797 tests passing** locally (13 new).
+**797 tests passing**, 13 skipped, verified from a fresh checkout of `main`
+(727 + 45 + 25 across three runs). `fsl --metrics` was run there and
+reproduced SPFM 80% / LFM 75% / PMHF 400 FIT / SFF 90% on a 1000-FIT file.
+
+### One stale claim fixed in the same pass
+The `fsl` footer still said the metrics "are arithmetic over failure rates
+the FMEDA supplies, and this reads structure" — true before this release,
+wrong after it. It now says they are computed with `--metrics`, and that
+neither path checks a metric against an ASIL/SIL target. The test that
+pinned the old wording was updated, not deleted.
 
 ---
 
