@@ -14,6 +14,62 @@ what the tags are for.
 
 ---
 
+## [0.57.0] — 2026-11-01
+
+### Added
+- **The safety metrics are computed, not just collected.**
+
+  ```sh
+  wengold fsl design.fsl --metrics
+  ```
+
+  ```
+  SPFM     80.0000 %
+        = 100 x (1 - (SPF + residual) / intrinsic)
+        with intrinsic=1000, SPF=100, residual=100
+        ISO 26262-5 single-point fault metric
+  LFM      75.0000 %
+        = 100 x (1 - latent_MPF / (intrinsic - SPF - residual))
+        with latent_MPF=200, denominator=800
+  PMHF    400.0000 FIT
+        = SPF + residual + latent_MPF
+  SFF      90.0000 %
+        = 100 x (intrinsic - dangerous_undetected) / intrinsic
+  ```
+
+  Every metric renders its formula and its inputs, so a safety engineer can redo
+  the arithmetic by hand. That is the only reason a computed metric is worth more
+  than a declared one.
+
+### Where the formulas come from
+**Not from the FSL standard.** FSL names the failure-rate types and the metric
+names; it deliberately references ISO 26262 and IEC 61508 rather than restating the
+arithmetic. So `wengold/fsl_metrics.py` carries the formulas itself and says which
+standard each came from — ISO 26262-5 for SPFM, LFM and PMHF, IEC 61508-2 for SFF.
+
+### Two wrong numbers this avoids
+- **A metric from a partial sum.** Three of four terms present looks exactly like a
+  complete one. The module refuses per-metric rather than computing from what it has.
+- **Double counting alternatives.** `spf` and `non_safe` classify the same failures,
+  as do `mpf_latent` and `mpf_perceived_latent`. My first version summed them, which
+  reported SPFM as 80% where the answer is 90%. Alternatives now resolve to the
+  first declared, and only `intrinsic` — a quantity, not a classification — sums
+  across scopes. Verified by reverting the fix: 1 test fails, 13 pass again after.
+
+### What it still does not do
+- **It does not check a metric against an ASIL/SIL target.** The target depends on
+  the element's safety classification and its share of the safety goal, neither of
+  which an FMEDA file alone determines. The report says so on every run.
+- **PMHF is the instantaneous sum.** A full ISO 26262 treatment depends on the
+  latency of latent faults, not just their rate; an FMEDA file does not carry
+  latency. The label says "instantaneous sum".
+- **LFM is reported as not computable when its denominator is zero** — every fault
+  single-point or residual — rather than dividing by zero or silently returning 1.
+
+**797 tests passing** locally (13 new).
+
+---
+
 ## [0.56.0] — 2026-11-01
 
 ### Added
