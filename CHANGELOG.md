@@ -14,6 +14,68 @@ what the tags are for.
 
 ---
 
+## [0.54.1] — 2026-11-01
+
+### Fixed
+- **Four of the sixteen command tables were guesses, and would have rejected a
+  conformant file.**
+
+  I wrote `define_metric_iso26262` with arguments like `-formula`, `-value`,
+  `-unit`, `-target`. The standard's Table 31 says `-metric_value`, `-scope`,
+  `-te_name`, `-analysis_type`. A valid file using the real syntax would have been
+  rejected with "unknown argument", which is the worst kind of bug in a checker:
+  **it fails a correct input.**
+
+  All four `define_*` tables now come from Tables 27, 29, 31 and 33:
+
+  | command | required |
+  | --- | --- |
+  | `define_fr_iso26262` | `-fr_type -dc_type -fmeda_type -scope -te_name -analysis_type -parent_fmeda` |
+  | `define_metric_iso26262` | `-metric_name -dc_type -fmeda_type -scope -te_name -analysis_type -parent_fmeda` |
+
+- **`-fr_type` and `-metric_name` are not the same set in the two standards.**
+  `-fr_type` has 22 values in ISO 26262 and 8 in IEC 61508; `-metric_name` is
+  `spfm | lfm | pmhf` in one and `sff | probability_dangerous_failure_*` in the
+  other. A single global table would have let `sff` through in an ISO 26262
+  context. Enumerations are now looked up per command.
+
+- **`-scope` makes an argument required.** §5.5.1 lists `-element_name`,
+  `-failure_mode_name` and `-failure_mode_effect_name` without brackets but they
+  only apply to the matching scope; `-scope element` without `-element_name` is
+  now an error.
+
+### Added
+- **Declared metrics and failure rates are collected and reported.**
+
+  ```
+  metric                                       scope                     value  unit
+  spfm                                         fmeda                        97  percent
+  ```
+
+  Each value is range-checked against NOTE 2 (§5.6.1): failure rates in FIT,
+  SPFM/LFM/SFF as percentages in `[0.0, 100.0]`, PMHF in FIT.
+
+### A contradiction in the standard itself
+NOTE 2 says SPFM and LFM are **percentages in [0.0, 100.0]**. The standard's own
+worked example (Example 1, §5.6.16) reports `-metric_value 0.97` for `spfm` — which
+as a percentage is 0.97%, not 97%.
+
+The checker does not pick a reading. A value in `(0, 1]` on a percentage metric
+raises a warning that says both interpretations and notes that the standard's
+example has the same ambiguity. Picking one silently would be the tool deciding a
+safety question.
+
+### Still not done, and why
+**Metrics are not computed.** SPFM, LFM, PMHF and SFF are arithmetic over failure
+rates the FMEDA supplies per failure mode; computing them means implementing the
+ISO 26262 and IEC 61508 formulas, which the standard references but does not
+restate. The footer now says "collected and range-checked, not computed" rather
+than the older, vaguer "no metric is computed".
+
+**702 tests passing** locally (30 in the FSL suite).
+
+---
+
 ## [0.54.0] — 2026-11-01
 
 ### Added
