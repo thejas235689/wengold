@@ -144,9 +144,96 @@
 - **v0.25** — whole-project elaboration (one compilation unit rather than per file);
   a file set taken from the project's own build metadata (FuseSoC `.core`, `.f`
   filelists) instead of hand-passed include dirs; HJSON register maps.
+
+> **This log stopped at v0.25 and was reconstructed at v0.54.5** from the GitHub
+> release pages, so the entries below are summaries of what shipped rather than
+> plans written before the fact. Anything between v0.25 and v0.54 that is not
+> mentioned here is in [`CHANGELOG.md`](../CHANGELOG.md), which was kept current.
+
+### v0.26 – v0.28 · measurement, and refusing to guess
+
+- **v0.26** — off-policy evaluation; the finding was that **IPS is a trap** — it
+  reported +406% on data where the policy had never taken the action.
+- **v0.27** — waveform features for every learner. **v0.27.1** — duplicate module
+  definitions were merged silently, and Anvil-Pro showed it was the third instance
+  of one bug class: a bad failure mode, not a wrong answer.
+- **v0.28** — failure reproduction, and refusing to lie: the tool reports the
+  smallest command that reproduces a failure, and says when it cannot find one.
+
+### v0.29 – v0.36 · the app
+
+- **v0.29 – v0.31** — WENGOLD becomes a desktop app, then a real window rather than
+  a browser shell.
+- **v0.34 – v0.35** — a CLI pane at the bottom, and the three bugs a screenshot
+  found that endpoint tests could not. The pane is a transcript, not a prompt.
+- **v0.36** — one panel with a revision strip.
+
+### v0.37 – v0.39 · the CDC/RDC standard
+
+- **v0.37** — Accellera CDC/RDC v1.0: the Tcl format and Clauses 4 and 6.
+- **v0.38** — IP-XACT (Clause 7) and the semantic consistency rules.
+- **v0.39** — Clause 8: WENGOLD *emits* CDC assertions. **v0.39.1** — the Annex C
+  fixtures, and the two parser bugs they found.
+
+### v0.40 – v0.42 · elaboration and the formal front-end
+
+- **v0.40** — one bad module no longer poisons every module in its file.
+- **v0.41 – v0.42** — the formal front-end went **2 of 27 → 9 of 27 → 11 of 27** on
+  a modern UVM project, by widening the accepted subset rather than guessing.
+- **v0.42.1 – v0.42.2** — CI that actually runs, a site that stops overstating, and
+  a build that is verifiable from a tarball.
+
+### v0.43 – v0.48 · tools, and measuring from the repository
+
+- **v0.43** — tensor operators, and the division trap.
+- **v0.44** — a Linux installer and a `.deb`.
+- **v0.45** — the agent acts on real tools; a sweep over six repositories found
+  three bugs.
+- **v0.46** — `.f` filelists, language routing, and one thing explicitly not
+  verified.
+- **v0.47** — GHDL runs: **54 of 54** VHDL units analysed.
+- **v0.48** — simulation, and the **first non-zero settled count**:
+  4 settled of 2 checks, reward 2.000.
+  **v0.48.1** corrected v0.48.0's claim, which had been measured on a working tree
+  the branch did not match. **v0.48.2** added `tools/verify-release.sh` so that
+  cannot recur.
+
+### v0.49 – v0.53 · generating and reviewing code
+
+- **v0.49** — `vibe`: spec → RTL → self-checking testbench → simulation → verdict.
+- **v0.50** — CDC crossing classification: synchronised, unsynchronised, or a
+  multi-bit bus that must not be given a 2-FF synchroniser.
+- **v0.51** — `vibe` in the app, with the generated source visible.
+- **v0.52** — `review`: suggestions drawn only from checks that actually ran.
+- **v0.53** — fewer lines, and the prover that nearly paid for it; the line count is
+  kept in a manifest; a tighter testbench; a label (`100% cov`) that meant nothing,
+  corrected.
+
+### v0.54 · FSL, and proving the accepted sets
+
+- **v0.54.0** — Accellera **Functional Safety Language v1.0**: sixteen Tcl commands,
+  checked against the standard's clauses, plus the one check no standard can
+  specify — an FMEDA naming an element that is not a block in the RTL.
+- **v0.54.1 – v0.54.2** — the FSL command tables were written from memory and would
+  have rejected conformant files; ten of sixteen were wrong. Regenerated from the
+  standard's own tables, with a checked-in fixture and a test that compares.
+- **v0.54.3** — the same audit on the CDC side found **four attributes missing**.
+- **v0.54.4 – v0.54.5** — no format may reject unknown input without evidence that
+  its accepted set is right, and the evidence for each must be independent rather
+  than a thing compared against itself.
+
+## Planned
+
 - **v1.1** — a Surelog/Verible elaboration backend; SymbiYosys as an external
   engine; regression farm, coverage closure, waiver register.
+- **v1.2** — safety metrics computed rather than collected: SPFM, LFM, PMHF and SFF
+  from per-failure-mode rates, which needs the ISO 26262 and IEC 61508 formulas the
+  FSL standard references but does not restate.
 - **v2.0** — spec-to-signoff on the open toolchain, reproducible on Sky130.
+
+The honest state of the plan: the items above are the ones with a shape I can
+picture. The largest thing missing is not on this list and is not technical —
+**there is no design partner**, so every number in this repository is self-assessed.
 
 ## Non-goals
 
