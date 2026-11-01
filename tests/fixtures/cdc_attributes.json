@@ -1,0 +1,20 @@
+{
+  "_note": "Attributes the Accellera CDC/RDC v1.0 standard names for each command, taken from the clause text and the worked examples (not the table of contents). The code must accept every one of these: a checker that rejects a conformant file is worse than one that misses an unknown attribute.",
+  "set_port": [
+    "-name", "-direction", "-type",
+    "-associated_from_clocks", "-associated_to_clocks",
+    "-associated_from_reset", "-associated_to_reset",
+    "-ignore", "-cdc_static", "-constant",
+    "-associated_outputs", "-associated_inputs", "-logic",
+    "-polarity", "-sampling_edge", "-blocking_polarity",
+    "-cdc_control", "-cdc_control_setup", "-cdc_control_hold",
+    "-cdc_data_from_clock",
+    "-rdc_control", "-rdc_data_from_reset", "-rdc_data_to_reset",
+    "-rdc_data_to_clock", "-rdc_clock_gate_location",
+    "-frequency", "-virtual_port"
+  ],
+  "set_clock_group": ["-name", "-clocks"],
+  "set_reset_assertion_sequence": ["-name", "-assert_sequence"],
+  "set_module": ["-name"],
+  "set_param": ["-name", "-type", "-value"]
+}
