@@ -25,9 +25,19 @@ def test_no_unresolved_means_no_stub_proposal():
     assert propose_stubs(FakeGraph(), {"unresolved": []}) is None
 
 
-def test_stubs_cover_every_unresolved_module():
+def test_stubs_cover_every_missing_module():
+    """The stub list comes from the notes, not from `unresolved`.
+
+    `unresolved` names the modules that *contain* an unresolved instantiation —
+    the dependents, which are defined. Stubbing those would write a second
+    definition of a module that already exists. See
+    `test_a_defined_module_is_never_stubbed` below.
+    """
     g = FakeGraph()
-    p = propose_stubs(g, {"unresolved": ["axi_zeroer", "sd_bridge"]})
+    p = propose_stubs(g, {
+        "unresolved": ["top"],
+        "issues": ["top: instantiation `axi_zeroer` has no definition in the file set",
+                   "top: instantiation `sd_bridge` has no definition in the file set"]})
     assert p is not None
     assert "module axi_zeroer();" in p.new_text
     assert "module sd_bridge();" in p.new_text
@@ -36,20 +46,46 @@ def test_stubs_cover_every_unresolved_module():
 
 def test_a_stub_is_visibly_empty_and_says_so():
     """A stub that returned 0 would let a check pass for the wrong reason."""
-    p = propose_stubs(FakeGraph(), {"unresolved": ["m"]})
+    p = propose_stubs(FakeGraph(), {
+        "unresolved": ["top"],
+        "issues": ["top: instantiation `m` has no definition in the file set"]})
     assert "TODO: real implementation" in p.new_text
     assert "EMPTY" in p.new_text
     assert "assign" not in p.new_text, "a stub must not drive a value"
 
 
 def test_the_rationale_quotes_the_kernel_fact():
-    p = propose_stubs(FakeGraph(), {"unresolved": ["a", "b", "c"]})
+    p = propose_stubs(FakeGraph(), {
+        "unresolved": ["top"],
+        "issues": [f"top: instantiation `{n}` has no definition in the file set"
+                   for n in ("a", "b", "c")]})
     assert "3 module(s)" in p.rationale
     assert "UNKNOWN" in p.rationale
 
 
+def test_a_defined_module_is_never_stubbed():
+    """The regression this contract change exists for.
+
+    `unresolved` holds `top`; `top` is defined; a stub for it would be a second
+    definition of a module that already exists.
+    """
+    p = propose_stubs(FakeGraph(), {
+        "unresolved": ["top"],
+        "issues": ["top: instantiation `missing_block` has no definition in the file set"]})
+    declared = [ln.split()[1].split("(")[0]
+                for ln in p.new_text.splitlines() if ln.startswith("module ")]
+    assert declared == ["missing_block"], declared
+
+
+def test_unresolved_without_a_named_missing_module_proposes_nothing():
+    """Better to do nothing than to stub the wrong module."""
+    assert propose_stubs(FakeGraph(), {"unresolved": ["top"]}) is None
+
+
 def test_the_diff_is_a_real_unified_diff():
-    p = propose_stubs(FakeGraph(), {"unresolved": ["m"]})
+    p = propose_stubs(FakeGraph(), {
+        "unresolved": ["top"],
+        "issues": ["top: instantiation `m` has no definition in the file set"]})
     assert p.diff.startswith("--- a/")
     assert "+++ b/" in p.diff
     assert "@@" in p.diff
@@ -73,13 +109,17 @@ def test_a_duplicate_proposal_excludes_all_but_one():
 
 def test_a_proposal_never_applies_itself(tmp_path):
     """Proposing is not applying. This is the whole safety property."""
-    p = propose_stubs(FakeGraph(), {"unresolved": ["m"]})
+    p = propose_stubs(FakeGraph(), {
+        "unresolved": ["top"],
+        "issues": ["top: instantiation `m` has no definition in the file set"]})
     propose_all(FakeGraph(), {"unresolved": ["m"]}, tmp_path)
     assert not (tmp_path / STUB_FILE).exists(), "proposing wrote a file"
 
 
 def test_apply_writes_only_when_called(tmp_path):
-    p = propose_stubs(FakeGraph(), {"unresolved": ["m"]})
+    p = propose_stubs(FakeGraph(), {
+        "unresolved": ["top"],
+        "issues": ["top: instantiation `m` has no definition in the file set"]})
     out = p.apply(tmp_path)
     assert out.exists()
     assert "module m();" in out.read_text()
