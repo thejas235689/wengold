@@ -14,6 +14,62 @@ what the tags are for.
 
 ---
 
+## [0.54.4] — 2026-11-01
+
+### Added
+- **A format cannot reject valid input without evidence any more.**
+
+  Two releases in a row shipped a checker that refused correct input — the FSL
+  command tables, then the CDC attributes — because the accepted set was written
+  from memory, and the tests passed because they used the same invented set. The
+  fixtures I added fixed those two. They did not stop a third.
+
+  `tests/test_input_formats.py` scans every module for the code that rejects
+  unknown input and requires each one to be listed in
+  `tests/fixtures/input_formats.json` with:
+
+  | field | meaning |
+  | --- | --- |
+  | `what` | which accepted set this is |
+  | `evidence` | `external`, `own examples`, or `internal` |
+  | `source` | where the truth came from |
+  | `fixture` | the checked-in copy, for external evidence |
+  | `test` | the test that compares the code against it |
+
+  A new format without an entry fails, and the entry is checked to name a test that
+  exists. `evidence: "trust me"` is not one of the three allowed values.
+
+- **The spec format is now checked against our own examples.**
+  `tests/test_spec_keys.py` loads every `examples/**/*.spec.yaml` and asserts the
+  loader accepts every key, top level **and nested**. The nested sets are the risk:
+  `_TOP_KEYS` is visible in every example, but `fields`, `ports` and `registers`
+  each have their own set where an invented name hides until someone writes a spec
+  that uses it.
+
+  The nested sets turned out to be right. No bug found — but the check that would
+  have found one now exists, and it is a real check because a shipped example is
+  what users copy.
+
+### Verified that the guard bites
+I added a probe module that rejects an unknown argument and re-ran the meta-test:
+**1 failed**. Removed it: **4 passed**. A test that cannot fail is the failure mode
+this project keeps finding.
+
+### One false positive, handled rather than registered
+`agent/runners.py` contains the phrase "unknown command" — in a comment about a
+compiler flag. The scanner now strips comment lines instead of the registry
+carrying an entry for a module that rejects nothing.
+
+### What this still cannot tell you
+`evidence: "own examples"` is weaker than a syntax table. It proves the loader
+accepts what we write; it does not prove we write everything the format allows.
+For the spec format there is no external document to appeal to, and the registry
+says so rather than implying otherwise.
+
+**742 tests passing** locally (12 new).
+
+---
+
 ## [0.54.3] — 2026-11-01
 
 ### Fixed
