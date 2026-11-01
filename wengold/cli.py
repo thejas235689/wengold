@@ -359,6 +359,10 @@ def cmd_fsl(args) -> int:
     print(rep.render())
     if args.design:
         print(f"  cross-checked against {args.design}")
+    if args.metrics:
+        from .fsl_metrics import collect, render as render_metrics
+        print()
+        print(render_metrics(collect(rep)))
     return 0 if rep.ok else 1
 
 
@@ -1130,6 +1134,9 @@ def main(argv=None) -> int:
     p.add_argument("--design", default=None, metavar="PATH",
                    help="cross-check the elements the FMEDA names against this "
                         "design's blocks")
+    p.add_argument("--metrics", action="store_true",
+                   help="compute SPFM, LFM, PMHF and SFF from the declared "
+                        "failure rates")
     p.set_defaults(func=cmd_fsl)
 
     p = sub.add_parser("agentic",
