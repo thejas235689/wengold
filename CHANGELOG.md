@@ -74,7 +74,9 @@ contract, asserting that `unresolved` names get stubbed.
 have both, not to replace one with the other. A test asserts all three are in the
 command list.
 
-**794 tests passing** locally (16 new in the agentic suite).
+**794 tests passing**, 12 skipped, verified from a fresh checkout of `main`
+(737 + 57 across two runs). `agentic` was run there end to end on a design
+with one missing module and proposed the right stub.
 
 ---
 
