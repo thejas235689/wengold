@@ -93,23 +93,33 @@ COMMANDS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
          "-safety_relevant", "-no_part"),
         ("-user_defined_arguments",)),
     "define_fr_iso26262": (
-        ("-fr_type", "-dc_type", "-fmeda_type", "-scope", "-metric",
-         "-distribution", "-mission_profile", "-fr_value", "-fr_unit",
-         "-fr_source", "-fr_comment"),
-        ("-user_defined_arguments", "-comment", "-version", "-date")),
+        ("-fr_type", "-dc_type", "-fmeda_type", "-scope", "-te_name",
+         "-analysis_type", "-parent_fmeda"),
+        ("-fmeda_name", "-sreq_name", "-element_name",
+         "-failure_mode_name", "-failure_mode_effect_name",
+         "-parent_element", "-fr_value",
+         "-user_defined_arguments")),
     "define_fr_iec61508": (
-        ("-fr_type", "-dc_type", "-fmeda_type", "-scope", "-metric",
-         "-distribution", "-mission_profile", "-fr_value", "-fr_unit",
-         "-fr_source", "-fr_comment"),
-        ("-user_defined_arguments", "-comment", "-version", "-date")),
+        ("-fr_type", "-dc_type", "-fmeda_type", "-scope", "-te_name",
+         "-analysis_type", "-parent_fmeda"),
+        ("-fmeda_name", "-sreq_name", "-element_name",
+         "-failure_mode_name", "-failure_mode_effect_name",
+         "-parent_element", "-fr_value",
+         "-user_defined_arguments")),
     "define_metric_iso26262": (
-        ("-metric_name", "-dc_type", "-fmeda_type", "-scope", "-formula",
-         "-value", "-unit", "-target", "-aggregation", "-source", "-comment"),
-        ("-user_defined_arguments", "-version", "-date", "-metric_description")),
+        ("-metric_name", "-dc_type", "-fmeda_type", "-scope", "-te_name",
+         "-analysis_type", "-parent_fmeda"),
+        ("-fmeda_name", "-sreq_name", "-element_name",
+         "-failure_mode_name", "-failure_mode_effect_name",
+         "-parent_element", "-metric_value",
+         "-user_defined_arguments")),
     "define_metric_iec61508": (
-        ("-metric_name", "-dc_type", "-fmeda_type", "-scope", "-formula",
-         "-value", "-unit", "-target", "-aggregation", "-source", "-comment"),
-        ("-user_defined_arguments", "-version", "-date", "-metric_description")),
+        ("-metric_name", "-dc_type", "-fmeda_type", "-scope", "-te_name",
+         "-analysis_type", "-parent_fmeda"),
+        ("-fmeda_name", "-sreq_name", "-element_name",
+         "-failure_mode_name", "-failure_mode_effect_name",
+         "-parent_element", "-metric_value",
+         "-user_defined_arguments")),
 }
 
 #: enumerated arguments and their exact literals (§5.4: "match exactly")
@@ -132,6 +142,44 @@ ENUMS: dict[str, set[str]] = {
                      "probability_dangerous_failure_high_demand"},
     "-sreq_type": {"safety_goal", "top_level_safety_requirement"},
 }
+
+#: enumerations that differ by command — `-fr_type` and `-metric_name` are not
+#: the same set in ISO 26262 and IEC 61508, so a global table would let a
+#: wrong-standard value through
+COMMAND_ENUMS: dict[tuple[str, str], set[str]] = {
+    ("define_fr_iso26262", "-fr_type"): {
+        "intrinsic", "sr", "nsr", "safe", "non_safe", "spf", "residual", "mpf",
+        "mpf_detected", "mpf_perceived_latent", "mpf_perceived", "mpf_latent",
+        "mpf_primary", "mpf_detected_primary", "mpf_perceived_latent_primary",
+        "mpf_perceived_primary", "mpf_latent_primary", "mpf_secondary",
+        "mpf_detected_secondary", "mpf_perceived_latent_secondary",
+        "mpf_perceived_secondary", "mpf_latent_secondary"},
+    ("define_fr_iec61508", "-fr_type"): {
+        "total", "safe", "safe_detected", "safe_undetected", "dangerous",
+        "dangerous_detected", "dangerous_undetected", "no_effect"},
+    ("define_metric_iso26262", "-metric_name"): {"spfm", "lfm", "pmhf"},
+    ("define_metric_iec61508", "-metric_name"): {
+        "sff", "probability_dangerous_failure_low_demand",
+        "probability_dangerous_failure_high_demand"},
+}
+for _cmd in ("define_fr_iso26262", "define_fr_iec61508",
+             "define_metric_iso26262", "define_metric_iec61508"):
+    COMMAND_ENUMS[(_cmd, "-scope")] = {
+        "fmeda", "element", "failure_mode", "failure_mode_effect"}
+    COMMAND_ENUMS[(_cmd, "-analysis_type")] = {
+        "permanent", "transient", "permanent+transient"}
+
+#: §5.5.1 — which argument each `-scope` makes required
+SCOPE_REQUIRES = {
+    "element": "-element_name",
+    "failure_mode": "-failure_mode_name",
+    "failure_mode_effect": "-failure_mode_effect_name",
+}
+
+#: NOTE 2 (§5.6.1): the units of a reported value
+PERCENTAGE_METRICS = {"spfm", "lfm", "sff"}
+FIT_METRICS = {"pmhf", "probability_dangerous_failure_low_demand",
+               "probability_dangerous_failure_high_demand"}
 
 #: the object each create_* command defines, and its positional name index
 CREATES = {
@@ -184,6 +232,7 @@ class Report:
     commands: list[Command] = field(default_factory=list)
     findings: list[Finding] = field(default_factory=list)
     objects: dict[str, dict[str, int]] = field(default_factory=dict)
+    values: list[tuple[str, str, float, str]] = field(default_factory=list)
 
     @property
     def errors(self) -> list[Finding]:
@@ -199,13 +248,22 @@ class Report:
             return "  no FSL commands found"
         counts = ", ".join(f"{len(v)} {k}" for k, v in self.objects.items() if v)
         lines.append(f"  {len(self.commands)} command(s): {counts}")
+        if self.values:
+            lines.append("")
+            lines.append(f"  {'metric':<44} {'scope':<20} {'value':>10}  unit")
+            for name, scope, value, unit in self.values:
+                lines.append(f"  {name:<44} {scope:<20} {value:>10g}  {unit}")
         for f in self.findings:
             lines.append(f.render())
         if self.ok:
             lines.append("  no errors")
         lines.append("")
-        lines.append("  this checks structure, not engineering judgement: a clean")
-        lines.append("  report is not a safety case, and no metric is computed")
+        lines.append("  declared values are collected and range-checked, not "
+                     "computed:")
+        lines.append("  SPFM, LFM, PMHF and SFF are arithmetic over failure rates "
+                     "the FMEDA")
+        lines.append("  supplies, and this reads structure. A clean report is not "
+                     "a safety case.")
         return "\n".join(lines)
 
 
@@ -282,7 +340,7 @@ def check(text: str) -> Report:
 
         # §5.4: enumerations match exactly
         for a, v in c.args.items():
-            allowed_vals = ENUMS.get(a)
+            allowed_vals = COMMAND_ENUMS.get((c.name, a)) or ENUMS.get(a)
             if allowed_vals and v not in allowed_vals:
                 rep.findings.append(Finding(
                     "error", "5.4",
@@ -370,6 +428,17 @@ def check(text: str) -> Report:
             if sm and "-active" in c.args:
                 pass          # the -configurable attribute is set by create_sm
 
+    # ---- §5.5.1: the arguments each -scope makes required
+    for c in rep.commands:
+        if not c.name.startswith("define_"):
+            continue
+        scope = c.args.get("-scope")
+        need = SCOPE_REQUIRES.get(scope or "")
+        if need and need not in c.args:
+            rep.findings.append(Finding(
+                "error", "5.5.1",
+                f"{c.name}: -scope {scope} requires {need}", c.line))
+
     # ---- §5.5.1: at least one of the element-size arguments
     for c in rep.commands:
         if c.name == "assign_te_element":
@@ -381,6 +450,39 @@ def check(text: str) -> Report:
                     "error", "5.5.1",
                     f"assign_te_element {c.label!r}: at least one of "
                     f"-element_size_* or -element_mapping is required", c.line))
+
+    # ---- NOTE 2 (§5.6.1): what unit a declared value is in, and is it sane
+    for c in rep.commands:
+        if not c.name.startswith("define_"):
+            continue
+        key = c.args.get("-metric_name") or c.args.get("-fr_type")
+        raw = c.args.get("-metric_value") or c.args.get("-fr_value")
+        if not key or raw is None:
+            continue
+        try:
+            value = float(raw)
+        except ValueError:
+            rep.findings.append(Finding(
+                "error", "5.4",
+                f"{c.name}: {raw!r} is not a number", c.line))
+            continue
+        unit = "percent" if key in PERCENTAGE_METRICS else "FIT"
+        rep.values.append((key, c.args.get("-scope", "?"), value, unit))
+        if unit == "percent":
+            if not 0.0 <= value <= 100.0:
+                rep.findings.append(Finding(
+                    "error", "5.6.1",
+                    f"{key} = {value:g} is outside [0.0, 100.0]; NOTE 2 says "
+                    f"percentage metrics are percentages", c.line))
+            elif 0.0 < value <= 1.0:
+                # the standard's own worked example reports spfm as 0.97, while
+                # NOTE 2 says percentages in [0.0, 100.0] — 0.97 is 0.97%, not 97%
+                rep.findings.append(Finding(
+                    "warning", "5.6.1",
+                    f"{key} = {value:g} is in (0, 1]; NOTE 2 says a percentage in "
+                    f"[0.0, 100.0], so this reads as {value * 100:g}% only if a "
+                    f"fraction was meant. The standard's own example has the same "
+                    f"ambiguity", c.line))
 
     rep.objects = created
     return rep
