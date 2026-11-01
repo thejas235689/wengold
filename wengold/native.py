@@ -88,7 +88,7 @@ def build_window(state: dict):
     event loop, and so the offscreen screenshot path exercises the same code.
     """
     QtCore, QtGui, QtWidgets = _qt()
-    from .desktop import _exec, _file_detail
+    from .desktop import CLI_COMMANDS, _exec, _file_detail
 
     class MainWindow(QtWidgets.QMainWindow):
         def __init__(self):
@@ -159,7 +159,7 @@ def build_window(state: dict):
             self.transcript.setReadOnly(True)
             self.input = QtWidgets.QLineEdit()
             self.input.setPlaceholderText(
-                "summary · files · blocks · verdicts · singularity · review · vibe · help")
+                " · ".join(CLI_COMMANDS))
             self.input.returnPressed.connect(self._run)
 
             bottom = QtWidgets.QWidget()
