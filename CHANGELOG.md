@@ -53,7 +53,9 @@ than a syntax table — `set_clock_group` is the clearest case: the code accepts
 because removing an attribute the standard does allow would break conformant files,
 but that is a judgement, not a verified fact.
 
-**730 tests passing** locally (20 in the CDC-standard suite).
+**730 tests passing**, 13 skipped, verified from a fresh checkout of `main`
+(20 + 673 + 57 across three runs, because the whole suite exceeds one call's
+limit). 20 of them are in the CDC-standard suite.
 
 ---
 
