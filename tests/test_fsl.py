@@ -254,10 +254,13 @@ def test_the_scope_makes_the_matching_name_required():
     assert any("requires -element_name" in f.message for f in rep.errors)
 
 
-def test_the_footer_does_not_claim_metrics_are_computed():
+def test_the_footer_describes_what_the_checker_actually_does():
+    """It used to say metrics were "not computed"; they are computed now, with
+    --metrics. The footer has to move with the code."""
     text = check(ISO_METRIC.format(value="97.0")).render()
-    assert "not computed" in text or "range-checked" in text
-    assert "A clean report is not a safety case" in text
+    assert "range-checked" in text
+    assert "computed from them with --metrics" in text
+    assert "not a safety case" in text
 
 
 # ---- the tables must match the standard, not my memory -------------------
