@@ -1,8 +1,21 @@
 # WENGOLD across 33 repositories
 
-Every project checked in this series, at v0.27.1 unless marked otherwise.
+Every project checked in this series, at **v0.27.1** unless marked otherwise.
 All rows at v0.27.0/v0.27.1 were taken from a single re-fetched build, so they are
 directly comparable.
+
+**This file has not been re-measured since v0.27.1.** The front-ends have changed
+substantially in the 27 releases since — whole-project elaboration, `.f` filelists,
+a VHDL front-end, the formal subset widened from 2 to 11 of 27 files, and a fix for
+one bad module poisoning every module in its file. Several numbers here are
+therefore likely to be pessimistic now. They are left as measured rather than
+refreshed or deleted: a stale number that says when it was taken is honest, and a
+fresh number nobody re-ran is not.
+
+One column needs a warning in particular: **`coverage` is not test coverage.** It is
+the share of files that contained a design unit — how much of the repository the
+graph can describe at all. `riscv-dv` at 4% means 4% of its files are modules,
+packages or interfaces, not that 4% of it was exercised.
 
 **33 attempted. 30 indexed. 3 could not be.**
 
