@@ -1,0 +1,214 @@
+"""Agentic coding: a loop that decides what to do from what the kernel proved.
+
+**There is no language model here.** That is the defining constraint, not a
+shortcut. A coding agent without a model can still be useful if every decision it
+takes is justified by something the tool actually knows, and useless if it
+pretends otherwise — so this module has exactly one rule:
+
+    every step names the fact that caused it.
+
+The facts available are the kernel's and the graph's: which modules are unresolved,
+which results are invalidated, which checks failed, what the completeness report
+says. From those the loop can do four things, and it refuses everything else:
+
+| what it can do | the fact that triggers it |
+| --- | --- |
+| stub the modules that are instantiated but not defined | `completeness()["unresolved"]` |
+| suggest a fix for a check that failed | `review()` — which itself only reads checks that ran |
+| generate a block from a spec, then verify it | `vibe()` — spec → RTL → testbench → simulation |
+| stop, and say why | nothing is left that it can justify |
+
+**How this differs from `vibe` and `review`.** Those are two commands you run.
+This decides *which* to run, in what order, and when to stop — and it re-perceives
+between steps, because acting changes the graph. Both are still there and still
+callable directly; this composes them.
+
+**What it will not do.** It will not write RTL logic, invent a missing module's
+behaviour, guess a fix for a failing check, or claim a step succeeded because it
+ran. `--apply` is required before anything is written; the default is to show the
+diff and change nothing. And when it runs out of justified actions it stops and
+says so rather than inventing a fifth one.
+"""
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from pathlib import Path
+
+__all__ = ["Step", "CodingRun", "code", "render"]
+
+
+@dataclass
+class Step:
+    """One decision, the fact behind it, and what happened."""
+    n: int
+    thought: str
+    action: str
+    fact: str
+    outcome: str = ""
+    ok: bool = True
+    diff: str = ""
+
+    def render(self) -> str:
+        mark = "ok " if self.ok else "!! "
+        out = [f"  {mark}{self.n}. {self.thought}",
+               f"      fact:   {self.fact}",
+               f"      action: {self.action}"]
+        if self.outcome:
+            out.append(f"      result: {self.outcome}")
+        if self.diff:
+            out.extend("      " + ln for ln in self.diff.rstrip().splitlines())
+        return "\n".join(out)
+
+
+@dataclass
+class CodingRun:
+    goal: str
+    root: str
+    steps: list[Step] = field(default_factory=list)
+    done: bool = False
+    reason: str = ""
+    applied: bool = False
+
+    @property
+    def changed(self) -> bool:
+        return any(s.diff for s in self.steps)
+
+    def render(self) -> str:
+        lines = [f"  goal: {self.goal}", f"  in:   {self.root}", ""]
+        if not self.steps:
+            lines.append("  no justified action — see the reason below")
+        for s in self.steps:
+            lines.append(s.render())
+        lines.append("")
+        lines.append(f"  {'done' if self.done else 'stopped'}: {self.reason}")
+        if self.changed and not self.applied:
+            lines.append("  nothing was written — re-run with --apply to take the "
+                         "diffs above")
+        lines.append("")
+        lines.append("  every step above is justified by a kernel fact; none is a "
+                     "model's guess.")
+        lines.append("  this does not write RTL logic, invent a missing module's "
+                     "behaviour, or")
+        lines.append("  guess a fix for a check that did not run.")
+        return "\n".join(lines)
+
+
+def _perceive(root: str):
+    """Read the design and the kernel's view of it."""
+    from ..desktop import build_state, _verdicts
+
+    state = build_state(root)
+    verdicts = _verdicts(state)
+    return state, verdicts
+
+
+def _failed(results) -> list:
+    """Results the kernel says are invalidated or unknown — the actionable ones."""
+    out = []
+    for r in results or []:
+        v = getattr(r, "verdict", None)
+        name = getattr(v, "name", str(v)).upper()
+        if name in ("INVALIDATED", "UNKNOWN", "FAIL", "STALE"):
+            out.append(r)
+    return out
+
+
+def code(goal: str, root: str, tools: str | None = None,
+         apply: bool = False, max_steps: int = 6) -> CodingRun:
+    """Run the loop until nothing left can be justified, or `max_steps`.
+
+    `apply=False` shows every diff and writes nothing. That default is deliberate:
+    a tool that edits RTL without showing the diff first is not one you would let
+    near silicon signoff.
+    """
+    run = CodingRun(goal=goal, root=root, applied=apply)
+    root_p = Path(root)
+
+    if not root_p.exists():
+        run.reason = f"{root} does not exist"
+        return run
+
+    state, verdicts = _perceive(root)
+    blocks = state.get("block_names") or []
+
+    # ---- decide, from facts only -----------------------------------------
+    for n in range(1, max_steps + 1):
+        completeness = state["graph"].completeness()
+        unresolved = completeness.get("unresolved") or []
+
+        # 1. a module is instantiated but not defined — the graph says so
+        if unresolved:
+            from .propose import missing_modules, propose_stubs
+
+            missing = missing_modules(completeness)
+            prop = propose_stubs(state["graph"], completeness)
+            if prop is not None:
+                step = Step(
+                    n=n,
+                    thought="stub the modules the graph knows are missing",
+                    # name the modules being stubbed, and say which list they came
+                    # from: `unresolved` holds the *dependents*, which is why an
+                    # earlier version of this line named a module it was not
+                    # touching
+                    fact=(f"instantiated but not defined: "
+                          f"{', '.join(missing[:4])}"
+                          + (f"; completeness() marks "
+                             f"{', '.join(str(u) for u in unresolved[:3])} "
+                             f"unresolved as a consequence"
+                             if unresolved else "")),
+                    action=f"propose a diff against {prop.path}",
+                    diff=prop.diff)
+                if apply:
+                    prop.apply(root)
+                    run.applied = True
+                    step.outcome = f"written to {prop.path}"
+                    state, verdicts = _perceive(root)
+                    run.steps.append(step)
+                    continue
+                # without --apply the world did not change, so re-perceiving would
+                # find the same fact and propose the same diff. Stopping is the
+                # honest move; repeating it six times is not a loop, it is a stutter.
+                step.outcome = "diff shown, not written — nothing changed to re-plan from"
+                run.steps.append(step)
+                run.reason = ("showed a diff and wrote nothing; re-running with "
+                              "--apply would take it and let the loop continue")
+                return run
+
+        # 2. a check failed — review() reads only checks that ran
+        bad = _failed(getattr(verdicts, "results", []) or verdicts.get("results", []))
+        if bad:
+            from ..review import review
+
+            rep = review(root, tools=tools)
+            sugg = rep.get("suggestions") or []
+            if sugg:
+                s0 = sugg[0]
+                run.steps.append(Step(
+                    n=n,
+                    thought=f"suggest a fix for {len(bad)} failing result(s)",
+                    fact=f"the kernel marks {len(bad)} result(s) not valid; "
+                         f"review() found {len(sugg)} suggestion(s) from checks "
+                         f"that actually ran",
+                    action=f"review: {s0.get('title') or s0.get('id', 'suggestion')}",
+                    outcome=str(s0.get("why") or s0.get("detail") or "")[:160]))
+                break
+
+        # 3. nothing failing, nothing missing
+        if not unresolved and not bad:
+            run.done = True
+            run.reason = (f"nothing left that can be justified: "
+                          f"{len(blocks)} block(s) resolved, no result invalidated")
+            return run
+
+        # 4. there is a problem but no justified action for it
+        run.reason = ("problems remain but none of them has a kernel-justified "
+                      "action — stopping rather than inventing one")
+        return run
+
+    if not run.reason:
+        run.reason = f"reached the {max_steps}-step limit"
+    return run
+
+
+def render(run: CodingRun) -> str:
+    return run.render()
