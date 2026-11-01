@@ -362,6 +362,16 @@ def cmd_fsl(args) -> int:
     return 0 if rep.ok else 1
 
 
+def cmd_agentic(args) -> int:
+    """Agentic coding: decide what to do from kernel facts, act, re-perceive."""
+    from .agent.coding import code
+
+    run = code(args.goal, args.design or ".", tools=args.tools,
+               apply=args.apply, max_steps=args.max_steps)
+    print(run.render())
+    return 0 if (run.done or not run.changed) else 1
+
+
 def cmd_review(args) -> int:
     """Suggest better code — only from checks that ran."""
     from .review import render, review
@@ -1121,6 +1131,16 @@ def main(argv=None) -> int:
                    help="cross-check the elements the FMEDA names against this "
                         "design's blocks")
     p.set_defaults(func=cmd_fsl)
+
+    p = sub.add_parser("agentic",
+                       help="agentic coding loop: act only on kernel-justified facts")
+    p.add_argument("--goal", default="make this design verify")
+    p.add_argument("--design", default=None, metavar="PATH")
+    p.add_argument("--tools", default=None, metavar="PATH")
+    p.add_argument("--apply", action="store_true",
+                   help="write the diffs; without this nothing is changed")
+    p.add_argument("--max-steps", type=int, default=6)
+    p.set_defaults(func=cmd_agentic)
 
     p = sub.add_parser("review",
                        help="suggest better code — only from checks that ran")
