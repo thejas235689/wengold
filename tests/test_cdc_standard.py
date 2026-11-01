@@ -142,3 +142,50 @@ def test_the_example_collateral_is_conformant():
     root = Path(__file__).resolve().parent.parent
     col = parse((root / "examples/cdc/mixed_clocks_cdc.tcl").read_text())
     assert check(col).errors == []
+
+
+# ---- the attribute sets must match the standard --------------------------
+def test_every_attribute_the_standard_names_is_accepted():
+    """The code must accept every attribute the standard defines.
+
+    A checker that rejects a conformant file is worse than one that misses an
+    unknown attribute, and four were missing: `-frequency`, `-virtual_port` and
+    `-rdc_clock_gate_location` on `set_port`, and `-assert_sequence` on
+    `set_reset_assertion_sequence`. All four appear in the standard's own worked
+    examples.
+    """
+    import json
+    from pathlib import Path
+
+    from wengold.cdc_standard import COMMANDS
+
+    path = Path(__file__).parent / "fixtures" / "cdc_attributes.json"
+    fixture = json.loads(path.read_text())
+    checked = 0
+    for cmd, attrs in fixture.items():
+        if cmd.startswith("_"):
+            continue
+        for a in attrs:
+            assert a in COMMANDS[cmd], (
+                f"{cmd} rejects {a}, which the standard defines")
+            checked += 1
+    assert checked > 30, "the fixture must not be near-empty"
+
+
+def test_a_port_using_a_newly_added_attribute_passes_the_checker():
+    """End to end: a file the standard's own examples would produce.
+
+    Before these four attributes were added this reported "unknown attribute",
+    which is a checker failing a conformant input.
+    """
+    from wengold.cdc_standard import check, parse
+
+    text = ("accellera_cdc::set_module -name top\n"
+            "accellera_cdc::set_port -name CLK -direction input -type clock "
+            "-virtual_port p2 -frequency 100\n"
+            "accellera_cdc::set_reset_assertion_sequence -name reset_seq_1 "
+            "-assert_sequence {rst1_n_i rst0_n_i}\n")
+    conformance = check(parse(text), {"CLK"})
+    unknown = [f.message for f in conformance.findings
+               if "unknown" in f.message.lower()]
+    assert not unknown, unknown
