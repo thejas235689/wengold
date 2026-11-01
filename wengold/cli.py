@@ -349,6 +349,19 @@ def cmd_desktop(args) -> int:
     return 0
 
 
+def cmd_fsl(args) -> int:
+    """Check an Accellera Functional Safety Language (FSL) file."""
+    from .fsl import analyse
+
+    text = _read(args.file)
+    rep = analyse(text, design=args.design)
+    print(f"  FSL: {args.file}")
+    print(rep.render())
+    if args.design:
+        print(f"  cross-checked against {args.design}")
+    return 0 if rep.ok else 1
+
+
 def cmd_review(args) -> int:
     """Suggest better code — only from checks that ran."""
     from .review import render, review
@@ -1100,6 +1113,14 @@ def main(argv=None) -> int:
     p.add_argument("--define", action="append", default=[])
     p.add_argument("--backend", default="auto", choices=["auto", "slang", "regex"])
     p.set_defaults(func=cmd_desktop)
+
+    p = sub.add_parser("fsl",
+                       help="check an Accellera Functional Safety Language file")
+    p.add_argument("file")
+    p.add_argument("--design", default=None, metavar="PATH",
+                   help="cross-check the elements the FMEDA names against this "
+                        "design's blocks")
+    p.set_defaults(func=cmd_fsl)
 
     p = sub.add_parser("review",
                        help="suggest better code — only from checks that ran")
