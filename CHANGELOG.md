@@ -14,6 +14,58 @@ what the tags are for.
 
 ---
 
+## [0.54.0] — 2026-11-01
+
+### Added
+- **Accellera Functional Safety Language (FSL) v1.0.**
+
+  FSL is Tcl, like the CDC collateral already supported: sixteen commands
+  (§5.6.2–§5.6.17) that create FMEDA objects and wire them together.
+
+  ```sh
+  wengold fsl design.fsl --design rtl/
+  ```
+
+  ```
+    FSL: design.fsl
+    7 command(s): 1 fmeda, 2 element, 1 te, 1 fm, 1 sm
+    [warning] line 3: element 'alu' is not a block in the indexed design  (§design)
+    no errors
+  ```
+
+### What it checks, in the standard's own clause numbers
+| clause | rule |
+| --- | --- |
+| §5.4 | a known command, no unknown arguments, required arguments present, no argument twice, enumerations matching **exactly** (`A` is not `a`) |
+| §5.5 | every referenced object already created; no object created twice |
+| §5.5.1 | ISO 26262 and IEC 61508 argument sets are not interchangeable — `-no_part` in an ISO FMEDA is an error, `-safety_relevant` in an IEC one is an error |
+| §5.5.1 | `assign_te_element` needs at least one of `-element_size_*` or `-element_mapping` |
+| §5.5.2 | `create_fmeda` needs exactly one of `-asil`/`-sil` non-`none`; both or neither is an error |
+
+### The check the standard cannot specify
+`create_element` takes a name. **If that name is not a block in the RTL, the FMEDA
+is describing a design that does not exist** — and only a tool holding the graph can
+say so. That is `--design`, and it is the reason this belongs in WENGOLD rather
+than in a standalone FSL linter.
+
+### What it does not do
+It does not compute SPFM, LFM, PMHF or SFF. Those are arithmetic over failure rates
+the FMEDA supplies, and this reads structure, not numbers. It does not judge whether
+a diagnostic coverage figure is believable — that is engineering judgement, not
+parsing. **A clean report is not a safety case**, and the report says so on every
+run rather than leaving it to the reader.
+
+### Two things I got wrong
+- **I said "seventeen commands" when scoping.** §5.6.2 through §5.6.17 is sixteen.
+  Caught by writing the count as an assertion instead of a comment.
+- **My own first sample file was invalid** — it mixed `-no_part` and
+  `-no_effect_*` into an ISO 26262 FMEDA. The checker caught it, which is a better
+  demonstration than a sample that simply passed.
+
+**684 tests passing** locally (23 new).
+
+---
+
 ## [0.53.4] — 2026-10-31
 
 ### Added
