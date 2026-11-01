@@ -1,0 +1,11 @@
+{
+  "_note": "Repository coordinates for the real-project table in RESULTS.md. These were never recorded, which is why the table could not be re-measured: a guess that fetches the wrong repository produces a number that looks real. Entries marked verified were fetched and measured at v0.54.5; the rest are named in RESULTS.md at v0.27.1 but their coordinates were not preserved, so they are deliberately absent rather than guessed.",
+  "repositories": [
+    {"name": "neorv32", "owner": "stnolting", "repo": "neorv32", "verified": true},
+    {"name": "ibex", "owner": "lowRISC", "repo": "ibex", "verified": true},
+    {"name": "cva6", "owner": "openhwgroup", "repo": "cva6", "verified": true},
+    {"name": "cv32e40p", "owner": "openhwgroup", "repo": "cv32e40p", "verified": true},
+    {"name": "picorv32", "owner": "YosysHQ", "repo": "picorv32", "verified": true},
+    {"name": "rocket-chip", "owner": "chipsalliance", "repo": "rocket-chip", "verified": true}
+  ]
+}
