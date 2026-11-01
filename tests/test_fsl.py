@@ -176,7 +176,9 @@ def test_an_element_that_is_a_block_passes():
 def test_a_clean_report_says_what_it_is_not():
     text = check(ISO).render()
     assert "not a safety case" in text
-    assert "no metric is computed" in text
+    # the footer said "no metric is computed" until metrics were collected; it
+    # now says precisely what is and is not done
+    assert "range-checked" in text
 
 
 def test_no_commands_is_not_a_pass():
@@ -200,3 +202,59 @@ def test_analyse_cross_checks_a_real_design(tmp_path):
     msgs = [f.message for f in rep.findings]
     assert any("'alu' is not a block" in m for m in msgs), msgs
     assert not any("'cpu' is not a block" in m for m in msgs)
+
+
+# ---- metric and failure-rate reporting ----------------------------------
+ISO_METRIC = """\
+create_fmeda top -asil b -sil none -dc_aggregation_rule max
+create_te CMOS -te_type digital -source iec_62380 -distribution uniform -mission_profile automotive -parent_fmeda top -elements x
+define_metric_iso26262 -metric_name spfm -dc_type estimated -fmeda_type assumption-based -scope fmeda -te_name CMOS -analysis_type permanent -parent_fmeda top -metric_value {value}
+"""
+
+
+def test_a_declared_metric_is_reported_with_its_unit():
+    """NOTE 2: SPFM and LFM are percentages in [0.0, 100.0]; PMHF is in FIT."""
+    rep = check(ISO_METRIC.format(value="97.0"))
+    assert rep.ok, [f.message for f in rep.errors]
+    assert rep.values == [("spfm", "fmeda", 97.0, "percent")]
+    assert "spfm" in rep.render()
+
+
+def test_a_pmhf_value_is_reported_in_fit():
+    src = ISO_METRIC.format(value="8.5e-9").replace("spfm", "pmhf")
+    rep = check(src)
+    assert rep.values[0][3] == "FIT"
+
+
+def test_a_percentage_outside_its_range_is_an_error():
+    rep = check(ISO_METRIC.format(value="140"))
+    assert any("outside [0.0, 100.0]" in f.message for f in rep.errors)
+
+
+def test_a_value_between_zero_and_one_is_flagged_as_ambiguous():
+    """The standard says percentages in [0.0, 100.0], but its own worked example
+    reports spfm as 0.97 — which as a percentage is 0.97%, not 97%. The checker
+    says so rather than silently picking one reading."""
+    rep = check(ISO_METRIC.format(value="0.97"))
+    warns = [f for f in rep.findings if f.severity == "warning"]
+    assert warns and "0.97" in warns[0].message
+    assert "fraction was meant" in warns[0].message
+
+
+def test_a_metric_name_from_the_wrong_standard_is_an_error():
+    """`sff` is IEC 61508; `spfm` is ISO 26262."""
+    rep = check(ISO_METRIC.format(value="97.0").replace("-metric_name spfm",
+                                                        "-metric_name sff"))
+    assert any("metric_name" in f.message for f in rep.errors)
+
+
+def test_the_scope_makes_the_matching_name_required():
+    rep = check(ISO_METRIC.format(value="97.0").replace("-scope fmeda",
+                                                        "-scope element"))
+    assert any("requires -element_name" in f.message for f in rep.errors)
+
+
+def test_the_footer_does_not_claim_metrics_are_computed():
+    text = check(ISO_METRIC.format(value="97.0")).render()
+    assert "not computed" in text or "range-checked" in text
+    assert "A clean report is not a safety case" in text
