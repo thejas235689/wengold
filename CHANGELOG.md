@@ -66,7 +66,8 @@ accepts what we write; it does not prove we write everything the format allows.
 For the spec format there is no external document to appeal to, and the registry
 says so rather than implying otherwise.
 
-**742 tests passing** locally (12 new).
+**742 tests passing**, 13 skipped, verified from a fresh checkout of `main`
+(685 + 57 across two runs, because the whole suite exceeds one call's limit).
 
 ---
 
