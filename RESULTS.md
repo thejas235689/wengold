@@ -23,16 +23,47 @@ blocks; ibex at 345 blocks; cva6 at 458. Twenty-seven releases of front-end work
 not move them, which is the useful result: the table was not wrong, it was
 *unreproducible*, and those are different problems.
 
-### Why the rest were not re-measured
+### The coordinates were recovered, and checked
 
-The other 27 projects are named in the table below but **their repository
-coordinates were never recorded anywhere in this repository**. Re-measuring them
-would mean guessing an owner/repo, and a guess that fetches the wrong repository
-produces a number that looks real — worse than a number that says when it was taken.
+The coordinates were never recorded, so they were recovered by searching GitHub —
+and then **verified by measuring each candidate against its recorded row**. A
+coordinate was only kept if the numbers agreed:
 
-`tools/repositories.json` now holds the coordinates that are known, and
-`tools/re-measure.py` fetches and measures them. Adding a project means adding its
-coordinates there, which is the point.
+| evidence | projects |
+| --- | --- |
+| **exact** — files, nodes, edges and blocks all equal the recorded row | 13 |
+| **graph** — nodes, edges and blocks equal, only the file count moved because the repository gained files | 5 |
+| **blocks** — the block count equals the recorded row, the only value recorded | 4 |
+| **unmatched** — the canonical repository for the name, but nothing to compare against | 3 |
+
+The `graph` cases are worth a note, because they are the ones where a guess would
+have been tempting and wrong in a subtle way. `qeciphy` now has 203 files where the
+table says 180, and `riscduino` has 235 where it says 232 — but their node, edge and
+block counts are **identical** (qeciphy 165 / 334 / 98, riscduino 1,564 / 40,797 /
+304). The graph is the same graph; the repository grew. That is much stronger
+evidence than a name match.
+
+Three candidates were rejected for not matching, including two other repositories
+called `2D-systolic-array` — `tms4517` measured 3 files / 8 nodes where the row says
+2 / 6, and `el-oggy` measured 78 files / 49 blocks. `bodsvei/2D-systolic-array`
+matched exactly. **Searching for a name and taking the first hit would have produced
+a number that looked real and was wrong.**
+
+### What is still not measured, and why
+
+| project | why |
+| --- | --- |
+| `minerva` | no GitHub repository by that name; the recorded row has a block count and no coordinates |
+| `XiangShan` | recorded as not reachable at master/main, and still is |
+| `openpiton` | same |
+| `Arbiter-Verification`, `logisim-cpu-project` | ambiguous names, not searched |
+| `rustdv_fifo` | a directory inside `rustdv/rustdv`, not a repository |
+| `OpenTitan` | needs its own run; the recorded row came from a different measurement path |
+
+`tools/repositories.json` holds **25 recovered coordinates** — 22 of them checked
+against a recorded row — and lists the 7 that could not be recovered with the reason
+for each. `tools/re-measure.py` fetches and
+measures them, and refuses to run without `pyslang`.
 
 ### The measurement depends on the backend, and this is not optional
 
