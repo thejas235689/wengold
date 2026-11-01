@@ -62,7 +62,10 @@ run rather than leaving it to the reader.
   `-no_effect_*` into an ISO 26262 FMEDA. The checker caught it, which is a better
   demonstration than a sample that simply passed.
 
-**684 tests passing** locally (23 new).
+**719 tests passing**, 13 skipped, verified from a fresh checkout of `main`
+(661 + 33 + 25 across three runs, because the whole suite exceeds one call's
+limit). The skips are the real-tool tests, which need `iverilog`/`PyQt6` on the
+machine.
 
 ---
 
