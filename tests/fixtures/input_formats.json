@@ -1,5 +1,5 @@
 {
-  "_note": "Every module that rejects unknown input, and what verifies its accepted set. A checker that refuses a valid input is worse than one that misses an unknown key, so each of these needs evidence that its table matches reality. A new format must be added here or the meta-test fails.",
+  "_note": "Every module that rejects unknown input, and what verifies its accepted set. A checker that refuses a valid input is worse than one that misses an unknown key, so each needs evidence its table matches reality. `external` means a document outside this repo; `own examples` and `internal` are cross-checks against a second implementation rather than a rubber stamp.",
   "formats": {
     "wengold/fsl.py": {
       "what": "the sixteen FSL commands and their arguments",
@@ -18,16 +18,16 @@
     "wengold/generate/spec.py": {
       "what": "the YAML spec keys, top level and nested",
       "evidence": "own examples",
-      "source": "every examples/**/*.spec.yaml that ships",
+      "source": "every examples/**/*.spec.yaml that ships, plus a perturbation probe: each accepted key's value is changed and the generated RTL must differ or the loader must reject it",
       "fixture": null,
-      "test": "tests/test_spec_keys.py::test_every_nested_key_is_known"
+      "test": "tests/test_accepted_sets_are_consumed.py::test_no_spec_key_is_accepted_and_ignored"
     },
     "wengold/desktop.py": {
       "what": "the app's command list",
       "evidence": "internal",
-      "source": "CLI_COMMANDS, checked against the hint bar it renders",
+      "source": "CLI_COMMANDS against the `if verb ==` dispatch chain in the same module \u2014 two separate pieces of code, so they can drift",
       "fixture": null,
-      "test": "tests/test_native_app.py::test_the_hint_bar_lists_every_command"
+      "test": "tests/test_accepted_sets_are_consumed.py::test_every_declared_command_has_a_dispatch_branch"
     }
   }
 }
