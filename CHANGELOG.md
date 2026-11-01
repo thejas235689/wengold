@@ -72,7 +72,9 @@ ISO 26262 and IEC 61508 formulas, which the standard references but does not
 restate. The footer now says "collected and range-checked, not computed" rather
 than the older, vaguer "no metric is computed".
 
-**702 tests passing** locally (30 in the FSL suite).
+**726 tests passing**, 13 skipped, verified from a fresh checkout of `main`
+(40 + 661 + 25 across three runs, because the whole suite exceeds one call's
+limit). 30 of them are in the FSL suite.
 
 ---
 
