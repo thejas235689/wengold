@@ -41,7 +41,10 @@ PORT_TYPES = {"clock", "data", "reset", "async_reset", "virtual_clock",
               "constant", "static",
               # Clause 7.6: a port that represents a CDC or RDC control signal.
               # Absent until now, so a conformant file declaring one was rejected.
-              "cdc_control", "rdc_control"}
+              "cdc_control", "rdc_control",
+              # Table 3 and Clause 5 d) 2): a virtual reset, used the same way as
+              # a virtual clock. Absent, so a conformant declaration was rejected.
+              "virtual_reset"}
 DIRECTIONS = {"input", "output", "inout", "in", "out"}
 
 # every command the standard defines, and the attributes each accepts
@@ -339,7 +342,7 @@ def check(col: Collateral, rtl_ports: set | None = None) -> Conformance:
 
     if rtl_ports is not None:
         declared = {p.base_name for p in col.ports.values()
-                    if p.type != "virtual_clock"}
+                    if p.type not in ("virtual_clock", "virtual_reset")}
         for missing in sorted(declared - set(rtl_ports)):
             out.findings.append(Finding(
                 "warning", "declared, not in RTL",
