@@ -9,20 +9,20 @@ So the question this answers is not "is the file valid" — `cdc_standard.check`
 that — but **"which of the six scenarios does this collateral actually support, and
 what is missing from the ones it does not"**.
 
-What can and cannot be told apart
----------------------------------
-The six scenarios are distinguished partly by modelling and partly by *design
-intent*. Two pairs are indistinguishable from collateral alone:
+All six are distinguishable, and my first version said two pairs were not
+-----------------------------------------------------------------------
+The first version of this module reported §5.4/§5.5 and §5.6/§5.7 as pairs, claiming
+they differed in design intent rather than in attributes. **That was wrong**, and I
+had asserted it without reading the standard's examples. They differ in the
+collateral:
 
-  * §5.4 and §5.5 both model an input port blocked by an RDC control. They differ in
-    whether the data source is internal or external to the IP — which the collateral
-    expresses as a reset association, not as a distinct attribute.
-  * §5.6 and §5.7 both model an output port with an RDC control. They differ in
-    whether the output is gated internally or externally.
-
-This module reports those as **pairs** and says so. Claiming to distinguish them
-would be inventing a rule the standard does not give, and a wrong "scenario 4
-covered" is worse than an honest "3 or 4".
+  * **§5.4** (internal data source) — the `rdc_control` port carries
+    `-rdc_data_from_reset`, naming the reset *inside* the IP that it blocks.
+  * **§5.5** (external data source) — the same modelling *without* that attribute,
+    because the reset it blocks belongs to the integration, not the IP.
+  * **§5.6** (external gating) — the output data port carries `-rdc_control`.
+  * **§5.7** (internal gating) — the output carries `-associated_from_reset` and
+    **no** control: being in the receiving reset domain is what prequalifies it.
 
 What this does not do
 ---------------------
@@ -75,6 +75,11 @@ def _ports(col, kind=None, direction=None):
         if direction and p.direction not in (direction, direction[0]):
             continue
         yield p
+
+
+def _control_of(port) -> str:
+    """The control signal a data port declares, or ""."""
+    return (port.raw.get("rdc_control") or port.raw.get("cdc_control") or "").strip()
 
 
 def _data_ports(col, direction):
@@ -133,44 +138,88 @@ def check_scenarios(col) -> list[Scenario]:
             missing=["set_reset_assertion_sequence -assert_sequence, which is how "
                      "the required reset order is expressed"]))
 
-    # ---- §5.4 / §5.5: input port blocked by an RDC control
+    # ---- §5.4 and §5.5: input port blocked by an RDC control
+    #
+    # They ARE distinguishable, and my first version said they were not. The
+    # standard's own examples differ: in §5.4 (internal data source) the
+    # `rdc_control` port carries `-rdc_data_from_reset` naming the internal reset
+    # it blocks; in §5.5 (external data source) it does not, because the reset it
+    # blocks belongs to the integration, not the IP.
     controls = [p for p in ports if p.type in ("rdc_control", "cdc_control")]
-    blocked_inputs = [p for p in _data_ports(col, "input")
-                      if p.raw.get("rdc_control") or p.raw.get("cdc_control")]
-    if controls and blocked_inputs:
-        ev = (f"{blocked_inputs[0].name} is blocked by "
-              f"{blocked_inputs[0].raw.get('rdc_control') or blocked_inputs[0].raw.get('cdc_control')}")
-        out.append(Scenario("§5.4", "interface RDC control, safe internal RDC", True,
-                            evidence=ev,
-                            also="indistinguishable from §5.5 without design intent"))
+    blocked_inputs = [p for p in _data_ports(col, "input") if _control_of(p)]
+    internal_controls = [p for p in controls if p.raw.get("rdc_data_from_reset")]
+
+    if blocked_inputs and internal_controls:
+        out.append(Scenario(
+            "§5.4", "interface RDC control, safe internal RDC", True,
+            evidence=(f"{blocked_inputs[0].name} blocked by {_control_of(blocked_inputs[0])}; "
+                      f"{internal_controls[0].name} declares -rdc_data_from_reset "
+                      f"{internal_controls[0].raw.get('rdc_data_from_reset')}")))
     else:
         miss = []
-        if not controls:
-            miss.append("a port declared -type rdc_control (or cdc_control)")
         if not blocked_inputs:
             miss.append("-rdc_control on the input data port it blocks")
-        out.append(Scenario("§5.4", "interface RDC control, safe internal RDC", False,
-                            missing=miss,
-                            also="indistinguishable from §5.5 without design intent"))
+        if not internal_controls:
+            miss.append("-rdc_data_from_reset on the rdc_control port — the "
+                        "internal reset it blocks, which is what makes this "
+                        "scenario distinct from §5.5")
+        out.append(Scenario("§5.4", "interface RDC control, safe internal RDC",
+                            False, missing=miss))
 
-    # ---- §5.6 / §5.7: output port with an RDC control
-    blocked_outputs = [p for p in _data_ports(col, "output")
-                       if p.raw.get("rdc_control") or p.raw.get("cdc_control")]
-    if controls and blocked_outputs:
-        out.append(Scenario("§5.6", "output interface RDC control, safe split RDC",
-                            True,
-                            evidence=f"{blocked_outputs[0].name} is gated by an RDC "
-                                     f"control",
-                            also="indistinguishable from §5.7 without design intent"))
+    if blocked_inputs and controls and not internal_controls:
+        out.append(Scenario(
+            "§5.5", "interface RDC control, safe interface RDC crossing", True,
+            evidence=(f"{blocked_inputs[0].name} blocked by "
+                      f"{_control_of(blocked_inputs[0])}; the control declares no "
+                      f"-rdc_data_from_reset, so the reset it blocks is external")))
+    else:
+        miss = []
+        if not blocked_inputs:
+            miss.append("-rdc_control on the input data port it blocks")
+        if internal_controls:
+            miss.append("no -rdc_data_from_reset on the rdc_control port — with it "
+                        "declared the modelling is §5.4, not §5.5")
+        elif not controls:
+            miss.append("a port declared -type rdc_control (or cdc_control)")
+        out.append(Scenario("§5.5",
+                            "interface RDC control, safe interface RDC crossing",
+                            False, missing=miss))
+
+    # ---- §5.6 and §5.7: output port, external or internal gating
+    #
+    # Also distinguishable: §5.6 blocks the output with an `-rdc_control`; §5.7
+    # relies on the output already being in the receiving reset domain
+    # (`-associated_from_reset`) with no control at all.
+    gated_outputs = [p for p in _data_ports(col, "output") if _control_of(p)]
+    prequalified = [p for p in _data_ports(col, "output")
+                    if not _control_of(p) and p.associated_from_reset]
+
+    if gated_outputs:
+        out.append(Scenario(
+            "§5.6", "output interface RDC control, safe split RDC", True,
+            evidence=(f"{gated_outputs[0].name} is gated by "
+                      f"{_control_of(gated_outputs[0])}")))
     else:
         miss = []
         if not controls:
             miss.append("a port declared -type rdc_control (or cdc_control)")
-        if not blocked_outputs:
+        if not gated_outputs:
             miss.append("-rdc_control on the output data port it blocks")
         out.append(Scenario("§5.6", "output interface RDC control, safe split RDC",
-                            False, missing=miss,
-                            also="indistinguishable from §5.7 without design intent"))
+                            False, missing=miss))
+
+    if prequalified:
+        out.append(Scenario(
+            "§5.7", "output interface prequalified for safe RDC crossing", True,
+            evidence=(f"{prequalified[0].name} declares -associated_from_reset "
+                      f"{prequalified[0].associated_from_reset[0] if prequalified[0].associated_from_reset else '?'} "
+                      f"and no -rdc_control")))
+    else:
+        out.append(Scenario(
+            "§5.7", "output interface prequalified for safe RDC crossing", False,
+            missing=["an output data port with -associated_from_reset and no "
+                     "-rdc_control — being in the receiving reset domain is what "
+                     "prequalifies it"]))
 
     return out
 
