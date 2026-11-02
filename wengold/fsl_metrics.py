@@ -38,7 +38,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 __all__ = ["FailureRates", "Metric", "MissingRates", "collect", "compute",
-           "render"]
+           "iec61508", "render"]
 
 
 class MissingRates(Exception):
@@ -84,7 +84,14 @@ class Metric:
     note: str = ""
 
     def render(self) -> str:
-        body = f"  {self.name:<5} {self.value:>10.4f} {self.unit}"
+        # a small rate rendered as 0.0000 reads as "no failures", which is a wrong
+        # statement about a real number. Switch to scientific notation instead.
+        v = self.value
+        if v == 0 or (abs(v) >= 1e-3) or v != v:
+            shown = f"{v:>10.4f}"
+        else:
+            shown = f"{v:>10.3e}"
+        body = f"  {self.name:<5} {shown} {self.unit}"
         lines = [body, f"        = {self.formula}"]
         shown = ", ".join(f"{k}={v:g}" for k, v in self.terms.items())
         if shown:
@@ -101,7 +108,10 @@ SPF_TYPES = ("spf", "non_safe")
 RESIDUAL_TYPES = ("residual",)
 LATENT_MPF_TYPES = ("mpf_latent", "mpf_perceived_latent")
 SAFE_TYPES = ("safe",)
-DANGEROUS_UNDETECTED_TYPES = ("non_safe", "spf")
+#: `dangerous_undetected` is the IEC 61508 name and the most specific; the ISO
+#: names are fallbacks. It was missing from this tuple at first, so a file that
+#: declared it produced PFH = 0 and an SFF that silently ignored the rate.
+DANGEROUS_UNDETECTED_TYPES = ("dangerous_undetected", "non_safe", "spf")
 
 
 def collect(report) -> FailureRates:
@@ -203,7 +213,47 @@ def compute(frs: FailureRates) -> list[Metric]:
     return out
 
 
-def render(frs: FailureRates) -> str:
+def iec61508(frs: FailureRates, proof_test_hours: float | None = None) -> list[Metric]:
+    """IEC 61508-2 demand-mode metrics.
+
+    `PFH` (high demand, per hour) is the dangerous undetected rate and needs nothing
+    else. `PFD_avg` (low demand) is `lambda_DU x T / 2` where `T` is the proof-test
+    interval — and **the interval is not in an FMEDA file**. Rather than assume a
+    number, this refuses unless one is given.
+    """
+    out: list[Metric] = []
+    intrinsic = frs.get("intrinsic")
+    if intrinsic <= 0:
+        return out
+    du_fit = frs.get(*DANGEROUS_UNDETECTED_TYPES)
+    du_per_hour = du_fit * 1e-9          # FIT is per 1e9 hours
+    out.append(Metric(
+        name="PFH",
+        value=du_per_hour,
+        unit="/h",
+        formula="lambda_DU (FIT) x 1e-9",
+        terms={"dangerous_undetected_FIT": du_fit},
+        note="IEC 61508-2 high-demand, per hour"))
+    if proof_test_hours and proof_test_hours > 0:
+        out.append(Metric(
+            name="PFD",
+            value=du_per_hour * proof_test_hours / 2.0,
+            unit="",
+            formula="lambda_DU x T / 2",
+            terms={"lambda_DU_per_hour": du_per_hour, "T_hours": proof_test_hours},
+            note="IEC 61508-2 low-demand, average over the proof-test interval"))
+    else:
+        out.append(Metric(
+            name="PFD", value=float("nan"), unit="",
+            formula="lambda_DU x T / 2",
+            terms={"lambda_DU_per_hour": du_per_hour},
+            missing=["a proof-test interval"],
+            note="not computable: PFD depends on the proof-test interval, which an "
+                 "FMEDA file does not carry. Pass one explicitly."))
+    return out
+
+
+def render(frs: FailureRates, proof_test_hours: float | None = None) -> str:
     if not frs.values:
         return ("  no failure rates declared — `define_fr_*` is what carries them,\n"
                 "  and the metrics are computed from it")
@@ -220,6 +270,7 @@ def render(frs: FailureRates) -> str:
         lines.append("  not computed: no `intrinsic` rate declared, so no metric has "
                      "a denominator")
         return "\n".join(lines)
+    metrics = metrics + iec61508(frs, proof_test_hours)
     lines.append("  computed metrics:")
     for m in metrics:
         lines.append(m.render())
