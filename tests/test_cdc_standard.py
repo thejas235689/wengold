@@ -114,7 +114,7 @@ def test_the_defined_sets_match_the_standard():
     """
     assert PORT_TYPES == {"clock", "data", "reset", "async_reset",
                           "virtual_clock", "constant", "static",
-                          "cdc_control", "rdc_control"}
+                          "cdc_control", "rdc_control", "virtual_reset"}
     assert {"input", "output", "inout"} <= DIRECTIONS
 
 
