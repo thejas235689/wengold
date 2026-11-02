@@ -46,7 +46,7 @@ def test_an_empty_collateral_supports_no_scenario():
 
 def test_every_scenario_names_its_clause():
     clauses = {s.clause for s in check_scenarios(parse(HEAD))}
-    assert clauses == {"§5.2", "§5.3", "§5.4", "§5.6"}
+    assert clauses == {"§5.2", "§5.3", "§5.4", "§5.5", "§5.6", "§5.7"}
 
 
 # ---- §5.2 --------------------------------------------------------------
@@ -75,10 +75,12 @@ def test_scenario_2_needs_a_reset_sequence():
 
 
 # ---- §5.4 / §5.6 and the pairs ----------------------------------------
-def test_scenario_3_needs_a_control_port_and_a_blocked_input():
+def test_scenario_3_needs_the_internal_reset_attribute():
+    """A control port plus a blocked input is not enough for §5.4 — without
+    `-rdc_data_from_reset` the modelling is §5.5."""
     col = parse(HEAD
                 + "accellera_cdc::set_port -name rdcq0_i -direction input "
-                  "-type rdc_control\n"
+                  "-type rdc_control -rdc_data_from_reset rst0_n_i\n"
                 + "accellera_cdc::set_port -name data1_i -direction input "
                   "-type data -rdc_control rdcq0_i\n")
     assert by_clause(col)["§5.4"].covered
@@ -101,12 +103,54 @@ def test_scenario_5_needs_a_blocked_output():
     assert by_clause(col)["§5.6"].covered
 
 
-def test_the_indistinguishable_pairs_are_reported_as_pairs():
-    """§5.4/§5.5 and §5.6/§5.7 differ in design intent, not attributes."""
-    col = parse(HEAD)
-    s = by_clause(col)
-    assert "5.5" in s["§5.4"].also
-    assert "5.7" in s["§5.6"].also
+def test_all_six_scenarios_are_assessed():
+    """The first version reported four and called the other two indistinguishable.
+    They are distinguishable — see the two tests below."""
+    clauses = {s.clause for s in check_scenarios(parse(HEAD))}
+    assert clauses == {"§5.2", "§5.3", "§5.4", "§5.5", "§5.6", "§5.7"}
+
+
+def test_scenario_3_and_4_are_told_apart_by_rdc_data_from_reset():
+    """§5.4's control port names the internal reset it blocks; §5.5's does not,
+    because the reset it blocks belongs to the integration."""
+    internal = parse(HEAD
+                     + "accellera_cdc::set_port -name rdcq0_i -direction input "
+                       "-type rdc_control -rdc_data_from_reset rst0_n_i\n"
+                     + "accellera_cdc::set_port -name data0_i -direction input "
+                       "-type data -rdc_control rdcq0_i\n")
+    external = parse(HEAD
+                     + "accellera_cdc::set_port -name rdcq0_i -direction input "
+                       "-type rdc_control\n"
+                     + "accellera_cdc::set_port -name data0_i -direction input "
+                       "-type data -rdc_control rdcq0_i\n")
+    a, b = by_clause(internal), by_clause(external)
+    assert a["§5.4"].covered and not a["§5.5"].covered
+    assert b["§5.5"].covered and not b["§5.4"].covered
+
+
+def test_scenario_5_and_6_are_told_apart_by_the_presence_of_a_control():
+    """§5.6 blocks the output with an -rdc_control; §5.7 prequalifies it by being
+    in the receiving reset domain, with no control at all."""
+    gated = parse(HEAD
+                  + "accellera_cdc::set_port -name rdcq0_o -direction output "
+                    "-type rdc_control\n"
+                  + "accellera_cdc::set_port -name data0_o -direction output "
+                    "-type data -rdc_control rdcq0_o\n")
+    prequalified = parse(HEAD
+                         + "accellera_cdc::set_port -name data0_o -direction output "
+                           "-type data -associated_from_reset rst1_n_i "
+                           "-associated_from_clock clk0_i\n")
+    a, b = by_clause(gated), by_clause(prequalified)
+    assert a["§5.6"].covered and not a["§5.7"].covered
+    assert b["§5.7"].covered and not b["§5.6"].covered
+
+
+def test_the_singular_clock_attribute_is_accepted():
+    """`-associated_from_clock` appears in the standard's own §5.6 and §5.7
+    examples. I dismissed it as a hyphenation artefact in v0.54.3."""
+    col = parse(HEAD + "accellera_cdc::set_port -name d0 -direction output "
+                       "-type data -associated_from_clock clk0_i\n")
+    assert col.ports["d0"].raw.get("associated_from_clock") == "clk0_i"
 
 
 # ---- honesty -----------------------------------------------------------
