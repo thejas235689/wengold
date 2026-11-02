@@ -4,7 +4,8 @@ The claim these assertions support is narrow, and the header says so: they check
 that the data stability the collateral declares holds in the waveforms. They do
 not prove a crossing is safe, because a closed box cannot see the synchroniser.
 
-`-cdc_control_setup` / `-cdc_control_hold` are durations in the collateral and
+`-cdc_control_setup` / `-cdc_control_hold` are integer counts of destination
+clock cycles (Table 3), not durations — so they are used directly, with no
 repetition counts in SVA. This module refuses to invent a clock period: it emits a
 parameter with the duration in a comment, because a wrong repetition count
 produces an assertion that passes for the wrong reason.
@@ -19,8 +20,8 @@ accellera_cdc::set_module -name m
 accellera_cdc::set_port -name clk_a -direction input -type clock
 accellera_cdc::set_port -name d_in -direction input -type data \\
   -associated_to_clocks clk_a -sampling_edge neg \\
-  -cdc_control wr_en -cdc_control_setup 2ns -cdc_control_hold 1ns
-accellera_cdc::set_port -name wr_en -direction input -type data -cdc_control wr_en
+  -cdc_control wr_en -cdc_control_setup 2 -cdc_control_hold 1
+accellera_cdc::set_port -name wr_en -direction input -type cdc_control -polarity high
 """
 
 BARE = """
@@ -39,7 +40,7 @@ def test_it_emits_a_module_named_after_the_ip():
 def test_a_crossing_gets_a_four_edge_stability_assertion():
     """Clause 8.2: stable for four destination clock edges."""
     sv = emit(parse(FULL))
-    assert "$changed(d_in) |-> $stable(d_in)[*3]" in sv
+    assert "$changed(d_in) |-> $stable(d_in)[*2]" in sv
     assert "four clk_a edges" in sv
 
 
@@ -58,20 +59,31 @@ def test_an_undeclared_edge_defaults_to_pos_and_says_so():
 def test_setup_and_hold_become_assertions():
     sv = emit(parse(FULL))
     assert "a_cdc_setup_d_in" in sv and "a_cdc_hold_d_in" in sv
-    assert "SETUP_CYCLES_d_in" in sv and "HOLD_CYCLES_d_in" in sv
+    assert "a_cdc_setup_d_in" in sv and "a_cdc_hold_d_in" in sv
+    # the declared values are already cycle counts: no parameter, no default
+    assert "SETUP_CYCLES" not in sv and "HOLD_CYCLES" not in sv
 
 
-def test_the_declared_durations_are_kept_in_the_comments():
-    """The duration must survive even though the repetition count is a parameter."""
+def test_a_non_integer_setup_value_is_reported_not_dropped():
+    """Table 3 makes setup/hold integer cycle counts. A value like `2ns` is not
+    that form; the emitter says so rather than silently emitting nothing."""
+    out = emit(parse(FULL.replace("-cdc_control_setup 2",
+                                  "-cdc_control_setup 2ns")))
+    assert "is not an integer cycle count" in out
+
+
+def test_the_declared_cycle_counts_are_kept_in_the_comments():
+    """The declared count must appear in the generated file, so a reader can
+    check the assertion against the collateral."""
     sv = emit(parse(FULL))
-    assert "-cdc_control_setup = 2ns" in sv
-    assert "-cdc_control_hold = 1ns" in sv
+    assert "-cdc_control_setup = 2" in sv
+    assert "-cdc_control_hold = 1" in sv
 
 
 def test_it_does_not_invent_a_clock_period():
     """A guessed repetition count is an assertion that passes for the wrong reason."""
     sv = emit(parse(FULL))
-    assert "SETUP_CYCLES_d_in = 1" in sv          # conservative default, not 2ns/x
+    assert "SETUP_CYCLES" not in sv          # the declared value is a cycle count
     assert "NOT guessed here" in sv
 
 
