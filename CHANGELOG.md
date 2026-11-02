@@ -14,6 +14,63 @@ what the tags are for.
 
 ---
 
+## [0.58.2] — 2026-11-02
+
+### Fixed
+- **"Port list not recoverable from the graph" was true of the graph and false of
+  the project.**
+
+  Every stub `wengold agentic` proposed said:
+
+  ```systemverilog
+  module missing_block();
+    // TODO: real implementation — port list not recoverable from the graph
+  endmodule
+  ```
+
+  But the instantiation names every port:
+
+  ```systemverilog
+  missing_block u_missing(.clk(clk), .rst_n(rst_n), .q(inner));
+  ```
+
+  The stub now reads the instantiation site and emits:
+
+  ```systemverilog
+  module missing_block(clk, rst_n, q);
+    // TODO: real implementation — ports taken from the instantiation site
+  endmodule
+  ```
+
+  **No directions are claimed**, because an instantiation gives names and
+  connections, not directions. The non-ANSI form is legal and says nothing the
+  source does not support. A stub without ports can fail to elaborate against its
+  own instantiation, which is worse than no stub.
+
+  When no instantiation is found the comment now says exactly that — "no
+  instantiation of this module was found, so even its ports are unknown" — rather
+  than blaming the graph.
+
+### The pattern this release is about
+v0.58.1 fixed one instance of a claim stated with confidence and never checked.
+This is the second: a limitation asserted in a code comment, repeated into every
+generated file, that a four-line read of the source would have disproved. Both were
+**excuses that looked like judgement**, which is why neither showed up as a failing
+test — a limitation is not something a test can contradict unless you write one that
+tries to do the thing you said was impossible.
+
+Four tests now do exactly that: recover the ports, check no direction is claimed,
+check the fallback message is accurate, and check the graph still wins when it has
+the answer.
+
+### Also
+- The dead `also` field in `cdc_scenarios.Scenario` — a leftover from the pairs
+  design removed in v0.58.1 — is gone.
+
+**822 tests passing** locally.
+
+---
+
 ## [0.58.1] — 2026-11-02
 
 ### Fixed
