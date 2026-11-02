@@ -48,7 +48,9 @@ Three tests had encoded the old four-scenario contract, including one that asser
 modelling. They now assert the six-scenario contract and the distinguishing
 attribute.
 
-**818 tests passing** locally.
+**818 tests passing**, 13 skipped, verified from a fresh checkout of `main`
+(793 + 25 across two runs). `cdc --scenarios` was run there and reports
+3 of 6 on the demo collateral.
 
 ---
 
