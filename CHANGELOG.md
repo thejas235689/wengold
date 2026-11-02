@@ -14,6 +14,44 @@ what the tags are for.
 
 ---
 
+## [0.58.1] — 2026-11-02
+
+### Fixed
+- **The "indistinguishable pairs" claim was wrong.** v0.58.0 reported §5.4/§5.5 and
+  §5.6/§5.7 as pairs, saying they differed in design intent rather than in
+  attributes. **They differ in the collateral**, and I had asserted otherwise without
+  reading the standard's examples:
+
+  | scenario | the attribute that distinguishes it |
+  | --- | --- |
+  | §5.4 internal data source | the `rdc_control` port carries `-rdc_data_from_reset`, naming the reset *inside* the IP that it blocks |
+  | §5.5 external data source | the same modelling **without** that attribute, because the reset it blocks belongs to the integration |
+  | §5.6 external gating | the output data port carries `-rdc_control` |
+  | §5.7 internal gating | the output carries `-associated_from_reset` and **no** control — being in the receiving reset domain is what prequalifies it |
+
+  All six are now assessed separately, and two tests pin the discrimination: the same
+  collateral cannot satisfy both members of either pair.
+
+  This is the failure this project keeps finding in other people's work — a claim
+  stated with confidence that was never checked against the source. The standard's
+  Example 34 and Example 35 are four lines apart and differ by one attribute.
+
+### Fixed
+- **`-associated_from_clock` (singular) is a real attribute.** I dismissed it as a
+  hyphenation artefact in v0.54.3 when auditing the attribute set. It appears in the
+  standard's own §5.6 and §5.7 examples, alongside the plural. Both forms are
+  accepted now, and `-associated_to_clock` with them.
+
+### Tests updated, not weakened
+Three tests had encoded the old four-scenario contract, including one that asserted
+§5.4 was covered by a control port and a blocked input alone — which is §5.5's
+modelling. They now assert the six-scenario contract and the distinguishing
+attribute.
+
+**818 tests passing** locally.
+
+---
+
 ## [0.58.0] — 2026-11-02
 
 ### Added — CDC, Clause 5
