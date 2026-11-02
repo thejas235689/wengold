@@ -62,7 +62,8 @@ combinational path beside a synchroniser is not flagged; and `cdc.py`'s write re
 treats a `<=` comparison as an assignment. Those are listed first in the audit
 document because they are the ones that matter.
 
-**834 tests passing** locally (6 new).
+**834 tests passing**, 13 skipped, verified from a fresh checkout of `main`
+(809 + 25 across two runs). The first verification caught a file I had updated locally but not pushed — `tests/test_cdc_standard.py` still expected the old port-type set, so `main` failed while my working tree passed.
 
 ---
 
