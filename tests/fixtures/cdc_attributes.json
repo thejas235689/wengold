@@ -27,7 +27,9 @@
     "-rdc_data_to_clock",
     "-rdc_clock_gate_location",
     "-frequency",
-    "-virtual_port"
+    "-virtual_port",
+    "-associated_from_clock",
+    "-associated_to_clock"
   ],
   "set_clock_group": [
     "-name",
