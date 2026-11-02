@@ -68,7 +68,9 @@ And two pairs of scenarios — §5.4/§5.5 and §5.6/§5.7 — differ in *design
 in attributes, so they are reported as pairs. Claiming to distinguish them would be
 inventing a rule the standard does not give.
 
-**815 tests passing** locally (18 new).
+**815 tests passing**, 13 skipped, verified from a fresh checkout of `main`
+(790 + 25 across two runs). `cdc --scenarios` and
+`fsl --metrics --proof-test 10000` were both run there.
 
 ---
 
