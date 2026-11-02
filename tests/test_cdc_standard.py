@@ -106,8 +106,15 @@ def test_values_outside_the_defined_sets_are_errors():
 
 
 def test_the_defined_sets_match_the_standard():
+    """Clause 4 defines the port types; Clause 7.6 adds the two control types.
+
+    `cdc_control` and `rdc_control` were missing until v0.58.0, so a conformant file
+    declaring one was rejected — the same class of bug as the four missing
+    attributes.
+    """
     assert PORT_TYPES == {"clock", "data", "reset", "async_reset",
-                          "virtual_clock", "constant", "static"}
+                          "virtual_clock", "constant", "static",
+                          "cdc_control", "rdc_control"}
     assert {"input", "output", "inout"} <= DIRECTIONS
 
 
