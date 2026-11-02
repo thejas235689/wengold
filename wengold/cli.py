@@ -148,7 +148,7 @@ def cmd_regmap(args) -> int:
     return 0 if not amap.check() else 1
 
 
-def cmd_cdc(args) -> int:
+def cmd_cdc(args) -> int:  # noqa: C901
     from .graph.cdc import analyse
     text = _read(args.file)
 
@@ -235,8 +235,13 @@ def cmd_cdc(args) -> int:
         print(f"  crossing {c.signal}: {c.from_domain} -> {c.to_domain} ({c.kind})")
     if rep.unresolved:
         print(f"  unresolved (no determinable domain): {rep.unresolved}")
-    return 0 if not rep.crossings else 1
+    if getattr(args, "scenarios", False):
+        from .cdc_scenarios import check_scenarios, render as render_scen
+        from .cdc_standard import parse as parse_collateral
+        print()
+        print(render_scen(check_scenarios(parse_collateral(text))))
 
+    return 0 if not rep.crossings else 1
 
 def cmd_singularity(args) -> int:
     """Singular configurations: which blocks a change propagates furthest from."""
@@ -362,7 +367,7 @@ def cmd_fsl(args) -> int:
     if args.metrics:
         from .fsl_metrics import collect, render as render_metrics
         print()
-        print(render_metrics(collect(rep)))
+        print(render_metrics(collect(rep), proof_test_hours=args.proof_test))
     return 0 if rep.ok else 1
 
 
@@ -1052,6 +1057,9 @@ def main(argv=None) -> int:
                         "this RTL instead of analysing crossings")
     p.add_argument("--to-ipxact", dest="to_ipxact", default=None, metavar="XML",
                    help="with --standard: also write the IP-XACT form (Clause 7)")
+    p.add_argument("--scenarios", action="store_true",
+                   help="report which Clause 5 RDC scenarios this collateral "
+                        "supports")
     p.add_argument("--classify", action="store_true",
                    help="say whether each crossing is synchronised (2-FF) — this is "
                         "the analysis, not just the detection")
@@ -1135,8 +1143,11 @@ def main(argv=None) -> int:
                    help="cross-check the elements the FMEDA names against this "
                         "design's blocks")
     p.add_argument("--metrics", action="store_true",
-                   help="compute SPFM, LFM, PMHF and SFF from the declared "
-                        "failure rates")
+                   help="compute SPFM, LFM, PMHF, SFF, PFH and PFD from the "
+                        "declared failure rates")
+    p.add_argument("--proof-test", type=float, default=None, metavar="HOURS",
+                   help="proof-test interval for PFD (IEC 61508 low demand); "
+                        "without it PFD is reported as not computable")
     p.set_defaults(func=cmd_fsl)
 
     p = sub.add_parser("agentic",
