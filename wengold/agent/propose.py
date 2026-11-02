@@ -70,13 +70,66 @@ def _diff(path: str, before: str, after: str) -> str:
         fromfile=f"a/{path}", tofile=f"b/{path}"))
 
 
-def _port_names(graph, node: str) -> list[str]:
-    """Best-effort port list for a stub. An empty port list is honest."""
+def _port_names(graph, node: str, root=None) -> list[str]:
+    """Port names for a stub, from the graph if it has them, else from the source.
+
+    The graph does not record an undefined module's port connections — there is no
+    node to hang them on — so this used to return [] and the stub said "port list
+    not recoverable from the graph". That was true of the graph and **false of the
+    project**: the instantiation site names every port.
+
+        missing_block u_missing(.clk(clk), .rst_n(rst_n), .q(inner));
+
+    So the source is read for the instantiation. Directions are not claimed,
+    because an instantiation gives names and connections, not directions — the stub
+    is emitted in non-ANSI form, which is legal and makes no claim it cannot support.
+    """
     d = graph.nodes.get(node)
     ports = getattr(d, "ports", None) if d else None
     if ports:
         return list(ports)
-    return []
+    if root is None:
+        return []
+    return _ports_from_source(node, root)
+
+
+_INST = r"\b{name}\s+(?:#\s*\([^)]*\)\s*)?([A-Za-z_]\w*)\s*\("
+
+
+def _ports_from_source(node: str, root) -> list[str]:
+    """`.port(` names from any instantiation of `node` under `root`."""
+    import re as _re
+    from pathlib import Path
+
+    pat = _re.compile(_INST.format(name=_re.escape(node)))
+    names: list[str] = []
+    exts = {".sv", ".v", ".svh", ".vh"}
+    try:
+        files = [p for p in Path(root).rglob("*") if p.suffix in exts]
+    except OSError:
+        return []
+    for f in files:
+        try:
+            text = f.read_text(errors="replace")
+        except OSError:
+            continue
+        for m in pat.finditer(text):
+            # take the balanced parenthesised list after the instance name
+            i = m.end() - 1
+            depth, j = 0, i
+            while j < len(text):
+                if text[j] == "(":
+                    depth += 1
+                elif text[j] == ")":
+                    depth -= 1
+                    if depth == 0:
+                        break
+                j += 1
+            body = text[i:j + 1]
+            for pm in _re.finditer(r"\.\s*([A-Za-z_]\w*)\s*\(", body):
+                if pm.group(1) not in names:
+                    names.append(pm.group(1))
+    return names
 
 
 _MISSING = re.compile(r"instantiation `([^`]+)` has no definition")
@@ -97,7 +150,7 @@ def missing_modules(completeness: dict) -> list[str]:
     return sorted(names)
 
 
-def propose_stubs(graph, completeness: dict) -> Proposal | None:
+def propose_stubs(graph, completeness: dict, root=None) -> Proposal | None:
     """Stub every module the file set cannot resolve.
 
     Stubbing is the standard way to get the rest of a graph to elaborate when
@@ -122,7 +175,7 @@ def propose_stubs(graph, completeness: dict) -> Proposal | None:
         "",
     ]
     for name in unresolved:
-        ports = _port_names(graph, name)
+        ports = _port_names(graph, name, root)
         if ports:
             lines.append(f"module {name}({', '.join(ports)});")
             lines.append(f"  // TODO: real implementation — ports taken from the "
@@ -130,8 +183,8 @@ def propose_stubs(graph, completeness: dict) -> Proposal | None:
             lines.append("endmodule")
         else:
             lines.append(f"module {name}();")
-            lines.append("  // TODO: real implementation — port list not recoverable "
-                         "from the graph")
+            lines.append("  // TODO: real implementation — no instantiation of this "
+                         "module was found, so even its ports are unknown")
             lines.append("endmodule")
         lines.append("")
     after = "\n".join(lines)
