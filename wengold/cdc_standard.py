@@ -58,7 +58,11 @@ COMMANDS = {
                  "-cdc_control_hold", "-cdc_control", "-polarity",
                  # §5.2 / §5.3: named in the standard's own examples and never
                  # in the code, so a conformant file using them was rejected
-                 "-frequency", "-virtual_port", "-rdc_clock_gate_location"},
+                 "-frequency", "-virtual_port", "-rdc_clock_gate_location",
+                 # §5.6/§5.7: the singular form, used in the standard's own
+                 # examples alongside the plural. I dismissed it as a hyphenation
+                 # artefact in v0.54.3; it is a real attribute.
+                 "-associated_from_clock", "-associated_to_clock"},
     "set_clock_group": {"-name", "-clocks", "-polarity", "-logic"},
     "set_reset_assertion_sequence": {"-name", "-assert_sequence"},
 }
