@@ -14,6 +14,58 @@ what the tags are for.
 
 ---
 
+## [0.59.1] — 2026-11-02
+
+### The audit
+Four sub-agents reviewed the CDC implementation **in parallel**, each against one
+area of the Accellera CDC/RDC standard, each required to quote the standard for
+every finding and to return nothing rather than invent something. They returned
+**64 findings**. Five are fixed here; the other 59 are written down in
+[`docs/CDC-AUDIT.md`](../docs/CDC-AUDIT.md) with their severity.
+
+### Fixed — Clause 8.3 had no working assertion
+- **The setup property was not legal SVA.** It emitted
+  `$stable(data)[-SETUP_CYCLES_data]` — a negative repetition, which does not
+  elaborate, and a repetition looks forward so it could not express "stable before
+  the enable" even if it did. The requirement had no assertion at all. It is now a
+  conjunction of `$past` comparisons across the declared window.
+- **`-polarity` was ignored.** An active-low control enables on the *falling* edge;
+  the check fired on `$rose` regardless, so it gated on the wrong event. Now
+  `$fell` enables and `$rose` disables for `low`.
+- **The declared setup and hold were discarded** for a default of 1. Table 3 makes
+  them integer counts of destination clock cycles, so a declared 3 was checked as 1.
+  They are used directly now, and a non-integer value (`2ns`) is **reported in the
+  generated file** rather than silently dropped — a dropped check looks exactly like
+  a passing one.
+
+### Fixed — Clause 8.2 asserted more than it claimed
+- `$stable[*3]` is three periods, six edges, while the comment and the `$error`
+  both said "4-edge window". The standard generalises to four edges. Now `[*2]`, so
+  the assertion and its message agree and a design meeting 8.2 is not failed.
+
+### Fixed — a conformant port type was rejected
+- **`virtual_reset`** is defined by Table 3 and Clause 5 d) 2) and was not in
+  `PORT_TYPES`, so a conformant declaration was rejected. Added, and exempted from
+  the RTL port-set comparison like `virtual_clock`.
+
+### Tests updated, not weakened
+Four tests in `test_cdc_sva.py` had encoded the wrong contract — they asserted
+`[*3]`, a `SETUP_CYCLES` parameter, and that setup/hold are durations in `ns`. Table
+3 says they are cycle counts. The fixture now uses the standard's form, and the
+module docstring that spread the misreading is corrected.
+
+### What is still broken
+59 findings remain open. The ones that would let a real CDC bug through are all
+false negatives in WENGOLD's own analysis: a multi-bit bus through a 2-FF is called
+`synchronised` with `clean = True`; `_classify` accepts any 2-FF chain anywhere; a
+combinational path beside a synchroniser is not flagged; and `cdc.py`'s write regex
+treats a `<=` comparison as an assignment. Those are listed first in the audit
+document because they are the ones that matter.
+
+**834 tests passing** locally (6 new).
+
+---
+
 ## [0.59.0] — 2026-11-02
 
 ### Added
