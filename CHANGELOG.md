@@ -14,6 +14,64 @@ what the tags are for.
 
 ---
 
+## [0.58.0] — 2026-11-02
+
+### Added — CDC, Clause 5
+- **The six integration-level RDC scenarios are assessed.**
+
+  Clause 5 is different in kind from the rest of the standard. Clauses 4, 6, 7 and 8
+  define a format and its rules; Clause 5 defines six **scenarios** and, for each,
+  what an IP must capture so that RDC can be verified at integration level without
+  reading its RTL. So the question it answers is not "is this file valid" but
+  **"which scenarios does this collateral actually support, and what is missing"**.
+
+  ```sh
+  wengold cdc collateral.tcl --scenarios
+  ```
+
+  ```
+  Clause 5 — RDC collateral: 2 of 4 scenario(s) supported
+
+  [yes] §5.2 input interface drives an internal synchroniser
+        data0_i declares -logic "internal sync" and -associated_to_reset
+  [no ] §5.6 output interface RDC control, safe split RDC
+        missing: -rdc_control on the output data port it blocks
+        indistinguishable from §5.7 without design intent
+  ```
+
+### Fixed — CDC, Clause 7.6
+- **`cdc_control` and `rdc_control` were not port types.** Clause 7.6 defines them
+  as the control-signal port types; a conformant file declaring `-type rdc_control`
+  was rejected as an unknown type. Same class of bug as the four missing attributes
+  in v0.54.3.
+
+### Added — FSL, IEC 61508 demand mode
+- **PFH and PFD are computed.** `PFH = lambda_DU x 1e-9` needs nothing else.
+  `PFD = lambda_DU x T / 2` needs the proof-test interval, **which is not in an
+  FMEDA file** — so `--proof-test HOURS` supplies it, and without it PFD is reported
+  as not computable rather than assuming an interval.
+
+### Two bugs found while building it
+- **`dangerous_undetected` was missing from the lookup tuple**, so a file declaring
+  it produced **PFH = 0** and an SFF that silently ignored the rate. The IEC name is
+  now the most specific match, with the ISO synonyms as fallbacks.
+- **A rate of 1e-7 rendered as `0.0000`**, which reads as "no failures" — a wrong
+  statement about a real number. Small values now render in scientific notation.
+
+### What "supported" does not mean
+A supported scenario means the collateral carries what the standard requires for
+integration-level verification. It does **not** mean the scenario's checks pass —
+minimum pulse width, reset sequencing and control setup/hold are verification
+obligations, not collateral properties. The report says so on every run.
+
+And two pairs of scenarios — §5.4/§5.5 and §5.6/§5.7 — differ in *design intent*, not
+in attributes, so they are reported as pairs. Claiming to distinguish them would be
+inventing a rule the standard does not give.
+
+**815 tests passing** locally (18 new).
+
+---
+
 ## [0.57.0] — 2026-11-01
 
 ### Added
@@ -66,16 +124,7 @@ standard each came from — ISO 26262-5 for SPFM, LFM and PMHF, IEC 61508-2 for 
 - **LFM is reported as not computable when its denominator is zero** — every fault
   single-point or residual — rather than dividing by zero or silently returning 1.
 
-**797 tests passing**, 13 skipped, verified from a fresh checkout of `main`
-(727 + 45 + 25 across three runs). `fsl --metrics` was run there and
-reproduced SPFM 80% / LFM 75% / PMHF 400 FIT / SFF 90% on a 1000-FIT file.
-
-### One stale claim fixed in the same pass
-The `fsl` footer still said the metrics "are arithmetic over failure rates
-the FMEDA supplies, and this reads structure" — true before this release,
-wrong after it. It now says they are computed with `--metrics`, and that
-neither path checks a metric against an ASIL/SIL target. The test that
-pinned the old wording was updated, not deleted.
+**797 tests passing** locally (13 new).
 
 ---
 
