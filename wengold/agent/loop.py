@@ -157,7 +157,13 @@ class Agent:
         """
         runner = runner or SimulatedRunner()
         chosen = strategy or (self.bandit.choose() if adaptive else "best_first")
-        ctx = perceive(self.graph, self.results, changed)
+        # `changed` is a *collection* of node ids. A bare string is iterable, so
+        # `run("m0")` used to pass "m" and "0" as the changed set, match nothing,
+        # find every result VALID and report done — a silent wrong answer on the
+        # most natural way to call it. One string is one node.
+        if isinstance(changed, str):
+            changed = {changed}
+        ctx = perceive(self.graph, self.results, set(changed))
         run = AgentRun(strategy=chosen, context=ctx)
         run.traces = explain_all(ctx)
         # the kernel's VALID results are already settled; a plan only has to
