@@ -141,7 +141,10 @@ def code(goal: str, root: str, tools: str | None = None,
             from .propose import missing_modules, propose_stubs
 
             missing = missing_modules(completeness)
-            prop = propose_stubs(state["graph"], completeness)
+            # `root` matters: the graph does not record an undefined module's
+            # ports, but its instantiation site does, and the stub is better with
+            # them than without.
+            prop = propose_stubs(state["graph"], completeness, root)
             if prop is not None:
                 step = Step(
                     n=n,
