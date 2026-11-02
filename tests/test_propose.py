@@ -132,3 +132,58 @@ def test_propose_all_survives_a_malformed_note():
 
 def test_an_empty_graph_yields_no_proposals(tmp_path):
     assert propose_all(FakeGraph(), {"unresolved": []}, tmp_path) == []
+
+
+# ---- ports come from the instantiation site ----------------------------
+def test_ports_are_recovered_from_the_instantiation(tmp_path):
+    """The stub used to say "port list not recoverable from the graph".
+
+    That was true of the graph and false of the project: the instantiation names
+    every port. A stub without them can fail to elaborate against its own
+    instantiation.
+    """
+    (tmp_path / "top.sv").write_text(
+        "module top(input logic c, output logic q);\n"
+        "  missing_block u(.clk(c), .rst_n(c), .q(q));\n"
+        "endmodule\n")
+    from wengold.desktop import build_state
+
+    state = build_state(str(tmp_path))
+    completeness = state["graph"].completeness()
+    p = propose_stubs(state["graph"], completeness, str(tmp_path))
+    assert p is not None
+    assert "module missing_block(clk, rst_n, q);" in p.new_text
+
+
+def test_a_stub_claims_no_port_directions(tmp_path):
+    """An instantiation gives names and connections, not directions. Non-ANSI
+    form is legal and claims nothing the source does not say."""
+    (tmp_path / "top.sv").write_text(
+        "module top(input logic c, output logic q);\n"
+        "  missing_block u(.a(c), .b(q));\n"
+        "endmodule\n")
+    from wengold.desktop import build_state
+
+    state = build_state(str(tmp_path))
+    p = propose_stubs(state["graph"], state["graph"].completeness(), str(tmp_path))
+    line = [l for l in p.new_text.splitlines() if l.startswith("module ")][0]
+    assert "input" not in line and "output" not in line, line
+
+
+def test_without_a_root_the_stub_says_what_it_does_not_know():
+    """No root means no source scan, and the comment must not claim more."""
+    p = propose_stubs(FakeGraph(), {
+        "unresolved": ["top"],
+        "issues": ["top: instantiation `m` has no definition in the file set"]})
+    assert "module m();" in p.new_text
+    assert "no instantiation of this module was found" in p.new_text
+
+
+def test_the_graph_still_wins_when_it_has_ports():
+    """A defined module's ports come from the graph; the source scan is a fallback."""
+    from wengold.agent.propose import _port_names
+
+    class N:
+        ports = ["a", "b"]
+    g = FakeGraph(nodes={"m": N()})
+    assert _port_names(g, "m", "/nonexistent") == ["a", "b"]
