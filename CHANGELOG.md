@@ -67,7 +67,9 @@ the answer.
 - The dead `also` field in `cdc_scenarios.Scenario` — a leftover from the pairs
   design removed in v0.58.1 — is gone.
 
-**822 tests passing** locally.
+**822 tests passing**, 13 skipped, verified from a fresh checkout of `main`
+(797 + 25 across two runs). `agentic --apply` was run there on a design
+with one missing module and emitted `module inner_block(c, q);`.
 
 ---
 
