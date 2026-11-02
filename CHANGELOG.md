@@ -14,6 +14,63 @@ what the tags are for.
 
 ---
 
+## [0.59.0] — 2026-11-02
+
+### Added
+- **Every module in the agent layer is evaluated, by running it.**
+
+  `tools/agent-eval.py` exercises all eighteen modules plus the feature surface
+  built on top of them (agentic, vibe, review, FSL metrics, CDC Clause 5). Each row
+  is produced by executing the code on real input, not by reading a docstring.
+
+  ```
+  module    feature                    status      measurement
+  adaptation bandit                    works       best arm = c
+  coding    agentic loop              works       1 step(s), stopped: True
+  loop      six-stage run             works       5 settled
+  mcts      search                    marginal    64 rollouts, score 4.25
+  human     calibration               marginal    ECE 0.800 over 6
+  ...
+  20 works · 3 marginal · 0 fails
+  ```
+
+  The existing `cognition.evaluate()` scores fourteen *cognitive abilities*; this
+  scores the **modules**, because "the agent works" is a claim about code and each
+  module either does its job or does not.
+
+### Fixed — a silent wrong answer the evaluation found
+- **`Agent.run("m0")` settled nothing and reported `done`.**
+
+  `changed` is a collection of node ids. A bare string is iterable, so the loop
+  passed `"m"` and `"0"` as the changed set, matched no node, classified every
+  result VALID and stopped. The same node as a set or a list settles five results:
+
+  | call | settled |
+  | --- | --- |
+  | `run("m0")` | **0** |
+  | `run({"m0"})` | 5 |
+  | `run(["m0"])` | 5 |
+
+  A string is now normalised to a single node. This is the bug class the project
+  keeps finding — a **silent wrong answer on the most natural way to call it** —
+  and it survived because every caller in the tree happened to pass a list.
+
+### Two vacuous measurements caught in the harness itself
+- `human` calibration first reported `ECE 0.000 over 0` — zero samples, printed as
+  a pass. The fixture now gives the belief priors, and the row **fails** if fewer
+  than four samples are seen. It reads `ECE 0.800 over 6` on deliberately-wrong
+  priors, which is the honest number.
+- The table printed `module / status / measurement` and **never the feature name**,
+  so rows read `feature  works  9 commands` without saying what was evaluated.
+
+### Also fixed while wiring the harness
+- `from wengold.agent import mcts, react` binds the re-exported **functions**, not
+  the modules, so `mcts.mcts` fails. The harness imports them through `importlib`.
+
+**827 tests passing** locally (5 new).
+
+---
+
 ## [0.58.2] — 2026-11-02
 
 ### Fixed
