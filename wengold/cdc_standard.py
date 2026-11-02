@@ -38,7 +38,10 @@ __all__ = ["Port", "Param", "ClockGroup", "Collateral", "Conformance",
            "parse", "check", "PORT_TYPES", "DIRECTIONS"]
 
 PORT_TYPES = {"clock", "data", "reset", "async_reset", "virtual_clock",
-              "constant", "static"}
+              "constant", "static",
+              # Clause 7.6: a port that represents a CDC or RDC control signal.
+              # Absent until now, so a conformant file declaring one was rejected.
+              "cdc_control", "rdc_control"}
 DIRECTIONS = {"input", "output", "inout", "in", "out"}
 
 # every command the standard defines, and the attributes each accepts
