@@ -153,3 +153,55 @@ define_metric_iso26262 -metric_name pmhf -dc_type estimated -fmeda_type assumpti
     frs = collect(check(text))
     assert frs.get("intrinsic") == pytest.approx(1000.0)
     assert "pmhf" not in frs.values
+
+
+# ---- IEC 61508 demand mode ---------------------------------------------
+def test_pfh_is_the_dangerous_undetected_rate_per_hour():
+    """100 FIT = 1e-7 per hour."""
+    from wengold.fsl_metrics import iec61508
+
+    m = {x.name: x.value for x in iec61508(rates(intrinsic=1000,
+                                                dangerous_undetected=100))}
+    assert m["PFH"] == pytest.approx(1e-7)
+
+
+def test_pfd_needs_a_proof_test_interval_and_says_so():
+    """PFD = lambda_DU x T / 2, and T is not in an FMEDA file."""
+    from wengold.fsl_metrics import iec61508
+
+    m = {x.name: x for x in iec61508(rates(intrinsic=1000,
+                                           dangerous_undetected=100))}
+    assert math.isnan(m["PFD"].value)
+    assert "proof-test interval" in m["PFD"].note
+    assert m["PFD"].missing == ["a proof-test interval"]
+
+
+def test_pfd_with_an_interval_matches_hand_calculation():
+    """1e-7 per hour over 10000 hours, averaged: 5e-4."""
+    from wengold.fsl_metrics import iec61508
+
+    m = {x.name: x.value for x in iec61508(rates(intrinsic=1000,
+                                                 dangerous_undetected=100),
+                                           10000)}
+    assert m["PFD"] == pytest.approx(5e-4)
+
+
+def test_dangerous_undetected_is_preferred_over_its_iso_synonyms():
+    """The most specific name must win. It was missing from the lookup tuple at
+    first, which made PFH zero for a file that declared it."""
+    from wengold.fsl_metrics import iec61508
+
+    m = {x.name: x.value for x in iec61508(rates(intrinsic=1000,
+                                                 dangerous_undetected=100))}
+    assert m["PFH"] == pytest.approx(1e-7), "PFH must not be zero"
+
+
+def test_a_small_rate_is_not_rendered_as_zero():
+    """`0.0000` for 1e-7 reads as 'no failures', which is a wrong statement about
+    a real number."""
+    from wengold.fsl_metrics import iec61508
+
+    text = "\n".join(x.render() for x in
+                     iec61508(rates(intrinsic=1000, dangerous_undetected=100)))
+    assert "1.000e-07" in text
+    assert "0.0000 /h" not in text
