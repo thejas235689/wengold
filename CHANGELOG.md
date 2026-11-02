@@ -67,7 +67,9 @@ what the tags are for.
 - `from wengold.agent import mcts, react` binds the re-exported **functions**, not
   the modules, so `mcts.mcts` fails. The harness imports them through `importlib`.
 
-**827 tests passing** locally (5 new).
+**827 tests passing**, 13 skipped, verified from a fresh checkout of `main`
+(797 + 25 + 5 across three runs). `tools/agent-eval.py` was run there and
+reported 20 works, 3 marginal, 0 fails.
 
 ---
 
