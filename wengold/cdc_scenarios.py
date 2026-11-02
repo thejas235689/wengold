@@ -47,7 +47,6 @@ class Scenario:
     covered: bool
     evidence: str = ""
     missing: list[str] = field(default_factory=list)
-    also: str = ""          # the indistinguishable sibling, if any
 
     def render(self) -> str:
         mark = "yes" if self.covered else "no "
@@ -57,8 +56,6 @@ class Scenario:
             lines.append(f"        {self.evidence}")
         for m in self.missing:
             lines.append(f"        missing: {m}")
-        if self.also:
-            lines.append(f"        {self.also}")
         return "\n".join(lines)
 
 
