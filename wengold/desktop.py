@@ -179,6 +179,7 @@ color:var(--dim2);overflow:hidden}
 </div>
 
 <script>
+  const BARE_VERBS = __BARE_VERBS__;
 /*__STATE__*/
 const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const $=id=>document.getElementById(id);
@@ -298,7 +299,7 @@ async function runCmd(line){
   write('<div class="ask"><span class="cmd">›</span> '+esc(cmd)+'</div>');
 
   // bare commands answer directly; anything else runs the agent plan
-  const bare=['summary','files','blocks','verdicts','singularity'];
+  const bare=BARE_VERBS;
   if(bare.includes(cmd.split(' ')[0])){
     try{
       const r=await get('/api/exec?cmd='+encodeURIComponent(cmd));
@@ -439,7 +440,13 @@ def _page(state: dict) -> str:
         "singularity": _singularity(state),
     }
     blob = _json.dumps(initial).replace("</", "<\\/")
-    return HTML.replace("/*__STATE__*/", "window.__WENGOLD__ = " + blob + ";")
+    # The pane must route every verb `_exec` handles. It used to hardcode five,
+    # so `ask`, `explain`, `review`, `vibe` and `agentic` typed into the app went
+    # to the generic planner and silently did something else — the exact
+    # "silently does nothing" failure this pane exists to avoid.
+    verbs = _json.dumps(list(CLI_COMMANDS))
+    return (HTML.replace("__BARE_VERBS__", verbs)
+            .replace("/*__STATE__*/", "window.__WENGOLD__ = " + blob + ";"))
 
 
 
@@ -549,7 +556,11 @@ def _exec(state: dict, line: str) -> dict:
         # diff and the CLI takes it.
         from .agent.coding import code
         goal = " ".join(args) if args else "make this design verify"
-        run = code(goal, state.get("path", "."),
+        draft = "--draft" in args
+        if draft:
+            args = [a for a in args if a != "--draft"]
+            goal = " ".join(args)
+        run = code(goal, state.get("path", "."), draft=draft,
                    tools=os.environ.get("WENGOLD_TOOLS"), apply=False)
         return {"ok": True, "output": run.render().strip()}
 
@@ -584,23 +595,33 @@ def _exec(state: dict, line: str) -> dict:
 
     if verb == "explain":
         # Prose for a verdict the kernel already established. The facts are the
-        # kernel's; only the wording comes from the model.
+        # kernel's and are ALWAYS printed; only the wording comes from the model.
+        # A model saying "this is correct" over an INVALIDATED verdict must not
+        # be the answer — so the verdicts go first and the prose is labelled.
         from .agent.llm import LLMUnavailable, from_env
         model = from_env()
         v = _verdicts(state)
-        facts = (f"{v['counts']}\n"
-                 + "\n".join(f"{r.get('id')}: {r.get('verdict')} — "
-                              f"{r.get('reason', '')}" for r in v["results"][:12]))
+        counts = v.get("counts") or {}
+        facts = [f"the kernel's verdicts: {counts}"]
+        for r in (v.get("results") or [])[:12]:
+            facts.append(f"  {r.get('id')}: {r.get('verdict')} — "
+                         f"{r.get('reason', '')}")
+        fact_block = "\n".join(facts)
         if model is None:
             return {"ok": False, "output":
                     "no local model configured — but the facts need no model:\n\n"
-                    + facts}
+                    + fact_block}
         try:
-            return {"ok": True, "output": model.explain_failure(facts)
-                    + "\n\n  — wording from " + model.model
-                    + "; the verdicts above are the kernel's."}
+            prose = model.explain_failure(fact_block)
         except LLMUnavailable as e:
-            return {"ok": False, "output": f"model unavailable: {e}\n\n" + facts}
+            return {"ok": False, "output": f"model unavailable: {e}\n\n" + fact_block}
+        return {"ok": True, "output":
+                fact_block
+                + "\n\n  model's wording (UNCHECKED — it may disagree with the "
+                  "verdicts above):\n"
+                + "\n".join("    " + ln for ln in prose.splitlines())
+                + f"\n\n  — wording from {model.model}. The verdicts above are the "
+                  f"kernel's; this paragraph is not."}
 
     if verb == "vibe":
         # The one command that writes: it generates a block and simulates it.
