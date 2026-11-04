@@ -14,6 +14,46 @@ what the tags are for.
 
 ---
 
+## [0.62.0] — 2026-11-04
+
+### Fixed — the CDC false negatives
+The worst findings of the audit were in WENGOLD's own classifier: real metastable
+paths it called `synchronised`, so `clean` returned `True` on unsafe source.
+
+- **A multi-bit bus through a 2-FF was reported `synchronised` and `clean`.** A
+  per-bit synchroniser is not a bus synchroniser — each bit settles on its own edge,
+  so the destination can latch a mix of old and new. It now has its own verdict,
+  `synchronised_data_hazard`, excluded from `clean` and included in
+  `unsynchronised` so a caller listing hazards cannot miss it.
+
+- **`_classify` accepted any chain anywhere.** It returned `synchronised` as soon as
+  one 2-FF chain existed on the destination clock, so `y <= s_r` beside a correct
+  chain — a direct metastable read — was reported clean. Now **every** reader of the
+  crossing signal must be a chain start with its own second flop.
+
+- **A metastable first stage feeding other logic was invisible.** `y <= meta & en`
+  is the classic escape, and the extractor only recorded assignments whose two sides
+  were bare identifiers, so it was dropped entirely. Every nonblocking assignment's
+  full read set is kept now, and a first stage read alongside other signals is an
+  escape.
+
+- **`clean` is `False` for a data hazard**, not only for `unsynchronised`.
+
+### What the fix had to avoid
+Turning every crossing into a warning. A correct 2-FF is still `synchronised` and
+still clean; that is a test, because a classifier that flags everything is as
+useless as one that flags nothing.
+
+### Still open
+`analyse_text` does not enumerate crossings that reach the destination through
+combinational logic, and `cdc.py` has three parser bugs: a `<=` comparison read as
+an assignment, a body truncated at the first `;`, and a mixed-domain `continue` that
+suppresses real crossings. All are in `docs/CDC-AUDIT.md`.
+
+**879 tests passing** locally (3 new).
+
+---
+
 ## [0.61.0] — 2026-11-04
 
 ### Added — the model is in the app
