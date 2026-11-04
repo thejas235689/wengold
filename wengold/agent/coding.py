@@ -32,6 +32,7 @@ says so rather than inventing a fifth one.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import os
 from pathlib import Path
 
 __all__ = ["Step", "CodingRun", "code", "render"]
@@ -68,6 +69,7 @@ class CodingRun:
     done: bool = False
     reason: str = ""
     applied: bool = False
+    drafted: bool = False
 
     @property
     def changed(self) -> bool:
@@ -114,7 +116,8 @@ def _failed(results) -> list:
 
 
 def code(goal: str, root: str, tools: str | None = None,
-         apply: bool = False, max_steps: int = 6) -> CodingRun:
+         apply: bool = False, max_steps: int = 6,
+         draft: bool = False) -> CodingRun:
     """Run the loop until nothing left can be justified, or `max_steps`.
 
     `apply=False` shows every diff and writes nothing. That default is deliberate:
@@ -196,7 +199,38 @@ def code(goal: str, root: str, tools: str | None = None,
                     outcome=str(s0.get("why") or s0.get("detail") or "")[:160]))
                 break
 
-        # 3. nothing failing, nothing missing
+        # 3. the kernel has nothing to justify, but the goal asks for RTL the
+        #    spec grammar cannot express. This is the one step a local model is
+        #    allowed to contribute, and it is opt-in: without `draft` the loop
+        #    behaves exactly as before.
+        if draft and not unresolved and not bad and not run.drafted:
+            step = _draft_step(n, goal, root, apply)
+            if step is not None:
+                run.steps.append(step)
+                run.drafted = True
+                # the reason must describe what actually happened: no model, a
+                # model that failed, or a draft that compiled
+                if "no local model is configured" in step.fact:
+                    run.reason = ("the goal needs RTL the spec grammar cannot "
+                                  "express, and no local model is configured")
+                elif "unavailable" in step.outcome:
+                    run.reason = f"the local model did not answer: {step.outcome}"
+                elif "[unchecked]" in step.outcome:
+                    run.reason = ("the model drafted a block but it could not be "
+                                  "compiled here — install iverilog and re-run "
+                                  "before trusting it")
+                elif step.ok:
+                    run.done = True
+                    run.reason = ("the model drafted a block and it compiles; "
+                                  "compiling is not verifying — simulate it with "
+                                  "`vibe` before trusting it")
+                else:
+                    run.reason = ("the model drafted a block and it did NOT "
+                                  "compile; the error above is the model's, not "
+                                  "the kernel's")
+                return run
+
+        # 3b. nothing failing, nothing missing
         if not unresolved and not bad:
             run.done = True
             run.reason = (f"nothing left that can be justified: "
@@ -211,6 +245,95 @@ def code(goal: str, root: str, tools: str | None = None,
     if not run.reason:
         run.reason = f"reached the {max_steps}-step limit"
     return run
+
+
+def _draft_step(n: int, goal: str, root: str, apply: bool):
+    """Ask the local model for RTL, then compile it. Never call it verified.
+
+    The fact this step rests on is real: the kernel found nothing left to
+    justify, and the goal asks for something the spec grammar cannot express.
+    Everything after that is the model's, and the only thing reported as a fact
+    is whether the result compiles.
+    """
+    try:
+        from .llm import LLMUnavailable, from_env
+    except Exception:                                            # noqa: BLE001
+        return None
+    model = from_env()
+    if model is None:
+        return Step(n=n, thought="draft the block the goal asks for",
+                    fact="the kernel has nothing left to justify, and no local "
+                         "model is configured",
+                    action="none", ok=False,
+                    outcome="set WENGOLD_LLM_MODEL to let a model draft; "
+                            "`wengold doctor --llm` checks it")
+    try:
+        rtl = model.draft_rtl(goal)
+    except LLMUnavailable as e:
+        return Step(n=n, thought="draft the block the goal asks for",
+                    fact="the kernel has nothing left to justify",
+                    action=f"draft_rtl via {model.model}", ok=False,
+                    outcome=f"model unavailable: {e}")
+
+    # strip a markdown fence if the model wrapped the code
+    body = rtl.strip()
+    if body.startswith("```"):
+        body = "\n".join(body.splitlines()[1:])
+        if body.rstrip().endswith("```"):
+            body = body.rstrip()[:-3]
+    name = _module_name(body) or "drafted"
+    path = Path(root) / f"{name}.sv"
+
+    if not apply:
+        return Step(n=n, thought="draft the block the goal asks for",
+                    fact=f"the kernel has nothing left to justify; the goal asks "
+                         f"for RTL the spec grammar cannot express",
+                    action=f"draft_rtl via {model.model} -> {path.name}",
+                    ok=True, outcome="diff shown, not written",
+                    diff=f"--- a/{path.name}\n+++ b/{path.name}\n"
+                         + "".join(f"+{ln}\n" for ln in body.splitlines()))
+
+    try:
+        path.write_text(body)
+    except OSError as e:
+        return Step(n=n, thought="draft the block", fact="kernel has nothing left",
+                    action="write", ok=False, outcome=f"could not write: {e}")
+
+    # the only claim this loop makes about model output: does it compile?
+    status, detail = _compiles(path)
+    return Step(n=n, thought="draft the block the goal asks for",
+                fact=f"the kernel has nothing left to justify; the goal asks for "
+                     f"RTL the spec grammar cannot express",
+                action=f"draft_rtl via {model.model} -> {path.name}",
+                ok=(status == "ok"),
+                outcome=f"written to {path.name}; {detail} [{status}]")
+
+
+def _module_name(rtl: str) -> str:
+    import re
+    m = re.search(r"\bmodule\s+([A-Za-z_]\w*)", rtl)
+    return m.group(1) if m else ""
+
+
+def _compiles(path: Path) -> tuple[str, str]:
+    """Does it compile? The only fact this loop can establish about model output.
+
+    Three states, not two: `ok`, `failed`, and `unchecked` when there is no
+    compiler. Collapsing "no iverilog" into "did not compile" would blame the
+    model for the environment.
+    """
+    import shutil
+    import subprocess
+    iv = shutil.which("iverilog")
+    if not iv:
+        return "unchecked", ("iverilog is not on PATH, so the draft is UNCHECKED "
+                             "— it has not been compiled or simulated")
+    r = subprocess.run([iv, "-o", os.devnull, str(path)],
+                       capture_output=True, text=True, timeout=120)
+    if r.returncode == 0:
+        return "ok", "compiles. That is not verification — simulate it with `vibe`"
+    first = (r.stderr or r.stdout).strip().splitlines()
+    return "failed", "does not compile: " + (first[0] if first else "unknown error")
 
 
 def render(run: CodingRun) -> str:
