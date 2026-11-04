@@ -371,6 +371,49 @@ def cmd_fsl(args) -> int:
     return 0 if rep.ok else 1
 
 
+def cmd_doctor(args) -> int:
+    """Check the environment: the front-end, the cache, and any local model."""
+    from .graph.cache import cache_dir, disabled, stats
+    from .graph.slang_backend import available
+
+    print("  front-end")
+    print(f"    pyslang            {'installed' if available() else 'MISSING — regex fallback in use'}")
+    print("  parse cache")
+    print(f"    enabled            {not disabled()}")
+    print(f"    directory          {cache_dir()}")
+    print(f"    this process       {stats()['hit_rate']:.0%} hit rate")
+    rc = 0
+
+    if args.llm:
+        from .agent.llm import LLMUnavailable, from_env, probe
+        print("  local model")
+        client = from_env()
+        if client is None:
+            print("    configured         no — set WENGOLD_LLM_MODEL to enable")
+            print("    the agent works without one; a model adds RTL drafting")
+            print("    and prose explanation, not speed.")
+            return rc
+        print(f"    configured         {client.backend}/{client.model}")
+        try:
+            info = probe(client.endpoint, client.backend, timeout=args.timeout)
+            print(f"    server             up — {len(info.models)} model(s)")
+            if client.model not in info.models:
+                print(f"    WARNING            {client.model!r} is not among them: "
+                      f"{info.models[:4]}")
+                rc = 1
+        except LLMUnavailable as e:
+            print(f"    server             DOWN — {e}")
+            return 1
+        # the only end-to-end proof that matters: does it answer?
+        try:
+            out = client.ask("Reply with the single word: ready")
+            print(f"    round trip         ok — {out.strip()[:40]!r}")
+        except LLMUnavailable as e:
+            print(f"    round trip         FAILED — {e}")
+            rc = 1
+    return rc
+
+
 def cmd_agentic(args) -> int:
     """Agentic coding: decide what to do from kernel facts, act, re-perceive."""
     from .agent.coding import code
@@ -1149,6 +1192,13 @@ def main(argv=None) -> int:
                    help="proof-test interval for PFD (IEC 61508 low demand); "
                         "without it PFD is reported as not computable")
     p.set_defaults(func=cmd_fsl)
+
+    p = sub.add_parser("doctor",
+                       help="check the front-end, the cache and any local model")
+    p.add_argument("--llm", action="store_true",
+                   help="also probe the local model and round-trip one request")
+    p.add_argument("--timeout", type=float, default=30.0)
+    p.set_defaults(func=cmd_doctor)
 
     p = sub.add_parser("agentic",
                        help="agentic coding loop: act only on kernel-justified facts")
