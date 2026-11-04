@@ -52,7 +52,10 @@ The first RTL the mock model produced had `output logic` driven by `assign` — 
 iverilog error, caught by the compile step. That is the check doing its job on the
 first thing it saw.
 
-**886 tests passing** locally (7 new).
+**888 tests passing**, 8 skipped, verified from a fresh checkout of `main`
+(849 + 32 + 7 across three runs). The draft step was exercised there with
+iverilog on PATH: valid RTL reports `[ok]` and "compiling is not
+verifying"; invalid RTL reports the compile error as the model's.
 
 ---
 
