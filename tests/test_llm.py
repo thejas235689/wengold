@@ -23,6 +23,8 @@ class Mock:
 
     def __init__(self, mode="ollama", answer="logic q;", fail=None):
         self.mode, self.answer, self.fail = mode, answer, fail
+        self.done_reason = "stop"
+        self.raw = None
         self.requests = []
         outer = self
 
@@ -52,7 +54,11 @@ class Mock:
                 if outer.fail:
                     self._send(outer.fail, {"error": "boom"})
                 elif self.path.endswith("/api/generate"):
-                    self._send(200, {"response": outer.answer})
+                    if outer.raw is not None:
+                        self._send(200, outer.raw)
+                    else:
+                        self._send(200, {"response": outer.answer,
+                                         "done_reason": outer.done_reason})
                 else:
                     self._send(200, {"choices": [{"message":
                                                   {"content": outer.answer}}]})
@@ -160,3 +166,89 @@ def test_explain_failure_is_told_not_to_invent():
         model = LocalModel("mock:7b", m.url)
         model.explain_failure("timer: INVALIDATED")
         assert "never invent facts" in m.requests[0]["system"]
+
+
+# ---- defects found by the four parallel verifications -------------------
+def test_a_redirect_is_refused_not_followed():
+    """urllib follows a 302 by default and rewrites a POST to GET, dropping the
+    prompt — so another server's body came back as the model's answer. For a tool
+    that promises nothing leaves the machine, that is a leak as well as a wrong
+    answer."""
+    import threading
+    from http.server import BaseHTTPRequestHandler, HTTPServer
+
+    class H(BaseHTTPRequestHandler):
+        def log_message(self, *a):
+            pass
+
+        def do_POST(self):
+            n = int(self.headers.get("Content-Length", 0))
+            self.rfile.read(n)
+            self.send_response(302)
+            self.send_header("Location", "http://127.0.0.1:1/evil")
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+
+    srv = HTTPServer(("127.0.0.1", 0), H)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    try:
+        with pytest.raises(LLMUnavailable) as e:
+            LocalModel("m", f"http://127.0.0.1:{srv.server_address[1]}").ask("x")
+        assert "refusing to follow" in str(e.value)
+    finally:
+        srv.shutdown()
+        srv.server_close()
+
+
+def test_a_truncated_answer_is_not_returned_as_complete():
+    """`done_reason: length` means the model hit its limit mid-answer. Returning
+    that as a complete response is a wrong answer, not a short one."""
+    with Mock(answer="half an answer") as m:
+        m.done_reason = "length"
+        with pytest.raises(LLMUnavailable) as e:
+            LocalModel("m", m.url).ask("x")
+        assert "truncated" in str(e.value)
+
+
+def test_a_non_string_response_raises_rather_than_crashing():
+    """`{'response': 12345}` used to escape as AttributeError, which a caller
+    catching LLMUnavailable would not catch."""
+    with Mock(answer=12345) as m:
+        with pytest.raises(LLMUnavailable):
+            LocalModel("m", m.url).ask("x")
+
+
+def test_non_object_json_raises_rather_than_crashing():
+    with Mock(answer="x") as m:
+        m.raw = [1, 2, 3]
+        with pytest.raises(LLMUnavailable):
+            LocalModel("m", m.url).ask("x")
+
+
+def test_a_truncated_http_body_raises_llm_unavailable():
+    """http.client.IncompleteRead is an HTTPException, not an OSError, so the
+    original `except (URLError, OSError)` missed it."""
+    import threading
+    from http.server import BaseHTTPRequestHandler, HTTPServer
+
+    class H(BaseHTTPRequestHandler):
+        def log_message(self, *a):
+            pass
+
+        def do_POST(self):
+            n = int(self.headers.get("Content-Length", 0))
+            self.rfile.read(n)
+            self.send_response(200)
+            self.send_header("Content-Length", "1000")
+            self.end_headers()
+            self.wfile.write(b'{"response": "partial"')
+            self.close_connection = True
+
+    srv = HTTPServer(("127.0.0.1", 0), H)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    try:
+        with pytest.raises(LLMUnavailable):
+            LocalModel("m", f"http://127.0.0.1:{srv.server_address[1]}").ask("x")
+    finally:
+        srv.shutdown()
+        srv.server_close()
