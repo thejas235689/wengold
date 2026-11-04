@@ -89,12 +89,19 @@ def test_a_single_flop_is_not_a_synchroniser():
 
 
 def test_a_multibit_bus_through_2ff_is_flagged():
-    """2-FF reduces metastability; it does not make a bus coherent."""
+    """2-FF reduces metastability; it does not make a bus coherent.
+
+    This used to assert `synchronised`, which meant `clean` returned True on a bus
+    whose value can mix old and new — the worst finding of the CDC audit. A per-bit
+    synchroniser is not a bus synchroniser.
+    """
     a = analyse_text(BUS_2FF, "t.sv")
     c = [x for x in a.crossings if x.signal == "m"][0]
     assert c.width == 8, "the packed range was not read"
-    assert c.verdict == "synchronised"
+    assert c.verdict == "synchronised_data_hazard"
     assert "each bit settles independently" in c.detail
+    assert a.clean is False, "a data hazard must never be reported clean"
+    assert c in a.unsynchronised, "a caller listing hazards must find it"
 
 
 def test_a_crossing_through_combinational_logic_is_unsynchronised():
@@ -145,3 +152,56 @@ def test_the_repo_example_is_reported_unsynchronised():
     signals = {c.signal: c.verdict for c in cs}
     assert signals.get("a_reg") == "unsynchronised"
     assert signals.get("comb") == "unsynchronised"
+
+
+# ---- the false negatives the parallel audit found ----------------------
+# Each of these is a real metastable path that the classifier used to call
+# "synchronised", so `clean` returned True on unsafe source.
+
+ESCAPE = """module m(input logic clk_a, clk_b, s, en, output logic y);
+  logic s_r, meta, sync;
+  always_ff @(posedge clk_a) s_r <= s;
+  always_ff @(posedge clk_b) begin meta <= s_r; sync <= meta; y <= meta & en; end
+endmodule
+"""
+
+DIRECT_READ = """module m(input logic clk_a, clk_b, s, output logic y);
+  logic s_r, meta, sync;
+  always_ff @(posedge clk_a) s_r <= s;
+  always_ff @(posedge clk_b) begin meta <= s_r; sync <= meta; y <= s_r; end
+endmodule
+"""
+
+GOOD_2FF = """module m(input logic clk_a, clk_b, s, output logic y);
+  logic s_r, meta, sync;
+  always_ff @(posedge clk_a) s_r <= s;
+  always_ff @(posedge clk_b) begin meta <= s_r; sync <= meta; y <= sync; end
+endmodule
+"""
+
+
+def test_a_metastable_first_stage_feeding_other_logic_is_unsynchronised():
+    """`y <= meta & en` escapes the synchroniser. The chain looks right and the
+    value that escapes it was never settled."""
+    a = analyse_text(ESCAPE, "t.sv")
+    c = [x for x in a.crossings if x.signal == "s_r"][0]
+    assert c.verdict == "unsynchronised"
+    assert "metastable" in c.detail
+    assert a.clean is False
+
+
+def test_a_direct_read_beside_the_chain_is_unsynchronised():
+    """`y <= s_r` reads the crossing signal with no flop after it, while a
+    correct chain runs in parallel."""
+    a = analyse_text(DIRECT_READ, "t.sv")
+    c = [x for x in a.crossings if x.signal == "s_r"][0]
+    assert c.verdict == "unsynchronised"
+    assert a.clean is False
+
+
+def test_a_correct_2ff_is_still_clean():
+    """The fix must not turn every crossing into a warning."""
+    a = analyse_text(GOOD_2FF, "t.sv")
+    c = [x for x in a.crossings if x.signal == "s_r"][0]
+    assert c.verdict == "synchronised"
+    assert a.clean is True
