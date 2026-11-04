@@ -20,16 +20,23 @@ findings by running the code before fixing them. The rest are self-reports.
 | 4 | `cdc_sva` | **The 8.2 window was six edges, not four.** `$stable[*3]` is three periods while the comment and `$error` both claimed a four-edge window — the assertion was stricter than the clause it cited. Now `[*2]`. |
 | 5 | `cdc_standard` | **`virtual_reset` was not a port type.** Table 3 and Clause 5 d) 2) define it; a conformant declaration was rejected. Also exempted from the RTL port-set comparison, like `virtual_clock`. |
 
-## Open — would let a real CDC bug through
+## Fixed in v0.62.0 — the false negatives
 
-These are the ones I would fix first. All are in `cdc_analysis.py` / `cdc.py`,
-WENGOLD's own analyses rather than the standard's, and all are **false negatives**.
+These were the worst findings: real metastable paths the classifier called
+"synchronised", so `clean` returned `True` on unsafe source.
 
-| area | defect |
-| --- | --- |
-| `cdc_analysis` | A **multi-bit bus** through a 2-FF synchroniser is given verdict `synchronised` and `Analysis.clean` returns `True`. The width hazard lives only in free text, and `Crossing.as_dict` omits width entirely — so a machine-readable consumer sees a pass. Per-bit settling means the value read can mix old and new. |
-| `cdc_analysis` | `_classify` returns `synchronised` if **any** 2-FF chain exists on the destination clock. A metastable first stage feeding other destination logic, or a single-flop read beside the chain, is reported clean. |
-| `cdc_analysis` | `analyse_text` creates crossings only from clocked writes, so a signal that also reaches the destination through **combinational** logic produces no entry — and `clean` is `True`. `cdc.py` does see those paths, so the two tools disagree. |
+| # | area | defect |
+| --- | --- | --- |
+| 6 | `cdc_analysis` | A **multi-bit bus** through a 2-FF was given verdict `synchronised` and `clean` returned `True`. A per-bit synchroniser is not a bus synchroniser. It now has its own verdict, `synchronised_data_hazard`, which is excluded from `clean` and included in `unsynchronised`. |
+| 7 | `cdc_analysis` | `_classify` returned `synchronised` if **any** 2-FF chain existed. Now **every** reader of the crossing signal must be a chain start with its own second flop, so `y <= s_r` beside a correct chain is caught. |
+| 8 | `cdc_analysis` | A metastable first stage feeding other logic (`y <= meta & en`) was invisible, because only single-identifier assignments were recorded. Every nonblocking assignment's full read set is kept now, and a first stage read alongside other signals is an escape. |
+| 9 | `cdc_analysis` | `clean` is now `False` for a data hazard as well as for `unsynchronised`. |
+
+The remaining false negatives are still open: `analyse_text` does not enumerate
+combinational crossings, and `cdc.py` has three parser bugs (a `<=` comparison read
+as an assignment, a truncated single-statement body, and a mixed-domain `continue`).
+
+## Open — still would let a real CDC bug through
 | `cdc.py` | `_WRITE` matches `sig <= expr` inside an `if` condition, so a **comparison** is recorded as an assignment. The crossing vanishes and the signal is listed in the wrong domain. |
 | `cdc.py` | `_block_body` truncates at the first `;`, so an `if (en) begin ... end` body loses every assignment after it. |
 | `cdc.py` | `if clock in src: continue` suppresses **every** crossing into a mixed-domain combinational node — the genuine contribution from the other domain is lost. |
