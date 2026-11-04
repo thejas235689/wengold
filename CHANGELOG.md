@@ -65,7 +65,8 @@ attribution line, the dead-server path, the empty-question path, the strip label
 The model's actual answers are not tested, because this sandbox has 2 CPUs and 2 GB
 of RAM. `wengold doctor --llm` on your machine is the check that closes that gap.
 
-**876 tests passing** locally (7 new).
+**876 tests passing**, 12 skipped, verified from a fresh checkout of `main`
+(844 + 25 + 7 across three runs).
 
 ---
 
