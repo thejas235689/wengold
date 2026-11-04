@@ -14,6 +14,65 @@ what the tags are for.
 
 ---
 
+## [0.64.0] — 2026-11-04
+
+### Four parallel verifications, and what they found
+The local-model integration was checked by four sub-agents working concurrently,
+each on a different angle: the Ollama/OpenAI protocol, hostile-server failure modes,
+app and loop wiring, and attempts to make the tool claim more than it established.
+Between them they ran ~90 instrumented cases. **Eleven defects were real.** All are
+fixed here.
+
+### Fixed — the app could not reach its own commands
+The pane's JS routed a hardcoded five verbs to the command handler and sent
+everything else to the generic planner. So typing `ask`, `explain`, `review`, `vibe`
+or `agentic` in the app **silently ran a different command** and reported success.
+The verb list is now generated from `CLI_COMMANDS`, so it cannot drift again.
+
+This also means the v0.61.0 screenshot was misleading: it called the handler
+directly, bypassing the routing the user actually gets.
+
+### Fixed — `explain` let a model contradict the kernel
+`explain` replaced the kernel's verdicts with the model's prose. A mock answering
+*"Everything checks out. This design is correct and fully verified"* over an
+INVALIDATED verdict was presented as the answer, under a line claiming "the verdicts
+above are the kernel's" when none were shown. The facts now come first and always;
+the prose is labelled **UNCHECKED**.
+
+### Fixed — the loop announced "no result invalidated" when one was
+`_failed` read `.verdict` off plain dicts, always got `None`, so the loop believed
+nothing had failed: it reported `done: nothing left that can be justified` while the
+kernel had marked a result INVALIDATED, the review branch was unreachable, and
+`--draft` would consult a model on any design. It now reports what is actually open.
+
+### Fixed — the draft step
+- **`agentic --draft` in the app** passed `--draft` as part of the *goal* string and
+  ran in non-draft mode. The flag now reaches the loop and is stripped from the goal.
+- **It overwrote existing design files** with no backup, named from a regex over the
+  model's own text. It now refuses when the target exists.
+- **With `apply=False` it claimed "it compiles"** without compiling anything. It now
+  says nothing was written and nothing was compiled.
+- **The run footer said "none is a model's guess"** under a run whose only step was
+  a model's. Draft runs now say the opposite, plainly.
+
+### Fixed — the client
+- **A 302 was followed to another host**, with the POST rewritten to GET and the
+  prompt dropped — so another server's body came back as the model's answer. That
+  contradicts "nothing leaves the machine". Redirects are now refused.
+- **Truncated answers were returned as complete.** `done_reason: length` (Ollama)
+  and `finish_reason: length` (OpenAI) now raise.
+- **Fifteen paths escaped as the wrong exception** — `http.client.IncompleteRead`,
+  `AttributeError` on non-object JSON or a non-string `response`, `RecursionError` on
+  deep JSON. A caller catching `LLMUnavailable` got a crash instead. All are caught.
+
+### Tests updated, not weakened
+Three tests had encoded the defects: `done` on a design with an invalidated result,
+and two reason strings that named a compile failure when no model was configured.
+
+**875 tests passing** locally (14 new).
+
+---
+
 ## [0.63.0] — 2026-11-04
 
 ### Added — the agentic loop can now draft
