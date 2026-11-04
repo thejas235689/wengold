@@ -50,7 +50,9 @@ combinational logic, and `cdc.py` has three parser bugs: a `<=` comparison read 
 an assignment, a body truncated at the first `;`, and a mixed-domain `continue` that
 suppresses real crossings. All are in `docs/CDC-AUDIT.md`.
 
-**879 tests passing** locally (3 new).
+**879 tests passing**, 12 skipped, verified from a fresh checkout of `main`
+(847 + 25 + 7 across three runs). The multi-bit case was re-checked from
+the released tag: `synchronised_data_hazard`, `clean: False`.
 
 ---
 
