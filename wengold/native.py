@@ -117,7 +117,9 @@ def build_window(state: dict):
             lay.addLayout(left)
             lay.addStretch(1)
             self.coverage = QtWidgets.QLabel(
-                f"{state['design_units']}/{state['files']} files are design units")
+                f"{state['design_units']}/{state['files']} files are design units"
+                + (f" · model {state['model']}"
+                   if state.get("model") and state["model"] != "off" else ""))
             self.coverage.setObjectName("revision")
             lay.addWidget(self.coverage)
 
