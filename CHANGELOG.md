@@ -14,6 +14,66 @@ what the tags are for.
 
 ---
 
+## [0.60.0] — 2026-11-04
+
+### Added — a local model, off by default
+- **`wengold/agent/llm.py`** talks to a local server — Ollama natively, or anything
+  OpenAI-compatible (llama.cpp, vLLM, LM Studio). Nothing leaves the machine.
+
+  ```bash
+  ollama pull qwen2.5-coder:7b
+  export WENGOLD_LLM_MODEL=qwen2.5-coder:7b
+  wengold doctor --llm
+  ```
+
+  It exists for the two jobs the kernel cannot do: **drafting RTL** from a description
+  the spec grammar does not cover, and **explaining a failure in prose**. It never
+  decides what to check — that stays the kernel's job, because a model's guess there
+  would be a regression rather than an improvement.
+
+- **`wengold doctor [--llm]`** checks the front-end, the cache and the model. With
+  `--llm` it probes the server, checks the configured model is present, and
+  round-trips one request — the only end-to-end proof that matters.
+
+### Added — a parse cache, 3.7x on repeat runs
+- Indexing re-parsed every file on every run. On cva6 (478 files) that is 8.5 s each
+  time, and `agentic` re-perceives between steps.
+
+  The work splits: **preprocess 0.74 s (11%), extract 6.27 s (89%)**. `extract()` is
+  a pure function of the preprocessed text, so it is cached on that text — and only
+  that text. Keying on the source file would be wrong, because a file's `include`
+  resolves against the rest of the file set and the same source preprocesses
+  differently in two projects. Content-addressed, so no invalidation logic.
+
+  | project | cold | warm | |
+  | --- | --- | --- | --- |
+  | neorv32 | 0.65 s | 0.42 s | **1.6x** |
+  | cva6 | 9.16 s | 2.50 s | **3.7x** |
+
+  Verified identical, not merely faster: same 3,260 edges, same nodes, same blocks and
+  the same unresolved set with and without the cache.
+
+### A negative result, reported rather than shipped
+- **Parallel parsing makes it slower.** Threads measured **0.9x** (pyslang holds the
+  GIL) and processes **0.8x** (shipping file text and results between them costs more
+  than the parse saves). Neither is in this release. The obvious optimisation was the
+  wrong one, and the measurement is what said so.
+
+### What is not verified
+The local-model client is tested against a **mock server** speaking the same protocol
+— request shape for both backends, response parsing, timeout and failure paths. It has
+**never been run against a real model**: this was written in a sandbox with 2 CPUs and
+2 GB of RAM, where no useful model fits. `wengold doctor --llm` is how you check it on
+your hardware.
+
+The rule the tests protect: a missing model **raises**, it never returns `""`. An empty
+answer reads as "the model had nothing to say", which is a worse claim than "there is
+no model".
+
+**852 tests passing** locally (18 new).
+
+---
+
 ## [0.59.1] — 2026-11-02
 
 ### The audit
