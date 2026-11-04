@@ -104,3 +104,48 @@ def test_the_strip_shows_whether_a_model_is_there(design, monkeypatch):
     assert build_state(design["path"])["model"] == "off"
     monkeypatch.setenv("WENGOLD_LLM_MODEL", "mock:7b")
     assert build_state(design["path"])["model"] == "mock:7b"
+
+
+# ---- defects found by the parallel verification ------------------------
+def test_the_pane_routes_every_command_the_app_handles():
+    """The JS hardcoded five verbs, so `ask`, `explain`, `review`, `vibe` and
+    `agentic` typed into the app were sent to the generic planner and silently
+    did something else — the exact failure this pane exists to avoid."""
+    import re
+    from wengold.desktop import _page
+    html = _page(build_state("."))
+    m = re.search(r"const BARE_VERBS = (\[[^]]*\]);", html)
+    assert m, "the verb list must be injected"
+    for cmd in CLI_COMMANDS:
+        assert f'"{cmd}"' in m.group(1), f"{cmd} is not routable from the pane"
+
+
+def test_explain_always_shows_the_kernel_verdicts(design, monkeypatch):
+    """A model saying "this is correct" over an INVALIDATED verdict must not be
+    the answer. The facts come first and are never replaced by prose."""
+    with Mock(answer="Everything checks out. This design is correct and fully "
+                     "verified.") as m:
+        monkeypatch.setenv("WENGOLD_LLM_MODEL", "mock:7b")
+        monkeypatch.setenv("WENGOLD_LLM_URL", m.url)
+        out = _exec(design, "explain")["output"]
+    assert "the kernel's verdicts" in out, "the facts must be printed"
+    assert out.index("the kernel's verdicts") < out.index("Everything checks out")
+    assert "UNCHECKED" in out, "the prose must be labelled"
+
+
+def test_agentic_forwards_draft_rather_than_absorbing_it(design, monkeypatch):
+    """`agentic --draft` used to pass '--draft' as part of the goal string and
+    run in non-draft mode, so the command silently did something else."""
+    import wengold.agent.coding as C
+    from wengold.desktop import _exec
+    seen = {}
+
+    def fake_code(goal, root, **kw):
+        seen["goal"], seen["draft"] = goal, kw.get("draft", False)
+        return C.CodingRun(goal=goal, root=root)
+
+    # `_exec` imports `code` inside the branch, so patch it at the source
+    monkeypatch.setattr(C, "code", fake_code)
+    _exec(design, "agentic --draft make a fifo")
+    assert seen.get("draft") is True, "the flag must reach the loop"
+    assert "--draft" not in seen.get("goal", ""), "and must not become the goal"
