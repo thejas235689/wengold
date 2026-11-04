@@ -27,6 +27,7 @@ What it will not do
 """
 from __future__ import annotations
 
+import http.client
 import json
 import os
 import urllib.error
@@ -87,14 +88,40 @@ def probe(endpoint: str = DEFAULT_OLLAMA, backend: str = "ollama",
                      endpoint=endpoint, models=names)
 
 
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    """Refuse every redirect.
+
+    urllib follows a 302 by default, and for a POST it rewrites the method to GET
+    — so a redirect silently drops the prompt and returns another server's body as
+    the model's answer. For a tool that promises "nothing leaves the machine" that
+    is both a wrong answer and a leak.
+    """
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        raise LLMUnavailable(
+            f"{req.full_url} redirected to {newurl}; refusing to follow. Point "
+            f"WENGOLD_LLM_URL at the final address.")
+
+
+_OPENER = urllib.request.build_opener(_NoRedirect)
+
+
 def _get_json(url: str, timeout: float) -> dict:
     try:
-        with urllib.request.urlopen(url, timeout=timeout) as r:
-            return json.loads(r.read().decode("utf-8", "replace") or "{}")
-    except (urllib.error.URLError, OSError, ValueError) as e:
+        with _OPENER.open(url, timeout=timeout) as r:
+            data = json.loads(r.read().decode("utf-8", "replace") or "{}")
+    except (urllib.error.URLError, OSError, ValueError, RecursionError) as e:
         raise LLMUnavailable(
             f"no model server at {url} ({type(e).__name__}). Start one with "
             f"`ollama serve`, or set WENGOLD_LLM_URL.") from e
+    except http.client.HTTPException as e:
+        raise LLMUnavailable(f"{url} sent a malformed response ({type(e).__name__})") from e
+    if not isinstance(data, dict):
+        raise LLMUnavailable(f"{url} returned {type(data).__name__}, not a JSON object")
+    return data
+
+
+
 
 
 class LocalModel:
@@ -128,9 +155,20 @@ class LocalModel:
         if system:
             body["system"] = system
         data = self._post("/api/generate", body)
-        text = (data.get("response") or "").strip()
+        raw = data.get("response")
+        if raw is not None and not isinstance(raw, str):
+            raise LLMUnavailable(
+                f"{self.model} returned a {type(raw).__name__} where text was "
+                f"expected")
+        text = (raw or "").strip()
         if not text:
             raise LLMUnavailable(f"{self.model} returned an empty response")
+        # A truncated answer must not read as a complete one. `done_reason` is
+        # `length` when the model hit its limit mid-answer.
+        if str(data.get("done_reason") or "") == "length":
+            raise LLMUnavailable(
+                f"{self.model} stopped at its context limit; the answer is "
+                f"truncated. Raise num_ctx or shorten the prompt.")
         return text
 
     def _openai(self, prompt: str, system: str) -> str:
@@ -140,11 +178,19 @@ class LocalModel:
                           {"model": self.model, "messages": messages,
                            "temperature": self.temperature, "stream": False})
         try:
-            text = (data["choices"][0]["message"]["content"] or "").strip()
+            raw = data["choices"][0]["message"]["content"]
         except (KeyError, IndexError, TypeError) as e:
             raise LLMUnavailable(f"unexpected response from {self.model}") from e
+        if raw is not None and not isinstance(raw, str):
+            raise LLMUnavailable(
+                f"{self.model} returned a {type(raw).__name__} where text was "
+                f"expected")
+        text = (raw or "").strip()
         if not text:
             raise LLMUnavailable(f"{self.model} returned an empty response")
+        if data["choices"][0].get("finish_reason") == "length":
+            raise LLMUnavailable(
+                f"{self.model} stopped at its token limit; the answer is truncated.")
         return text
 
     def _post(self, path: str, body: dict) -> dict:
@@ -153,18 +199,36 @@ class LocalModel:
             url, data=json.dumps(body).encode("utf-8"),
             headers={"Content-Type": "application/json"}, method="POST")
         try:
-            with urllib.request.urlopen(req, timeout=self.timeout) as r:
-                return json.loads(r.read().decode("utf-8", "replace") or "{}")
+            with _OPENER.open(req, timeout=self.timeout) as r:
+                data = json.loads(r.read().decode("utf-8", "replace") or "{}")
         except urllib.error.HTTPError as e:
-            detail = e.read().decode("utf-8", "replace")[:200]
+            # the error path must not itself raise: a short body here used to
+            # escape as http.client.IncompleteRead
+            try:
+                detail = e.read().decode("utf-8", "replace")[:200]
+            except Exception:                                    # noqa: BLE001
+                detail = ""
             raise LLMUnavailable(
                 f"{url} returned HTTP {e.code}: {detail}") from e
+        except LLMUnavailable:
+            raise
         except (urllib.error.URLError, OSError) as e:
             raise LLMUnavailable(
                 f"could not reach {url} ({type(e).__name__}). Is the server "
                 f"running, and is the model pulled?") from e
+        except http.client.HTTPException as e:
+            # IncompleteRead and friends are HTTPException, not OSError
+            raise LLMUnavailable(
+                f"{url} sent a malformed or truncated response "
+                f"({type(e).__name__})") from e
+        except RecursionError as e:
+            raise LLMUnavailable(f"{url} returned deeply nested JSON") from e
         except ValueError as e:
             raise LLMUnavailable(f"{url} did not return JSON") from e
+        if not isinstance(data, dict):
+            raise LLMUnavailable(
+                f"{url} returned {type(data).__name__}, not a JSON object")
+        return data
 
     # ---- the jobs the kernel cannot do ---------------------------------
     def explain_failure(self, verdict_text: str) -> str:
