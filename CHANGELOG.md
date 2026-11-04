@@ -69,7 +69,9 @@ kernel had marked a result INVALIDATED, the review branch was unreachable, and
 Three tests had encoded the defects: `done` on a design with an invalidated result,
 and two reason strings that named a compile failure when no model was configured.
 
-**875 tests passing** locally (14 new).
+**875 tests passing**, 15 skipped, verified from a fresh checkout of `main`
+(850 + 25 across two runs), including that the pane now routes every
+command in `CLI_COMMANDS`.
 
 ---
 
