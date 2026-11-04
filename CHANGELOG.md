@@ -14,6 +14,48 @@ what the tags are for.
 
 ---
 
+## [0.63.0] — 2026-11-04
+
+### Added — the agentic loop can now draft
+`agentic --draft` lets a configured local model act when the kernel has nothing left
+to justify. It is the one place a model contributes to the loop, and it is opt-in:
+without `--draft` the loop behaves exactly as before.
+
+```sh
+wengold agentic --design rtl/ --goal "a fifo with almost-full" --draft --apply
+```
+
+```
+ok 1. draft the block the goal asks for
+    fact:   the kernel has nothing left to justify; the goal asks for RTL the
+            spec grammar cannot express
+    action: draft_rtl via qwen2.5-coder:7b -> fifo.sv
+    result: written to fifo.sv; compiles. That is not verification — simulate it
+            with `vibe` [ok]
+done: the model drafted a block and it compiles; compiling is not verifying
+```
+
+### The rule this step keeps
+**"It compiles" is the only fact reported about model output.** The draft is written,
+then compiled with iverilog, and the verdict is the compile's — never the model's
+claim. When it fails to compile the report says whose failure it is: *"the error
+above is the model's, not the kernel's"*.
+
+### Three states, not two
+No compiler is `unchecked`, not `failed`. Collapsing them blames the model for the
+environment, and that is the same mistake as reporting a missing tool as a passing
+lint. The reason line distinguishes four outcomes: no model configured, model did not
+answer, drafted and unchecked, drafted and failed, drafted and compiled.
+
+### What it found immediately
+The first RTL the mock model produced had `output logic` driven by `assign` — a real
+iverilog error, caught by the compile step. That is the check doing its job on the
+first thing it saw.
+
+**886 tests passing** locally (7 new).
+
+---
+
 ## [0.62.0] — 2026-11-04
 
 ### Fixed — the CDC false negatives
