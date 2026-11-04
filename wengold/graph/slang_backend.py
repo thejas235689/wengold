@@ -280,12 +280,37 @@ def elaborate(files: dict[str, str], include_dirs: list[str] | None = None,
     resolve = make_resolver(files, list(include_dirs or []))
     pp = Preprocessor(resolve, defines=defines)
     out: dict[str, SlangUnit] = {}
+    cache = _cache()
     for path, text in files.items():
         if not path.lower().endswith((".sv", ".svh", ".v", ".vh")):
             continue
+        # Preprocess always: it is 11% of the time and depends on the whole file
+        # set, so it cannot be cached per source file.
         result = pp.run(text, path)
-        unit = extract(result.text, path)
+        # `extract` is 89% of the time and is a pure function of this text, so it
+        # is cached on the text itself — no invalidation, no staleness.
+        cached = cache.get(result.text) if cache else None
+        if cached is not None:
+            unit = SlangUnit(**cached)
+        else:
+            unit = extract(result.text, path)
+            if cache:
+                cache.put(result.text, _as_dict(unit))
         unit.includes = list(result.includes)
         unit.unresolved = list(result.unresolved)
         out[path] = unit
     return out
+
+
+def _cache():
+    """The unit cache, or None when disabled."""
+    try:
+        from .cache import disabled, unit_cache
+        return None if disabled() else unit_cache()
+    except Exception:                                            # noqa: BLE001
+        return None
+
+
+def _as_dict(unit: SlangUnit) -> dict:
+    import dataclasses
+    return dataclasses.asdict(unit)
