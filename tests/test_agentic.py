@@ -86,11 +86,13 @@ def test_it_proposes_a_diff_and_writes_nothing_by_default(broken):
     assert "nothing was written" in run.render()
 
 
-def test_it_writes_with_apply_and_then_reports_done(broken):
+def test_it_writes_with_apply_and_then_says_what_is_left(broken):
+    """The stub is written and the design elaborates, but the kernel still marks
+    results open — so `done` would be a claim the tool cannot support."""
     run = code("make this design verify", str(broken), apply=True)
     assert run.applied
     assert (broken / "wengold_stubs.sv").exists()
-    assert run.done, run.reason
+    assert "no kernel-justified action" in run.reason, run.reason
 
 
 def test_without_apply_it_stops_after_one_diff(broken):
@@ -100,11 +102,18 @@ def test_without_apply_it_stops_after_one_diff(broken):
     assert len(run.steps) == 1, [s.thought for s in run.steps]
 
 
-def test_a_clean_design_is_reported_done_with_no_steps(clean):
+def test_a_clean_design_takes_no_steps_and_says_what_is_open(clean):
+    """It used to report `done` here, and `done` was a false claim: `_failed` read
+    `.verdict` off plain dicts, always got None, and the loop announced "no result
+    invalidated" while the kernel had marked one INVALIDATED.
+
+    The honest report is that nothing needs *fixing* (no unresolved module, no
+    actionable failure) and one result is still open.
+    """
     run = code("make this design verify", str(clean))
-    assert run.done
-    assert run.steps == []
-    assert "nothing left that can be justified" in run.reason
+    assert run.steps == [], "a clean design needs no action"
+    assert "no kernel-justified action" in run.reason
+    assert "not valid" in run.reason, "name what is open rather than hiding it"
 
 
 def test_a_missing_directory_stops_with_a_reason(tmp_path):
