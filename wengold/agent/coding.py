@@ -87,11 +87,17 @@ class CodingRun:
             lines.append("  nothing was written — re-run with --apply to take the "
                          "diffs above")
         lines.append("")
-        lines.append("  every step above is justified by a kernel fact; none is a "
-                     "model's guess.")
-        lines.append("  this does not write RTL logic, invent a missing module's "
-                     "behaviour, or")
-        lines.append("  guess a fix for a check that did not run.")
+        if self.drafted:
+            lines.append("  the draft step above is a MODEL'S OUTPUT, not a kernel "
+                         "fact. It was compiled, not verified.")
+            lines.append("  without --draft this loop writes no RTL and invents no "
+                         "behaviour.")
+        else:
+            lines.append("  every step above is justified by a kernel fact; none is "
+                         "a model's guess.")
+            lines.append("  this does not write RTL logic, invent a missing "
+                         "module's behaviour, or guess a fix for a check that did "
+                         "not run.")
         return "\n".join(lines)
 
 
@@ -108,7 +114,11 @@ def _failed(results) -> list:
     """Results the kernel says are invalidated or unknown — the actionable ones."""
     out = []
     for r in results or []:
-        v = getattr(r, "verdict", None)
+        # `_verdicts` returns plain dicts. Reading `.verdict` off a dict always
+        # gave None, so the loop believed nothing had failed — it announced
+        # "no result invalidated" while the kernel reported one, and the review
+        # branch was unreachable.
+        v = r.get("verdict") if isinstance(r, dict) else getattr(r, "verdict", None)
         name = getattr(v, "name", str(v)).upper()
         if name in ("INVALIDATED", "UNKNOWN", "FAIL", "STALE"):
             out.append(r)
@@ -210,11 +220,17 @@ def code(goal: str, root: str, tools: str | None = None,
                 run.drafted = True
                 # the reason must describe what actually happened: no model, a
                 # model that failed, or a draft that compiled
+                # most specific reason first: a missing model or an unanswered
+                # call is not "you forgot --apply"
                 if "no local model is configured" in step.fact:
                     run.reason = ("the goal needs RTL the spec grammar cannot "
                                   "express, and no local model is configured")
                 elif "unavailable" in step.outcome:
                     run.reason = f"the local model did not answer: {step.outcome}"
+                elif not apply:
+                    run.reason = ("the model drafted a block and the diff is "
+                                  "shown; nothing was written and nothing was "
+                                  "compiled — re-run with --apply")
                 elif "[unchecked]" in step.outcome:
                     run.reason = ("the model drafted a block but it could not be "
                                   "compiled here — install iverilog and re-run "
@@ -238,8 +254,14 @@ def code(goal: str, root: str, tools: str | None = None,
             return run
 
         # 4. there is a problem but no justified action for it
-        run.reason = ("problems remain but none of them has a kernel-justified "
-                      "action — stopping rather than inventing one")
+        if bad:
+            run.reason = (f"{len(bad)} result(s) are not valid and no "
+                          f"kernel-justified action settles them — re-run the "
+                          f"check, or ask the kernel why: `verdicts`")
+        else:
+            run.reason = ("problems remain but none of them has a "
+                          "kernel-justified action — stopping rather than "
+                          "inventing one")
         return run
 
     if not run.reason:
@@ -292,6 +314,15 @@ def _draft_step(n: int, goal: str, root: str, apply: bool):
                     ok=True, outcome="diff shown, not written",
                     diff=f"--- a/{path.name}\n+++ b/{path.name}\n"
                          + "".join(f"+{ln}\n" for ln in body.splitlines()))
+
+    if path.exists():
+        return Step(n=n, thought="draft the block the goal asks for",
+                    fact=f"the kernel has nothing left to justify",
+                    action=f"draft_rtl via {model.model} -> {path.name}",
+                    ok=False,
+                    outcome=(f"{path.name} already exists — refusing to overwrite "
+                             f"a design file with model output. Move it, or draft "
+                             f"under a different name."))
 
     try:
         path.write_text(body)
