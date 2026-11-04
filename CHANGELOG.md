@@ -14,6 +14,61 @@ what the tags are for.
 
 ---
 
+## [0.61.0] — 2026-11-04
+
+### Added — the model is in the app
+v0.60.0 shipped the client; nothing called it. Now two commands do.
+
+- **`ask <question>`** — a question about the design, answered in the transcript.
+  Every answer carries its own provenance:
+
+  ```
+  > ask what does this design do?
+  This is a 16-bit counter with a match output and a 2-flop synchroniser on the
+  tick input.
+
+    — from qwen2.5-coder:7b, a local model. Not checked against the design.
+  ```
+
+- **`explain`** — prose for the verdicts the kernel already computed. The facts are
+  the kernel's; only the wording is the model's.
+
+- **The strip shows the model** — `3/3 files are design units · model qwen2.5-coder:7b`
+  — so you can see at a glance whether `ask` will answer or decline.
+
+### The fallback is the part that matters
+With no model configured, `ask` does not fail silently:
+
+```
+no local model configured.
+  set WENGOLD_LLM_MODEL=qwen2.5-coder:7b and run `ollama serve`
+  check it with: wengold doctor --llm
+everything else in this pane works without one.
+```
+
+And `explain` still prints the kernel's facts, because those never needed a model.
+A command that quietly does nothing when a model is absent is worse than one that is
+not there at all.
+
+### What improves, and what does not
+**Improves:** the app can now answer questions about a design, draft RTL the spec
+grammar does not cover, and put a failure into prose. None of that was possible
+before — `vibe` only accepts a register-block spec, and the pane only ran commands.
+
+**Does not improve:** the verdicts, the plan, or the speed. Every one of those is a
+graph lookup that costs microseconds; a 7B model costs seconds and knows less about
+the design than the graph does.
+
+### Still not verified against a real model
+The wiring is tested through the app against a mock server — the fallback, the
+attribution line, the dead-server path, the empty-question path, the strip label.
+The model's actual answers are not tested, because this sandbox has 2 CPUs and 2 GB
+of RAM. `wengold doctor --llm` on your machine is the check that closes that gap.
+
+**876 tests passing** locally (7 new).
+
+---
+
 ## [0.60.0] — 2026-11-04
 
 ### Added — a local model, off by default
