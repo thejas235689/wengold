@@ -193,7 +193,8 @@ async function boot(){
     $('tname').textContent=s.path.split('/').filter(Boolean).pop()||'design';
     $('tdims').textContent=s.blocks+' blocks · '+s.nodes+' nodes · '+
       s.design_units+'/'+s.files+' files are design units';
-    $('tunres').textContent=s.unresolved?(s.unresolved+' unresolved'):'complete';
+    $('tunres').textContent=(s.unresolved?(s.unresolved+' unresolved'):'complete')
+      +(s.model&&s.model!=='off'?' · model '+s.model:'');
     $('s-msg').innerHTML=s.blocks+' blocks <span class="sep">·</span> '+
       s.nodes+' nodes <span class="sep">·</span> '+s.edges+' edges <span class="sep">·</span> '+
       (s.complete?'<b>complete</b>':'<b>incomplete</b>');
@@ -362,6 +363,7 @@ def build_state(path: str) -> dict:
         # files that contained a design unit — how much of the repository the
         # graph can even describe — so it is named that and reported as a ratio.
         "design_units": c["contributing_files"],
+        "model": _model_label(),
         "file_coverage": round(c["file_coverage"] * 100),
         "complete": bool(c["complete"]),
         "notes": [n for n in dict.fromkeys(g.notes)][:3],
@@ -423,7 +425,7 @@ def _file_detail(state: dict, rel: str) -> dict:
 # each one reads state the kernel already computed. Adding a verb here is a code
 # change, not a config option.
 CLI_COMMANDS = ("summary", "files", "blocks", "verdicts", "singularity",
-                "review", "vibe", "agentic", "help")
+                "review", "vibe", "agentic", "ask", "explain", "help")
 
 
 def _page(state: dict) -> str:
@@ -508,6 +510,16 @@ def _agent(state: dict, q: str) -> dict:
 _SHELL_SYNTAX = ("&&", "||", ";", "|", "&", "`", "$(", ">", "<", "\n")
 
 
+def _model_label() -> str:
+    """`off` unless a local model is configured. Shown in the strip."""
+    try:
+        from .agent.llm import from_env
+        m = from_env()
+        return m.model if m else "off"
+    except Exception:                                            # noqa: BLE001
+        return "off"
+
+
 def _exec(state: dict, line: str) -> dict:
     """Run one whitelisted command against the indexed state."""
     raw = line.strip()
@@ -546,6 +558,49 @@ def _exec(state: dict, line: str) -> dict:
         rep = review(state.get("path", "."),
                      tools=os.environ.get("WENGOLD_TOOLS"))
         return {"ok": True, "output": render_review(rep).strip()}
+
+    if verb == "ask":
+        # The only command that talks to a model. Everything else in this pane is
+        # a graph lookup; this one leaves the kernel behind, so it says what it is.
+        from .agent.llm import LLMUnavailable, from_env
+        model = from_env()
+        if model is None:
+            return {"ok": False, "output":
+                    "no local model configured.\n"
+                    "  set WENGOLD_LLM_MODEL=qwen2.5-coder:7b and run `ollama serve`\n"
+                    "  check it with: wengold doctor --llm\n"
+                    "everything else in this pane works without one."}
+        prompt = " ".join(args) if args else ""
+        if not prompt:
+            return {"ok": False, "output": "ask needs a question, e.g.\n"
+                                           "  ask what does this design do?"}
+        try:
+            answer = model.ask(prompt)
+        except LLMUnavailable as e:
+            return {"ok": False, "output": f"model unavailable: {e}"}
+        return {"ok": True, "output":
+                f"{answer}\n\n  — from {model.model}, a local model. "
+                f"Not checked against the design."}
+
+    if verb == "explain":
+        # Prose for a verdict the kernel already established. The facts are the
+        # kernel's; only the wording comes from the model.
+        from .agent.llm import LLMUnavailable, from_env
+        model = from_env()
+        v = _verdicts(state)
+        facts = (f"{v['counts']}\n"
+                 + "\n".join(f"{r.get('id')}: {r.get('verdict')} — "
+                              f"{r.get('reason', '')}" for r in v["results"][:12]))
+        if model is None:
+            return {"ok": False, "output":
+                    "no local model configured — but the facts need no model:\n\n"
+                    + facts}
+        try:
+            return {"ok": True, "output": model.explain_failure(facts)
+                    + "\n\n  — wording from " + model.model
+                    + "; the verdicts above are the kernel's."}
+        except LLMUnavailable as e:
+            return {"ok": False, "output": f"model unavailable: {e}\n\n" + facts}
 
     if verb == "vibe":
         # The one command that writes: it generates a block and simulates it.
