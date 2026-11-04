@@ -419,7 +419,8 @@ def cmd_agentic(args) -> int:
     from .agent.coding import code
 
     run = code(args.goal, args.design or ".", tools=args.tools,
-               apply=args.apply, max_steps=args.max_steps)
+               apply=args.apply, max_steps=args.max_steps,
+               draft=args.draft)
     print(run.render())
     return 0 if (run.done or not run.changed) else 1
 
@@ -1208,6 +1209,9 @@ def main(argv=None) -> int:
     p.add_argument("--apply", action="store_true",
                    help="write the diffs; without this nothing is changed")
     p.add_argument("--max-steps", type=int, default=6)
+    p.add_argument("--draft", action="store_true",
+                   help="let a configured local model draft RTL when the kernel "
+                        "has nothing left; the result is compiled, never verified")
     p.set_defaults(func=cmd_agentic)
 
     p = sub.add_parser("review",
