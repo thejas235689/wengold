@@ -79,7 +79,8 @@ class Analysis:
 
     @property
     def unsynchronised(self) -> list[Crossing]:
-        return [c for c in self.crossings if c.verdict == "unsynchronised"]
+        return [c for c in self.crossings
+                if c.verdict in ("unsynchronised", "synchronised_data_hazard")]
 
     @property
     def clean(self) -> bool:
@@ -212,8 +213,12 @@ def analyse_text(src: str, path: str = "<text>") -> Analysis:
                     writes.setdefault(s, set()).add(clk)
                 for s in rnames:
                     reads.setdefault(s, set()).add(clk)
-                if len(lnames) == 1 and len(rnames) == 1:
-                    seq_pairs.append((clk, next(iter(lnames)), next(iter(rnames))))
+                # Every nonblocking assignment, with the full set of names it
+                # reads. Recording only `lhs <= rhs` with two bare identifiers
+                # lost `y <= meta & en` entirely — which is exactly the shape of a
+                # metastable first stage escaping its synchroniser.
+                if len(lnames) == 1:
+                    seq_pairs.append((clk, next(iter(lnames)), frozenset(rnames)))
 
         # combinational reads count as reads on every clock the module uses
         clocks = {c for cs in writes.values() for c in cs}
@@ -250,19 +255,55 @@ def _classify(sig: str, a: str, b: str, pairs, widths) -> tuple[str, str]:
     The 2-FF pattern: `m <= sig` on clock b, and `s <= m` on clock b as well. If
     only one flop follows the crossing, a single event can still be metastable.
     """
-    first = [lhs for (clk, lhs, rhs) in pairs if clk == b and rhs == sig]
+    def reads(rhs, name: str) -> bool:
+        """`rhs` is the set of names an assignment reads (older callers: a str)."""
+        return rhs == name if isinstance(rhs, str) else name in rhs
+
+    first = [lhs for (clk, lhs, rhs) in pairs if clk == b and reads(rhs, sig)]
     if not first:
         return ("unsynchronised",
                 f"read on {b} with no flop in between")
+
+    # Every reader of the crossing signal must be a chain start with its own
+    # second flop. `y <= s_r` alongside a correct chain is a direct metastable
+    # read, and the earlier version missed it because it treated `y` as a first
+    # stage and then found a chain for the *other* reader.
+    unprotected = [mid for mid in first
+                   if not [lhs for (clk, lhs, rhs) in pairs
+                           if clk == b and reads(rhs, mid)]]
+    if unprotected:
+        return ("unsynchronised",
+                f"{sig} is read on {b} by {unprotected[0]} with no second flop "
+                f"after it — a direct metastable read alongside the synchroniser")
+
+    # (b) the metastable first stage must feed nothing but its second flop.
+    #     `sync <= meta` is a chain flop; `y <= meta & en` is an escape — the
+    #     chain looks right and the value that escapes it was never settled.
     for mid in first:
-        second = [lhs for (clk, lhs, rhs) in pairs if clk == b and rhs == mid]
+        escapes = sorted({lhs for (clk, lhs, rhs) in pairs
+                          if clk == b and reads(rhs, mid)
+                          and isinstance(rhs, frozenset) and len(rhs) > 1})
+        if escapes:
+            return ("unsynchronised",
+                    f"the first synchroniser stage {mid} is also read by "
+                    f"{escapes[0]} on {b} together with other signals — that path "
+                    f"is metastable and unprotected")
+
+    for mid in first:
+        second = [lhs for (clk, lhs, rhs) in pairs if clk == b and reads(rhs, mid)]
         if second:
             w = widths.get(sig, 1)
             if w > 1:
-                return ("synchronised",
+                # A 2-FF per bit does not make a bus coherent: each bit settles on
+                # its own edge, so the destination can latch a mix of old and new.
+                # Reporting "synchronised" and then clean was the worst finding of
+                # the CDC audit — the hazard lived only in prose while the
+                # machine-readable verdict said safe.
+                return ("synchronised_data_hazard",
                         f"{mid} -> {second[0]} on {b}, but {sig} is {w} bits: each "
                         f"bit settles independently, so the value read can mix old "
-                        f"and new")
+                        f"and new. A per-bit synchroniser is not a bus "
+                        f"synchroniser; use a handshake, gray code or an async FIFO")
             return ("synchronised", f"{mid} -> {second[0]} on {b} (2-FF)")
     return ("unsynchronised",
             f"{sig} reaches {first[0]} on {b} but no second flop follows")
