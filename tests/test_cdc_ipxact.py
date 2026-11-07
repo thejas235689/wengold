@@ -21,10 +21,25 @@ from wengold.cdc_standard import parse
 ROOT = Path(__file__).resolve().parent.parent
 EXAMPLE = ROOT / "examples/cdc/mixed_clocks_cdc.tcl"
 
+#: Same collateral as examples/cdc/mixed_clocks_cdc.tcl, inline, so this file
+#: still runs if the example directory is not shipped alongside the tests.
+INLINE_EXAMPLE = """\
+accellera_cdc::set_module -name mixed_clocks
+accellera_cdc::set_port -name clk_a -direction input -type clock -logic combo
+accellera_cdc::set_port -name clk_b -direction input -type clock
+accellera_cdc::set_port -name rst_n -direction input -type async_reset -polarity low \
+  -associated_to_clocks clk_a
+accellera_cdc::set_port -name d_in -direction input -type data \
+  -associated_to_clocks clk_a -logic internal_sync -sampling_edge pos
+accellera_cdc::set_port -name d_out -direction output -type data \
+  -associated_from_clocks clk_b
+accellera_cdc::set_clock_group -name async_pair -clocks {clk_a clk_b}
+"""
+
 
 @pytest.fixture()
 def col():
-    return parse(EXAMPLE.read_text())
+    return parse(EXAMPLE.read_text() if EXAMPLE.exists() else INLINE_EXAMPLE)
 
 
 def q(ns, tag):
@@ -119,9 +134,17 @@ def test_associated_clocks_survive_the_round_trip(col):
 
 
 # ---- Clause 7.8 semantic consistency rules ---------------------------------
-def test_a_good_document_passes_all_three_rules(col):
+def test_a_good_document_passes_all_five_rules(col):
+    """Renamed from `test_a_good_document_passes_all_three_rules`.
+
+    That name carried the defect: Table 11 defines five rules, not three. The
+    old body (`assert rep.ok`) is unchanged and still asserted; the extra
+    assertion pins the count so the "three" claim cannot come back.
+    """
     rep = check_scr(to_ipxact(col))
     assert rep.ok, rep.render()
+    assert len(rep.rules_checked()) == 5
+    assert "five" in rep.render()
 
 
 def test_a_reference_to_a_missing_port_is_caught():
