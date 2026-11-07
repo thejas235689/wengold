@@ -81,23 +81,136 @@ class CdcReport:
                 "unresolved": self.unresolved}
 
 
-def _block_body(text: str, start: int) -> str:
-    """Text of the statement beginning at `start` (a begin/end block or one statement)."""
-    rest = text[start:]
-    stripped = rest.lstrip()
-    if stripped.startswith("begin"):
-        i = rest.index("begin")
-        depth, j = 1, i + len("begin")
-        while j < len(rest) and depth:
-            word = _IDENT.match(rest, j)
-            if word and word.group(0) in ("begin", "end"):
-                depth += 1 if word.group(0) == "begin" else -1
-                j = word.end()
+def _skip_ws(text: str, i: int) -> int:
+    while i < len(text) and text[i].isspace():
+        i += 1
+    return i
+
+
+def _skip_parens(text: str, i: int) -> int:
+    """Index just past the parenthesised group whose `(` is at or after `i`."""
+    j = text.find("(", i)
+    if j < 0:
+        return i
+    depth = 0
+    while j < len(text):
+        if text[j] == "(":
+            depth += 1
+        elif text[j] == ")":
+            depth -= 1
+            if not depth:
+                return j + 1
+        j += 1
+    return len(text)
+
+
+def _stmt_end(text: str, i: int) -> int:
+    """Index just past the statement that begins at `i`.
+
+    A statement is not a semicolon-terminated string. `if (en) begin a <= x;
+    b <= y; end` is ONE statement whose text contains two assignments; cutting at
+    the first `;` kept `a <= x` and dropped `b <= y` — so every assignment after
+    the first in an `if`-guarded block vanished, and a read that lived there was
+    never seen as a read at all.
+
+    Handles begin/end, case/endcase, fork/join, if/else (with the dangling-else
+    binding to the nearest `if`), and the looping constructs, recursively. Any
+    other statement runs to its `;` at bracket depth zero.
+    """
+    i = _skip_ws(text, i)
+    if i >= len(text):
+        return i
+    m = _IDENT.match(text, i)
+    word = m.group(0) if m else ""
+    if word == "begin":
+        depth, j = 1, m.end()
+        while j < len(text) and depth:
+            w = _IDENT.match(text, j)
+            if w and w.group(0) in ("begin", "end"):
+                depth += 1 if w.group(0) == "begin" else -1
+                j = w.end()
                 continue
             j += 1
-        return rest[i:j]
-    semi = rest.find(";")
-    return rest[:semi + 1] if semi >= 0 else rest
+        return j
+    if word in ("case", "casez", "casex"):
+        depth, j = 1, m.end()
+        while j < len(text) and depth:
+            w = _IDENT.match(text, j)
+            if w and w.group(0) in ("case", "casez", "casex", "endcase"):
+                depth += 1 if w.group(0) != "endcase" else -1
+                j = w.end()
+                continue
+            j += 1
+        return j
+    if word == "fork":
+        depth, j = 1, m.end()
+        while j < len(text) and depth:
+            w = _IDENT.match(text, j)
+            if w and w.group(0) in ("fork", "join", "join_any", "join_none"):
+                depth += 1 if w.group(0) == "fork" else -1
+                j = w.end()
+                continue
+            j += 1
+        return j
+    if word == "if":
+        j = _stmt_end(text, _skip_parens(text, m.end()))
+        k = _skip_ws(text, j)
+        w = _IDENT.match(text, k)
+        if w and w.group(0) == "else":
+            j = _stmt_end(text, w.end())
+        return j
+    if word in ("for", "while", "repeat", "foreach"):
+        return _stmt_end(text, _skip_parens(text, m.end()))
+    if word == "forever":
+        return _stmt_end(text, m.end())
+    # an ordinary statement: run to the `;` that is not inside brackets
+    depth, j = 0, i
+    while j < len(text):
+        ch = text[j]
+        if ch in "([{":
+            depth += 1
+        elif ch in ")]}":
+            depth -= 1
+        elif ch == ";" and depth <= 0:
+            return j + 1
+        j += 1
+    return j
+
+
+def _block_body(text: str, start: int) -> str:
+    """Text of the statement beginning at `start` (a begin/end block or one statement)."""
+    return text[start:_stmt_end(text, start)]
+
+
+def _paren_masked(text: str) -> str:
+    """`text` with every parenthesised subexpression blanked out.
+
+    `if (a <= b)` is a comparison, not an assignment. Matching the assignment
+    regexes against the raw body read `a <= b` as "a is assigned here", so the
+    signal was recorded as written by this block's clock: the real crossing
+    disappeared (the signal was no longer *read* here) and the signal was listed
+    in the wrong domain. Assignment targets never live inside parentheses.
+    """
+    out: list[str] = []
+    depth = 0
+    for ch in text:
+        if ch == "(":
+            depth += 1
+            out.append(" ")
+        elif ch == ")":
+            depth = max(0, depth - 1)
+            out.append(" ")
+        elif depth:
+            out.append(" ")
+        else:
+            out.append(ch)
+    return "".join(out)
+
+
+def _writes_of(body: str) -> set[str]:
+    """Assignment targets in a procedural body (nonblocking and blocking)."""
+    flat = _paren_masked(body)
+    return set(_WRITE.findall(flat)) | set(_WRITE_BLOCKING.findall(flat))
 
 
 def _clock_of(sens: str) -> str | None:
@@ -141,10 +254,10 @@ def analyse(text: str, module: str) -> CdcReport:
             # a combinational block: its targets are not clocked, but their value
             # still comes from somewhere — record it so a signal driven here is
             # not mistaken for one with no determinable domain
-            for target in set(_WRITE_BLOCKING.findall(body)) | set(_WRITE.findall(body)):
+            for target in _writes_of(body):
                 comb[target] = idents - {target}
             continue
-        written = set(_WRITE.findall(body))
+        written = _writes_of(body)
         written_by.setdefault(clock, set()).update(written)
         read_by.setdefault(clock, set()).update(idents - written - {clock})
 
@@ -152,7 +265,7 @@ def analyse(text: str, module: str) -> CdcReport:
         body = _block_body(text, m.end())
         idents = {i for i in _IDENT.findall(body)
                   if i not in _KEYWORDS and i not in not_signals}
-        for target in set(_WRITE_BLOCKING.findall(body)) | set(_WRITE.findall(body)):
+        for target in _writes_of(body):
             comb[target] = idents - {target}
     for m in _ASSIGN.finditer(text):
         target = m.group(1)
@@ -182,10 +295,14 @@ def analyse(text: str, module: str) -> CdcReport:
             if not src:
                 unresolved.add(sig)               # cannot tell where it comes from
                 continue
-            if clock in src:
+            # Skip only when the signal belongs to this clock and nothing else.
+            # `clock in src` also skipped a *mixed* node — combinational logic fed
+            # from both domains — so the genuine contribution from the other
+            # domain was silently dropped and the crossing never reported.
+            if src == {clock}:
                 continue
             kind = "through_combinational" if sig in comb else "direct"
-            for other in sorted(src):
+            for other in sorted(src - {clock}):
                 report.crossings.append(Crossing(sig, other, clock, module, kind))
     report.unresolved = sorted(unresolved)
     return report
