@@ -93,7 +93,9 @@ names. Verified: the old line raises, the new one reports.
   `logic`/`polarity`/`associatedFromClocks`/`controlFromClock`, which are inferred
   from the standard's camelCase convention because Figure 33 is an image.
 
-**999 tests passing**, 1 skipped.
+**999 tests passing**, 1 skipped, verified from a fresh checkout of `main`
+(967 + 32 across two runs), including all 18 conformance tests and the
+244-test CDC/RDC set.
 ---
 
 ## [0.64.0] — 2026-11-04
