@@ -20,6 +20,11 @@ Then it classifies each crossing:
   ``unsynchronised`` it reaches combinational logic or a single flop directly
   ``unknown``        the source module is outside the subset we can read
 
+A signal whose only path into the destination domain is combinational
+(`assign t = a_reg & en;` and then `q <= t` under the other clock) is a crossing
+in its own right. It is reported against the combinational node, not only against
+the flop that wrote `a_reg`, because that node is what the destination samples.
+
 What it does **not** do
 -----------------------
 It is not a sign-off CDC tool and it does not claim to be:
@@ -88,9 +93,19 @@ class Analysis:
 
         Deliberately NOT true when there are no crossings *or* when some are
         unknown — "I saw nothing" is not "there is nothing".
+
+        Also NOT true for a combinational path into the synchroniser. The 2-FF
+        still resolves metastability, so the verdict stays `synchronised` — but
+        Clause 4.3.10 separates `internal_sync` from `combo`/`glitch_free_combo`
+        on the path, and a glitch on the input presents a transition the
+        synchroniser then passes on faithfully. Saying "clean" there is an
+        overclaim, and this tool does not overclaim. `graph/cdc.py` already
+        reports this shape as `through_combinational` and never as safe; the two
+        now agree that it is not clean.
         """
         return bool(self.crossings) and all(
-            c.verdict == "synchronised" for c in self.crossings)
+            c.verdict == "synchronised" and "combinational" not in c.detail.lower()
+            for c in self.crossings)
 
     def render(self) -> str:
         lines = []
@@ -191,12 +206,33 @@ def analyse_text(src: str, path: str = "<text>") -> Analysis:
             continue
         out.modules.append(name)
         widths = _signal_widths(node)
-        writes: dict[str, set[str]] = {}
-        reads: dict[str, set[str]] = {}
+        writes: dict[str, set[str]] = {}                # signal -> clocks writing it
+        reads: dict[str, set[str]] = {}                 # signal -> clocks reading it
+        comb: dict[str, set[str]] = {}                  # comb target -> what it reads
         seq_pairs: list[tuple[str, str, str]] = []      # (clock, lhs, rhs)
 
         for blk in _walk(node):
-            if not str(getattr(blk, "kind", "")).endswith("AlwaysFFBlock"):
+            kind = str(getattr(blk, "kind", ""))
+            if kind.endswith(("AlwaysCombBlock", "AlwaysLatchBlock", "AlwaysBlock")) \
+                    and not _clock_of(blk):
+                # A procedural block with no edge trigger is combinational. Its
+                # targets are not clocked, but their value still comes from
+                # somewhere: `assign comb = reg_a & 1'b1` carries a value out of
+                # reg_a's domain, and until this was recorded the only crossings
+                # this function could see were ones a flop wrote directly.
+                body = getattr(blk, "statement", None)
+                if body is None:
+                    continue
+                for a in _walk(body):
+                    if not str(getattr(a, "kind", "")).endswith(
+                            "AssignmentExpression"):
+                        continue
+                    lnames = _idents(getattr(a, "left", None))
+                    rnames = _idents(getattr(a, "right", None))
+                    for s in lnames:
+                        comb.setdefault(s, set()).update(rnames - {s})
+                continue
+            if not kind.endswith("AlwaysFFBlock"):
                 continue
             clk = _clock_of(blk)
             if not clk:
@@ -220,14 +256,21 @@ def analyse_text(src: str, path: str = "<text>") -> Analysis:
                 if len(lnames) == 1:
                     seq_pairs.append((clk, next(iter(lnames)), frozenset(rnames)))
 
-        # combinational reads count as reads on every clock the module uses
         clocks = {c for cs in writes.values() for c in cs}
+        # continuous assignments: `assign t = expr;` is combinational logic, and t
+        # is what a later flop in another domain actually samples. Previously the
+        # identifiers on the right were attributed to *every* clock as reads, which
+        # reported the source signal but never the combinational node itself — so a
+        # design whose only path into the destination domain went through
+        # combinational logic produced no entry for it and `clean` came back True.
         for a in _walk(node):
             if not str(getattr(a, "kind", "")).endswith("ContinuousAssign"):
                 continue
-            for s in _idents(getattr(a, "expr", None) or a):
-                for c in clocks:
-                    reads.setdefault(s, set()).add(c)
+            for asg in (getattr(a, "assignments", None) or []):
+                lnames = _idents(getattr(asg, "left", None))
+                rnames = _idents(getattr(asg, "right", None))
+                for s in lnames:
+                    comb.setdefault(s, set()).update(rnames - {s})
 
         out.clocks[name] = clocks
         out.seq[name] = seq_pairs
@@ -235,18 +278,50 @@ def analyse_text(src: str, path: str = "<text>") -> Analysis:
         if len(clocks) < 2:
             continue
 
-        for sig, wclocks in sorted(writes.items()):
-            rclocks = reads.get(sig, set())
-            for a in sorted(wclocks):
-                for b in sorted(rclocks):
-                    if a == b:
-                        continue
-                    verdict, detail = _classify(sig, a, b, seq_pairs, widths)
+        def domains_of(sig: str, seen: frozenset = frozenset()) -> set[str]:
+            """Clocks whose flops drive `sig`, directly or through comb logic."""
+            if sig in seen:
+                return set()
+            seen = seen | {sig}
+            found = set(writes.get(sig, ()))
+            for r in comb.get(sig, ()):
+                found |= domains_of(r, seen)
+            return found
+
+        # Walk from the destination side: every signal observed under clock b, and
+        # every clock that drives it. A combinational node appears here for the
+        # first time — it is read on b but written by no flop, so a walk over
+        # `writes` never reached it.
+        for b in sorted(clocks):
+            for sig in sorted(s for s, cs in reads.items() if b in cs):
+                for a in sorted(domains_of(sig) - {b}):
+                    if sig in comb:
+                        verdict, detail = _classify_combinational(
+                            sig, a, b, seq_pairs, widths)
+                    else:
+                        verdict, detail = _classify(sig, a, b, seq_pairs, widths)
                     out.crossings.append(Crossing(
                         signal=sig, width=widths.get(sig, 1),
                         from_clock=a, to_clock=b, verdict=verdict,
                         detail=detail, module=name))
     return out
+
+
+def _classify_combinational(sig: str, a: str, b: str, pairs,
+                            widths) -> tuple[str, str]:
+    """A signal whose value reaches clock b through combinational logic.
+
+    It is classified like any other crossing — a combinational path into a real
+    2-FF chain is a synchronised path, and Clause 4.3.10 recognises it as
+    `glitch_free_combo`/`combo` — but the detail always says the path is
+    combinational, because a reader of the report needs to know that the value was
+    not settled by a flop in the source domain.
+    """
+    verdict, detail = _classify(sig, a, b, pairs, widths)
+    path = (f"{sig} reaches {b} through combinational logic from {a}")
+    if verdict.startswith("synchronised"):
+        return verdict, f"{path}; {detail}"
+    return "unsynchronised", f"{path} and {detail}"
 
 
 def _classify(sig: str, a: str, b: str, pairs, widths) -> tuple[str, str]:
