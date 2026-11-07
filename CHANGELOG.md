@@ -14,6 +14,88 @@ what the tags are for.
 
 ---
 
+## [0.65.0] — 2026-11-07
+
+### All 34 open CDC/RDC findings fixed, in parallel
+Five sub-agents worked concurrently, **one per module**, so no two could touch the
+same file and the merge was a plain copy:
+
+| module | findings |
+| --- | --- |
+| `cdc_analysis.py` + `graph/cdc.py` | 4 false negatives |
+| `cdc_standard.py` | 10 that rejected conformant input or missed checks |
+| `cdc_scenarios.py` | 6 Clause 5 |
+| `cdc_ipxact.py` | 7 Clause 7 |
+| `cdc_sva.py` | 8 Clause 8 |
+
+Each was required to quote the standard for every change and to add a test that
+fails without the fix. Every claim below was re-verified here, not taken from the
+agents' reports.
+
+### The one that mattered most
+The tool **contradicted the standard's own Example 34**: §5.4 demanded
+`-rdc_control` on an input data port, which Example 34 never declares — it declares
+one port, `rdcq0_i`, of type `rdc_control`. A collateral built to the standard's own
+example failed the standard's own scenario, and the error told the user to add a
+non-standard attribute.
+
+### A conflict inside the standard
+Table 3 says `-polarity` is *"mandatory for async reset, cdc_control, and
+rdc_control"* — but Example 34 declares an `rdc_control` with `-blocking_polarity`
+and no `-polarity`. That is an inconsistency in the standard, so when
+`-blocking_polarity` is present the checker emits a **warning that names the
+conflict** rather than an error that rejects the standard's own example. Rejecting
+the standard's example is the worse failure.
+
+### Table 11 defines five rules, not three
+`check_scr()` implemented three of the five semantic consistency rules, and its
+output said "three". `CDCInputPortReference` and `CDCOutputPortReference` are now
+implemented, which needed the writer to emit `ipxact:isData`.
+
+### The guard that caught my own mistakes
+`tests/test_cdc_conformance.py` holds collateral drawn verbatim from the standard
+that must be accepted. Writing it caught **three errors of mine**, and the checker
+was right every time:
+
+- 8 port forms omitted `-direction`. Table 3 makes it **Mandatory**; Example 42
+  elides it with a trailing `...`. I had copied the example instead of reading the
+  table.
+- My Example 34 fixture invented `async_reset` ports without `-polarity`. Table 3
+  makes it Conditional, *"mandatory for async reset"*.
+
+A conformance file looser than the standard is useless; one stricter is an
+over-rejection generator. It has to be exactly as strict.
+
+### Two detectors disagreed; neither was right
+`cdc_analysis` called a combinational path into a 2-FF `synchronised` and `clean`;
+`graph/cdc.py` called the same shape `through_combinational` and unsafe. The 2-FF is
+really there, so "unsafe" overstates — but "clean" is an overclaim: Clause 4.3.10
+separates `internal_sync` from `combo`/`glitch_free_combo`, and a glitch on the
+input presents a transition the synchroniser then passes on faithfully. `clean` is
+now False for that shape. The verdict wording still differs between the tools, which
+is a documentation question, not a safety one.
+
+### Also fixed
+`tests/test_cdc_standard.py` read `f.message` on a `Finding` that has `.detail` — it
+would have raised `AttributeError` the moment any finding existed, and passed only
+because its input produced none, so it could never have failed for the reason it
+names. Verified: the old line raises, the new one reports.
+
+### Not verified
+- **The generated SVA has never been compiled by a simulator.** iverilog 13 cannot
+  parse `property`/`assert property` at all (confirmed with a two-line file), so
+  pyslang elaboration was used instead — it resolves identifiers inside properties
+  and catches redefinitions, illegal identifiers and undeclared names, but it is not
+  a simulator.
+- Three judgement calls are recorded as judgement, not fact: whether §5.3 should
+  accept a single-reset sequence; whether a `cdc_control` port could ever serve as
+  RDC evidence; and the IP-XACT element names for Table 3 attributes beyond
+  `logic`/`polarity`/`associatedFromClocks`/`controlFromClock`, which are inferred
+  from the standard's camelCase convention because Figure 33 is an image.
+
+**999 tests passing**, 1 skipped.
+---
+
 ## [0.64.0] — 2026-11-04
 
 ### Four parallel verifications, and what they found
