@@ -31,7 +31,7 @@ def test_control_port_types_are_accepted():
 
 def test_a_control_port_parses_and_is_not_rejected():
     col = parse(HEAD + "accellera_cdc::set_port -name rdcq0_i -direction input "
-                       "-type rdc_control\n")
+                       "-type rdc_control -blocking_polarity low\n")
     assert "rdcq0_i" in col.ports
     assert col.ports["rdcq0_i"].type == "rdc_control"
 
@@ -80,7 +80,8 @@ def test_scenario_3_needs_the_internal_reset_attribute():
     `-rdc_data_from_reset` the modelling is §5.5."""
     col = parse(HEAD
                 + "accellera_cdc::set_port -name rdcq0_i -direction input "
-                  "-type rdc_control -rdc_data_from_reset rst0_n_i\n"
+                  "-type rdc_control -blocking_polarity low "
+                  "-rdc_data_from_reset rst0_n_i\n"
                 + "accellera_cdc::set_port -name data1_i -direction input "
                   "-type data -rdc_control rdcq0_i\n")
     assert by_clause(col)["§5.4"].covered
@@ -88,16 +89,22 @@ def test_scenario_3_needs_the_internal_reset_attribute():
 
 def test_a_control_port_alone_is_not_enough():
     col = parse(HEAD + "accellera_cdc::set_port -name rdcq0_i -direction input "
-                       "-type rdc_control\n")
+                       "-type rdc_control -blocking_polarity low\n")
     s = by_clause(col)["§5.4"]
     assert not s.covered
-    assert any("-rdc_control on the input data port" in m for m in s.missing)
+    # The old assertion here was `assert any("-rdc_control on the input data
+    # port" in m for m in s.missing)` — the defect itself. §5.4's evidence is the
+    # input rdc_control port carrying -rdc_data_from_reset and -blocking_polarity,
+    # exactly as Example 34 declares it; no data port is involved.
+    assert not any("-rdc_control on the input data port" in m for m in s.missing)
+    assert any("rdc_control" in m for m in s.missing)
 
 
 def test_scenario_5_needs_a_blocked_output():
     col = parse(HEAD
                 + "accellera_cdc::set_port -name rdcq0_o -direction output "
-                  "-type rdc_control\n"
+                  "-type rdc_control -blocking_polarity low "
+                  "-rdc_data_from_reset rst0_n_i\n"
                 + "accellera_cdc::set_port -name data0_o -direction output "
                   "-type data -rdc_control rdcq0_o\n")
     assert by_clause(col)["§5.6"].covered
@@ -115,12 +122,13 @@ def test_scenario_3_and_4_are_told_apart_by_rdc_data_from_reset():
     because the reset it blocks belongs to the integration."""
     internal = parse(HEAD
                      + "accellera_cdc::set_port -name rdcq0_i -direction input "
-                       "-type rdc_control -rdc_data_from_reset rst0_n_i\n"
+                       "-type rdc_control -blocking_polarity low "
+                  "-rdc_data_from_reset rst0_n_i\n"
                      + "accellera_cdc::set_port -name data0_i -direction input "
                        "-type data -rdc_control rdcq0_i\n")
     external = parse(HEAD
                      + "accellera_cdc::set_port -name rdcq0_i -direction input "
-                       "-type rdc_control\n"
+                       "-type rdc_control -blocking_polarity low\n"
                      + "accellera_cdc::set_port -name data0_i -direction input "
                        "-type data -rdc_control rdcq0_i\n")
     a, b = by_clause(internal), by_clause(external)
@@ -133,7 +141,8 @@ def test_scenario_5_and_6_are_told_apart_by_the_presence_of_a_control():
     in the receiving reset domain, with no control at all."""
     gated = parse(HEAD
                   + "accellera_cdc::set_port -name rdcq0_o -direction output "
-                    "-type rdc_control\n"
+                    "-type rdc_control -blocking_polarity low "
+                    "-rdc_data_from_reset rst0_n_i\n"
                   + "accellera_cdc::set_port -name data0_o -direction output "
                     "-type data -rdc_control rdcq0_o\n")
     prequalified = parse(HEAD
