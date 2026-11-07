@@ -193,6 +193,20 @@ def test_a_port_using_a_newly_added_attribute_passes_the_checker():
             "accellera_cdc::set_reset_assertion_sequence -name reset_seq_1 "
             "-assert_sequence {rst1_n_i rst0_n_i}\n")
     conformance = check(parse(text), {"CLK"})
-    unknown = [f.message for f in conformance.findings
-               if "unknown" in f.message.lower()]
+    # `Finding` here has `.detail`, not `.message` (that is the FSL class). This
+    # comprehension read `.message` and so would have raised AttributeError the
+    # moment any finding existed — it passed only because this input produces
+    # none, which means it could never have failed for the reason it names.
+    # "unknown" is the `rule`, not the `detail` — match both, so the filter cannot
+    # silently select nothing again.
+    def unknown_of(r):
+        return [f.detail for f in r.findings
+                if "unknown" in (f.rule + " " + f.detail).lower()]
+
+    unknown = unknown_of(conformance)
     assert not unknown, unknown
+    # and prove the list is reachable, so a silent pass is impossible
+    bad = check(parse(text + "accellera_cdc::set_port -name d -direction input "
+                             "-type data -bogus_attr x\n"), {"CLK"})
+    assert unknown_of(bad), \
+        "the assertion above is vacuous unless an unknown attribute is reported"
