@@ -17,17 +17,32 @@ What this module does, and does not, do
 ---------------------------------------
 It **parses** the format and **checks it against itself and against the RTL**:
 
-  * referential consistency — the standard requires every referenced name to be
-    explicitly declared, so a port naming an undeclared clock is an error
-  * mandatory attributes — `set_module` needs `-name`; `set_port` needs
-    `-name`, `-direction` and `-type`
-  * value validity — direction and type must come from the defined sets
-  * virtual clocks must be declared, not merely referenced
+  * referential consistency — Clause 4: "All CDC/RDC-related declarations (such
+    as modules, ports, and parameters) must be explicitly defined and
+    referentially consistent." So a port naming an undeclared clock, port or
+    control is an error
+  * mandatory attributes — Clause 6.2 (`set_module -name`), Table 3
+    (`set_port` `-name`, `-direction`, `-type`), with the Clause 4.3.8
+    exemption for `-constant` ports
+  * value validity — direction and type from the defined sets, and the
+    enumerated attributes Table 3 and Table 2 define (`-ignore`, `-logic`,
+    `-sampling_edge`, `-polarity`, parameter `-type`, parameter `-ignore`)
+  * Clause 6.3 b) — a parameter declared `-ignore` and still referred to in a
+    later command
+  * Clause 6.4 b) — an attribute specified for a type of port it does not apply
+    to
+  * Clause 6.5 — every clock named by a clock group must exist in the design
+  * virtual clocks and virtual resets must be declared, not merely referenced
   * the declared port set must match the RTL's port set
 
 It does **not** decide whether a crossing is safe. That needs the synchroniser
 structure, which this standard deliberately leaves to the tool. A report from
 here says the collateral and the RTL disagree; it never says "CDC clean".
+
+Every check below cites the clause it enforces. Where the standard states a
+requirement but not an error condition, the check reports a *warning*: Clause
+6.1's "the accellera_cdc namespace cannot include non-standard extensions" is a
+NOTE, and a NOTE is not an error condition.
 """
 from __future__ import annotations
 
@@ -47,10 +62,30 @@ PORT_TYPES = {"clock", "data", "reset", "async_reset", "virtual_clock",
               "virtual_reset"}
 DIRECTIONS = {"input", "output", "inout", "in", "out"}
 
+CLOCK_LIKE = ("clock", "virtual_clock")
+RESET_LIKE = ("reset", "async_reset", "virtual_reset")
+CONTROL_TYPES = ("cdc_control", "rdc_control")
+
+# Table 3, `ignore`: "defined set {blocked, hanging}".
+IGNORE_VALUES = {"blocked", "hanging"}
+# Table 3, `logic`: "defined set {combo, inverter, glitch_free_combo,
+# internal_sync}"; 4.3.10 spells the same four values out in prose.
+LOGIC_VALUES = {"combo", "inverter", "glitch_free_combo", "internal_sync"}
+# Table 3, `sampling_edge`: "defined set {pos, neg}".
+SAMPLING_EDGES = {"pos", "neg"}
+# Table 3, `polarity`: "defined set {high, low, low_high}".
+POLARITY_VALUES = {"high", "low", "low_high"}
+# Table 2, `type`: "defined set {int, string, Boolean*, number (hex, decimal,
+# oct, binary)}  * Boolean values 0/1 and true/false (case independent)".
+PARAM_TYPES = {"int", "string", "boolean", "number",
+               "hex", "decimal", "oct", "binary"}
+
 # every command the standard defines, and the attributes each accepts
 COMMANDS = {
     "set_module": {"-name"},
-    "set_param": {"-name", "-type", "-value"},
+    # Table 2 gives the parameter domain four attributes: name, value, type and
+    # ignore. `-ignore` was missing, so Clause 6.3 b) could not be enforced.
+    "set_param": {"-name", "-type", "-value", "-ignore"},
     "set_port": {"-name", "-direction", "-type", "-associated_from_clocks",
                  "-associated_to_clocks", "-associated_from_reset",
                  "-associated_to_reset", "-ignore", "-cdc_static", "-constant",
@@ -65,10 +100,23 @@ COMMANDS = {
                  # §5.6/§5.7: the singular form, used in the standard's own
                  # examples alongside the plural. I dismissed it as a hyphenation
                  # artefact in v0.54.3; it is a real attribute.
-                 "-associated_from_clock", "-associated_to_clock"},
+                 "-associated_from_clock", "-associated_to_clock",
+                 # Table 3: `hamming1` — "Boolean {0 or 1, true or false},
+                 # Default: 0 or false (case independent), Optional". Missing, so
+                 # a conformant file using it was rejected.
+                 "-hamming1",
+                 # Table 3: `clock_period` — "string {clock period}, Conditional
+                 # ... required for generating assertions, including fast to slow
+                 # assertions. See also 8.4". Missing, same defect.
+                 "-clock_period"},
     "set_clock_group": {"-name", "-clocks", "-polarity", "-logic"},
     "set_reset_assertion_sequence": {"-name", "-assert_sequence"},
 }
+
+# An attribute token: `-name`, `-cdc_control`, `-hamming1`. Deliberately *not*
+# `-2`: Table 3's own comment for `-cdc_control_setup` says "If the value is
+# -2 ...", so a leading dash followed by a digit is a value, not an attribute.
+_ATTRIBUTE = re.compile(r"^-[A-Za-z_][A-Za-z0-9_]*$")
 
 
 @dataclass
@@ -76,6 +124,8 @@ class Param:
     name: str
     type: str = ""
     value: str = ""
+    # Table 2, `ignore`: "Tells that the parameter can be ignored."
+    ignore: bool = False
 
 
 @dataclass
@@ -89,6 +139,22 @@ class Port:
     associated_to_reset: list = field(default_factory=list)
     ignore: bool = False
     raw: dict = field(default_factory=dict)
+
+    def has(self, attr: str) -> bool:
+        """True when the attribute was written, even with an empty value."""
+        return attr in self.raw
+
+    def attr(self, attr: str) -> str:
+        return (self.raw.get(attr) or "").strip()
+
+    def refs(self, attr: str) -> list:
+        """The space-separated list an attribute carries (Table 3's `list` type)."""
+        return self.attr(attr).split()
+
+    @property
+    def ignore_value(self) -> str:
+        """Table 3: `ignore` is a defined set, `blocked` or `hanging`."""
+        return self.attr("ignore").strip().lower()
 
     @property
     def sampling_edge(self) -> str:
@@ -111,8 +177,24 @@ class Port:
 
     @property
     def polarity(self) -> str:
-        """Clause 4: `low`, `high` or `low_high`. Mandatory for async_reset."""
+        """Table 3: `low`, `high` or `low_high`. Mandatory for async_reset,
+        cdc_control and rdc_control."""
         return (self.raw.get("polarity") or "").strip().lower()
+
+    @property
+    def hamming1(self) -> str:
+        """Table 3: "Boolean {0 or 1, true or false}, Default: 0 or false"."""
+        return (self.raw.get("hamming1") or "").strip().lower()
+
+    @property
+    def clock_period(self) -> str:
+        """Table 3: "string {clock period}"."""
+        return (self.raw.get("clock_period") or "").strip()
+
+    @property
+    def is_constant(self) -> bool:
+        """Clause 4.3.8: a port carrying `-constant` needs only name and direction."""
+        return self.has("constant")
 
     @property
     def base_name(self) -> str:
@@ -138,6 +220,14 @@ class Collateral:
     clock_groups: dict = field(default_factory=dict)
     resets: list = field(default_factory=list)
     unknown_commands: list = field(default_factory=list)
+    # (line, command, attribute) — Clause 6.1's namespace "cannot include
+    # non-standard extensions"; a NOTE, so these are reported, not raised.
+    unknown_attributes: list = field(default_factory=list)
+    # Table 6 makes a clock group's `name` Optional, so an unnamed group is
+    # conformant and must still have its clocks checked (Clause 6.5).
+    unnamed_clock_groups: list = field(default_factory=list)
+    # Clause 6.3 b): (line, command, parameter, declaring line).
+    ignored_param_refs: list = field(default_factory=list)
 
     def clocks(self) -> set:
         return {n for n, p in self.ports.items()
@@ -190,9 +280,37 @@ def _logical_lines(text: str) -> list:
     return lines
 
 
+def _names(text: str, name: str) -> bool:
+    """True when `name` occurs in `text` as a whole identifier.
+
+    Clause 6.3 b) talks about a parameter being "referred to"; a reference is
+    the identifier itself, so `DATA[MSB:0]` refers to `MSB` while `MSB_i` does
+    not.
+    """
+    if not name:
+        return False
+    return re.search(r"(?<![A-Za-z0-9_])" + re.escape(name) + r"(?![A-Za-z0-9_])",
+                     text) is not None
+
+
+def _truthy(value: str) -> bool:
+    """Table 2/Table 3 Boolean: {0 or 1, true or false}, case independent.
+
+    A bare `-ignore` with no value is read as true, as the Annex C fixtures do.
+    """
+    return value.strip().lower() not in {"0", "false"}
+
+
 def parse(text: str) -> Collateral:
-    """Parse the standard's Tcl format. Unknown commands are recorded, not raised."""
+    """Parse the standard's Tcl format. Unknown commands are recorded, not raised.
+
+    An unknown `-attribute` is recorded under its own name. It used to be folded
+    into the previous attribute's value, so `-type data -bogus_attr x` parsed as
+    `type = "data -bogus_attr x"` and the file was rejected with a bogus
+    "type not defined" instead of naming the attribute that is not in Table 3.
+    """
     col = Collateral()
+    param_lines: dict = {}
     for lineno, line in _logical_lines(text):
         m = re.match(r"accellera_cdc::(\w+)\s*(.*)$", line)
         if not m:
@@ -201,21 +319,39 @@ def parse(text: str) -> Collateral:
         if cmd not in COMMANDS:
             col.unknown_commands.append((lineno, cmd))
             continue
+        known = COMMANDS[cmd]
         tokens = _split_args(rest)
+
+        # Clause 6.3 b): "If parameter is ignored and still referred to in
+        # subsequent commands." Only *later* lines count, so this runs before
+        # this line's own declarations are recorded.
+        for pname, earlier in col.params.items():
+            if earlier.ignore and _names(rest, pname):
+                col.ignored_param_refs.append((lineno, cmd, pname,
+                                               param_lines.get(pname, 0)))
+
         attrs, key = {}, None
         for tok in tokens:
-            if tok.startswith("-") and tok[1:] in {a[1:] for a in COMMANDS[cmd]}:
-                key = tok[1:]
-                attrs[key] = ""
-            elif key is not None:
+            if _ATTRIBUTE.match(tok):
+                if tok in known:
+                    key = tok[1:]
+                    attrs[key] = ""
+                else:
+                    key = None
+                    col.unknown_attributes.append((lineno, cmd, tok))
+                continue
+            if key is not None:
                 attrs[key] = (attrs[key] + " " + tok).strip()
+
         if cmd == "set_module":
             col.module = attrs.get("name", "")
         elif cmd == "set_param":
             p = Param(attrs.get("name", ""), attrs.get("type", ""),
-                      attrs.get("value", ""))
+                      attrs.get("value", ""),
+                      ignore=("ignore" in attrs and _truthy(attrs["ignore"])))
             if p.name:
                 col.params[p.name] = p
+                param_lines[p.name] = lineno
         elif cmd == "set_port":
             p = Port(
                 name=attrs.get("name", ""),
@@ -234,6 +370,12 @@ def parse(text: str) -> Collateral:
                            attrs.get("polarity", ""), attrs.get("logic", ""))
             if g.name:
                 col.clock_groups[g.name] = g
+            elif g.clocks:
+                # Table 6: `name` is Optional and `clocks` is Mandatory. An
+                # unnamed group was silently dropped, so its Clause 6.5 check
+                # ("There shall be an error if one or more specified clock names
+                # do not exist in the design") never ran.
+                col.unnamed_clock_groups.append(g)
         elif cmd == "set_reset_assertion_sequence":
             col.resets.append(attrs)
     return col
@@ -274,12 +416,42 @@ class Conformance:
                 f"warning(s)\n" + body)
 
 
+def _resolve(col: Collateral, name: str):
+    """Find the port a reference names, tolerating a bit-slice (`DATA[7:4]`)."""
+    if name in col.ports:
+        return col.ports[name]
+    base = Port(name=name).base_name
+    for p in col.ports.values():
+        if p.base_name == base:
+            return p
+    return None
+
+
+def _check_enum(out: Conformance, port: str, p: Port, attr: str,
+                allowed: set, rule: str) -> None:
+    """Table 3 gives these attributes a defined set of values.
+
+    An empty value is not reported: the standard defines the set, not an error
+    condition for a missing value, and the Annex C fixtures write a bare
+    `-ignore` and a bare `-cdc_static`.
+    """
+    if not p.has(attr):
+        return
+    value = p.attr(attr).strip().lower()
+    if value and value not in allowed:
+        out.findings.append(Finding(
+            "error", rule,
+            f"port {port}: -{attr} {p.attr(attr)!r} is not one of "
+            f"{sorted(allowed)}"))
+
+
 def check(col: Collateral, rtl_ports: set | None = None) -> Conformance:
     """Check the collateral against itself, and against the RTL if given.
 
-    The standard requires every referenced declaration to exist, so a port that
-    names an undeclared clock is an error rather than a warning. It does not say
-    whether a crossing is safe, and neither does this.
+    Clause 4: "All CDC/RDC-related declarations (such as modules, ports, and
+    parameters) must be explicitly defined and referentially consistent." So a
+    port naming an undeclared clock is an error rather than a warning. It does
+    not say whether a crossing is safe, and neither does this.
     """
     out = Conformance(module=col.module, ports=len(col.ports),
                       clocks=len(col.clocks()))
@@ -288,7 +460,6 @@ def check(col: Collateral, rtl_ports: set | None = None) -> Conformance:
         out.findings.append(Finding("error", "module name missing",
                                     "set_module -name is mandatory"))
 
-    declared_clocks = col.clocks()
     for name, p in col.ports.items():
         if not p.direction:
             out.findings.append(Finding("error", "direction missing",
@@ -298,47 +469,199 @@ def check(col: Collateral, rtl_ports: set | None = None) -> Conformance:
                                         f"port {name}: {p.direction!r} is not one of "
                                         f"{sorted(DIRECTIONS)}"))
         if not p.type:
-            out.findings.append(Finding("error", "type missing",
-                                        f"port {name}: -type is mandatory"))
+            # Clause 4.3.8: "While using the -constant attribute, only the name
+            # and direction of the ports are mandatory attributes. Other
+            # attributes like -type, -associated_to_clocks, etc. are not
+            # required to be defined." Table 3 makes -type Mandatory for every
+            # other port, so the exemption is exactly the -constant case.
+            if not p.is_constant:
+                out.findings.append(Finding("error", "type missing",
+                                            f"port {name}: -type is mandatory"))
         elif p.type not in PORT_TYPES:
             out.findings.append(Finding("error", "type not defined",
                                         f"port {name}: {p.type!r} is not one of "
                                         f"{sorted(PORT_TYPES)}"))
-        if p.type == "async_reset":
+        # Table 3, `polarity`: "This attribute is mandatory for async reset,
+        # cdc_control, and rdc_control; otherwise, it is optional. For
+        # cdc_control and rdc_control, 'low_high' is not allowed."
+        if p.type == "async_reset" or p.type in CONTROL_TYPES:
             if not p.polarity:
-                out.findings.append(Finding(
-                    "error", "polarity missing",
-                    f"port {name}: -polarity is mandatory for -type async_reset"))
-            elif p.polarity not in ("low", "high", "low_high"):
+                # Table 3 makes this mandatory for rdc_control — but the
+                # standard's OWN Example 34 declares an rdc_control with
+                # -blocking_polarity and no -polarity. That is a conflict inside
+                # the standard, not something this checker can settle, so when
+                # -blocking_polarity is present (which already states the value
+                # that blocks the crossing) it is a warning that names the
+                # conflict, not an error that rejects the standard's example.
+                # Rejecting the standard's own example is the worse failure.
+                if p.type in CONTROL_TYPES and p.has("blocking_polarity"):
+                    out.findings.append(Finding(
+                        "warning", "polarity missing",
+                        f"port {name}: Table 3 makes -polarity mandatory for "
+                        f"-type {p.type}, but the standard's own Example 34 "
+                        f"omits it while declaring -blocking_polarity; treated "
+                        f"as a warning so the example is not rejected"))
+                else:
+                    out.findings.append(Finding(
+                        "error", "polarity missing",
+                        f"port {name}: -polarity is mandatory for -type "
+                        f"{p.type}"))
+            elif p.polarity not in POLARITY_VALUES:
                 out.findings.append(Finding(
                     "error", "polarity not defined",
                     f"port {name}: {p.polarity!r} is not one of "
                     f"['high', 'low', 'low_high']"))
+            elif p.type in CONTROL_TYPES and p.polarity == "low_high":
+                out.findings.append(Finding(
+                    "error", "polarity not allowed",
+                    f"port {name}: -polarity low_high is not allowed for "
+                    f"-type {p.type}"))
+
+        # ---- enumerated values (Table 3 / Table 2) ----------------------
+        _check_enum(out, name, p, "ignore", IGNORE_VALUES,
+                    "ignore value not defined")
+        _check_enum(out, name, p, "logic", LOGIC_VALUES,
+                    "logic value not defined")
+        _check_enum(out, name, p, "sampling_edge", SAMPLING_EDGES,
+                    "sampling_edge not defined")
+
+        # ---- Clause 6.4 b): an attribute that does not apply to this type --
+        # "There shall be an error if ... b) an attribute is specified for a
+        # particular type of port that is not applicable to that type of port."
+        # Only the restrictions Table 3 states outright are enforced here, so
+        # that a conformant file is never rejected.
+        # Table 3, `cdc_data_from_clock`: "Mandatory for output ports of type
+        # cdc_control. Optional for input ports of type cdc_control. Prohibited
+        # for other port types."
+        if p.has("cdc_data_from_clock") and p.type != "cdc_control":
+            out.findings.append(Finding(
+                "error", "attribute not applicable",
+                f"port {name}: -cdc_data_from_clock is prohibited for "
+                f"-type {p.type or '(none)'}; Table 3 allows it only on "
+                f"cdc_control"))
+        # Table 3, `associated_inputs`: "applicable to outputs ... applicable to
+        # inputs if considering a CDC control signal input."
+        if (p.has("associated_inputs") and p.direction in ("input", "in")
+                and p.type not in CONTROL_TYPES):
+            out.findings.append(Finding(
+                "error", "attribute not applicable",
+                f"port {name}: -associated_inputs applies to output ports, and "
+                f"to input ports only of type cdc_control/rdc_control"))
+        # Table 3, `associated_outputs`: "applicable to inputs."
+        if (p.has("associated_outputs") and p.direction in ("output", "out")
+                and p.type not in CONTROL_TYPES):
+            out.findings.append(Finding(
+                "error", "attribute not applicable",
+                f"port {name}: -associated_outputs applies to input ports, and "
+                f"to output ports only of type cdc_control/rdc_control"))
+
+        # ---- referential consistency (Clause 4) -------------------------
         for attr, refs in (("associated_from_clocks", p.associated_from_clocks),
-                           ("associated_to_clocks", p.associated_to_clocks)):
+                           ("associated_to_clocks", p.associated_to_clocks),
+                           ("cdc_static", p.refs("cdc_static")),
+                           ("rdc_data_to_clock", p.refs("rdc_data_to_clock"))):
             for ref in refs:
-                if ref not in col.ports:
+                target = _resolve(col, ref)
+                if target is None:
                     out.findings.append(Finding(
                         "error", "undeclared clock",
                         f"port {name}: -{attr} names {ref!r}, which is not declared"))
-                elif col.ports[ref].type not in ("clock", "virtual_clock"):
+                elif target.type not in CLOCK_LIKE:
                     out.findings.append(Finding(
                         "error", "not a clock",
                         f"port {name}: -{attr} names {ref!r}, declared as "
-                        f"{col.ports[ref].type!r}"))
+                        f"{target.type!r}"))
         for attr, refs in (("associated_from_reset", p.associated_from_reset),
-                           ("associated_to_reset", p.associated_to_reset)):
+                           ("associated_to_reset", p.associated_to_reset),
+                           ("rdc_data_from_reset", p.refs("rdc_data_from_reset")),
+                           ("rdc_data_to_reset", p.refs("rdc_data_to_reset"))):
             for ref in refs:
-                if ref not in col.ports:
+                if _resolve(col, ref) is None:
                     out.findings.append(Finding(
                         "error", "undeclared reset",
                         f"port {name}: -{attr} names {ref!r}, which is not declared"))
+        # Table 3: `associated_inputs` and `associated_outputs` are lists of
+        # ports; `cdc_control`/`rdc_control` are lists of associated ports of
+        # the matching control type. None of these were ever resolved.
+        for attr in ("associated_inputs", "associated_outputs"):
+            for ref in p.refs(attr):
+                if _resolve(col, ref) is None:
+                    out.findings.append(Finding(
+                        "error", "undeclared port",
+                        f"port {name}: -{attr} names {ref!r}, which is not declared"))
+        for attr, want in (("cdc_control", "cdc_control"),
+                           ("rdc_control", "rdc_control")):
+            for ref in p.refs(attr):
+                target = _resolve(col, ref)
+                if target is None:
+                    out.findings.append(Finding(
+                        "error", "undeclared port",
+                        f"port {name}: -{attr} names {ref!r}, which is not declared"))
+                elif target.type != want:
+                    out.findings.append(Finding(
+                        "error", "not a control port",
+                        f"port {name}: -{attr} names {ref!r}, declared as "
+                        f"{target.type!r} rather than {want!r}"))
+
+    # ---- Table 3 pairing: a data port must name the control that controls it
+    # "cdc_control: This attribute is mandatory for a data port if it is paired
+    # with a port of type cdc_control"; "rdc_control: This attribute is required
+    # for a data port that is paired with a control port of type rdc_control".
+    # Annex A.3: "The port attributes support references between data ports and
+    # the CDC control ports in both directions. For a data port (-type data),
+    # the option -cdc_control specifies a unique CDC control port. If such a
+    # relation exists, it is mandatory to describe it in this way." The reverse
+    # list (`-associated_inputs`/`-associated_outputs`) is optional, so only the
+    # data-port side is required here.
+    for cname, cp in col.ports.items():
+        if cp.type not in CONTROL_TYPES:
+            continue
+        attr = cp.type
+        for target_name in cp.refs("associated_inputs") + cp.refs("associated_outputs"):
+            target = _resolve(col, target_name)
+            if target is None or target.type != "data":
+                continue
+            named = {Port(name=n).base_name for n in target.refs(attr)}
+            if Port(name=cname).base_name not in named:
+                out.findings.append(Finding(
+                    "error", "control pairing missing",
+                    f"port {target.name}: {cp.type} port {cname} names it in "
+                    f"-associated_inputs/-associated_outputs, so it must carry "
+                    f"-{attr} {cname}"))
 
     for name, g in col.clock_groups.items():
         for c in g.clocks:
-            if c not in col.ports:
+            if _resolve(col, c) is None:
                 out.findings.append(Finding("error", "undeclared clock",
                                             f"clock_group {name}: {c!r} not declared"))
+    # Clause 6.5: "There shall be an error if one or more specified clock names
+    # do not exist in the design." Table 6 makes `name` Optional, so an unnamed
+    # group gets the same check.
+    for i, g in enumerate(col.unnamed_clock_groups, 1):
+        for c in g.clocks:
+            if _resolve(col, c) is None:
+                out.findings.append(Finding(
+                    "error", "undeclared clock",
+                    f"clock_group #{i} (unnamed): {c!r} not declared"))
+
+    # ---- Clause 6.3 b) ------------------------------------------------
+    # "There shall be an error if: ... b) If parameter is ignored and still
+    # referred to in subsequent commands." Table 2: "Any parameter that is
+    # ignored but still referred to in the model in following commands is a
+    # failure."
+    for lineno, cmd, pname, pline in col.ignored_param_refs:
+        out.findings.append(Finding(
+            "error", "ignored parameter referenced",
+            f"line {lineno}: {pname!r} is referred to by accellera_cdc::{cmd} "
+            f"but was declared -ignore at line {pline}"))
+
+    # ---- Table 2, parameter domain -----------------------------------
+    for name, p in col.params.items():
+        if p.type and p.type.strip().lower() not in PARAM_TYPES:
+            out.findings.append(Finding(
+                "error", "parameter type not defined",
+                f"parameter {name}: -type {p.type!r} is not one of "
+                f"{sorted(PARAM_TYPES)} (Table 2)"))
 
     if rtl_ports is not None:
         declared = {p.base_name for p in col.ports.values()
@@ -352,6 +675,11 @@ def check(col: Collateral, rtl_ports: set | None = None) -> Conformance:
                 "warning", "in RTL, not declared",
                 f"{extra}: an RTL port with no CDC declaration"))
 
+    for lineno, cmd, attr in col.unknown_attributes:
+        out.findings.append(Finding(
+            "warning", "unknown attribute",
+            f"line {lineno}: {attr} on accellera_cdc::{cmd} is not an attribute "
+            f"the standard defines"))
     for lineno, cmd in col.unknown_commands:
         out.findings.append(Finding("warning", "unknown command",
                                     f"line {lineno}: accellera_cdc::{cmd} is not in "
