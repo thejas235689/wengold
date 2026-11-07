@@ -837,11 +837,13 @@ design.
 
 ## Status
 
-**v0.54.5 — 757 tests passing**, 13 skipped, and CI runs them on every push. The
+**v0.65.0 — 999 tests passing**, 1 skipped, and CI runs them on every push. The
 graph, kernel, ledger, MCP server, formal loop, register-map and CDC front-ends,
 the VHDL front-end, root cause, the IDE with waveforms, the text-to-spec
 front-end, failure reproduction, singularity analysis, the Accellera CDC/RDC
-standard (Clauses 4, 6, 7, 8 and the Annex C fixtures), the Accellera Functional
+standard (Clauses 4, 5, 6, 7, 8 and the Annex C fixtures — all 34 findings from the
+CDC audit are closed, each pinned by a test that fails without the fix), the
+Accellera Functional
 Safety Language v1.0, spec-to-RTL generation (`vibe`) and fix suggestion (`review`)
 are all implemented and tested. There is also a native desktop app
 (`wengold desktop`) and a VS Code / Cursor extension. See
