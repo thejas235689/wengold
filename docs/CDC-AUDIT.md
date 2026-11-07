@@ -2,9 +2,13 @@
 
 Four sub-agents audited the CDC implementation against the Accellera CDC/RDC
 Interface Standard v1.0, each on one area, concurrently. They returned **64
-findings**. Five are fixed in v0.59.1. **Fifty-nine are open**, listed below with
-their severity, because a finding that is dropped is worse than one that is
-scheduled.
+findings**.
+
+**All 34 that remained open after v0.62.0 are fixed in v0.65.0**, by five
+sub-agents working concurrently, one per module. The sections below are kept as
+the record of what was wrong and why — read them as history, not as a to-do list.
+A finding is only closed if a test fails without the fix; that is checked for every
+one of them.
 
 Severity is the sub-agents' judgement, spot-checked by me: I verified the
 `virtual_reset`, SVA negative-repetition, polarity, declared-setup and 8.2-window
