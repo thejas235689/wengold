@@ -40,13 +40,13 @@ The remaining false negatives are still open: `analyse_text` does not enumerate
 combinational crossings, and `cdc.py` has three parser bugs (a `<=` comparison read
 as an assignment, a truncated single-statement body, and a mixed-domain `continue`).
 
-## Open — still would let a real CDC bug through
+## Fixed in v0.65.0 — the false negatives that remained
 | `cdc.py` | `_WRITE` matches `sig <= expr` inside an `if` condition, so a **comparison** is recorded as an assignment. The crossing vanishes and the signal is listed in the wrong domain. |
 | `cdc.py` | `_block_body` truncates at the first `;`, so an `if (en) begin ... end` body loses every assignment after it. |
 | `cdc.py` | `if clock in src: continue` suppresses **every** crossing into a mixed-domain combinational node — the genuine contribution from the other domain is lost. |
 | `cdc_analysis` | Only `AlwaysFFBlock` with nonblocking assignments is read, so plain `always @(posedge clk)` designs yield an **empty crossing list** (and `render()` is the only place that says empty is not clean). |
 
-## Open — the checker rejects conformant input
+## Fixed in v0.65.0 — conformant input the checker rejected
 
 | area | defect |
 | --- | --- |
@@ -56,7 +56,7 @@ as an assignment, a truncated single-statement body, and a mixed-domain `continu
 | `cdc_standard` | An unnamed clock group (`-name` is optional per Table 6) is silently discarded, along with the Clause 6.5 check on its clock names. |
 | `cdc_scenarios` | **§5.4's predicate requires `-rdc_control` on the input data port, but the standard's own Example 34 does not declare one.** A collateral built to the example is reported as not supporting §5.4, and the message tells the user to add a non-standard attribute. |
 
-## Open — overclaims and missed checks
+## Fixed in v0.65.0 — overclaims and missed checks
 
 | area | defect |
 | --- | --- |
@@ -71,7 +71,7 @@ as an assignment, a truncated single-statement body, and a mixed-domain `continu
 | `cdc_standard` | Enumerated values are not validated for `-ignore` (`blocked`/`hanging`), `-logic`, `-sampling_edge` or parameter `-type`. |
 | `cdc_standard` | Clause 6.4 b) — an attribute applied to a port type it does not apply to — is not implemented at all. |
 
-## Open — IP-XACT (Clause 7)
+## Fixed in v0.65.0 — IP-XACT (Clause 7)
 
 | area | defect |
 | --- | --- |
@@ -83,7 +83,7 @@ as an assignment, a truncated single-statement body, and a mixed-domain `continu
 | `cdc_ipxact` | The data extension carries 4 of the ~12 Table 3 attributes 7.3 says must all be captured. |
 | `cdc_ipxact` | The generated component has no VLNV, though the docstring claims one. |
 
-## Open — generated SVA will not compile or bind
+## Fixed in v0.65.0 — generated SVA that would not compile or bind
 
 | area | defect |
 | --- | --- |
