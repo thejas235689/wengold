@@ -34,7 +34,8 @@ import urllib.error
 import urllib.request
 from dataclasses import dataclass, field
 
-__all__ = ["LocalModel", "LLMUnavailable", "ModelInfo", "probe", "from_env"]
+__all__ = ["LocalModel", "LLMUnavailable", "ModelInfo", "Preset", "PRESETS",
+           "probe", "preset", "from_env"]
 
 
 class LLMUnavailable(RuntimeError):
@@ -57,6 +58,68 @@ DEFAULT_OLLAMA = "http://127.0.0.1:11434"
 DEFAULT_OPENAI = "http://127.0.0.1:8080/v1"
 
 
+@dataclass(frozen=True)
+class Preset:
+    """A model this project knows how to run locally, and what it is for.
+
+    `instruction_tuned` is the field that matters. A base completion model cannot
+    follow a prompt — it continues text — so asking it to "write RTL for a FIFO"
+    produces plausible-looking continuation, not an answer. The tool refuses that
+    rather than presenting the continuation as a result.
+    """
+    name: str
+    hf: str
+    params: str
+    licence: str
+    instruction_tuned: bool
+    backend: str
+    serve: str
+    note: str
+
+
+PRESETS: dict[str, Preset] = {
+    "sarvam-m": Preset(
+        name="sarvam-m",
+        hf="sarvamai/sarvam-m",
+        params="24B",
+        licence="Apache-2.0",
+        instruction_tuned=True,
+        backend="openai",
+        serve="vllm serve sarvamai/sarvam-m --port 8080",
+        note="Instruction-tuned Mistral-Small derivative, post-trained on English and "
+             "eleven Indic languages. 32K context, hybrid think/non-think. The weights "
+             "are Apache-2.0 on the Hub even though the hosted Sarvam-M endpoint is "
+             "deprecated, so a local copy does not expire. Needs roughly 16 GB at Q4 "
+             "and about 48 GB at BF16.",
+    ),
+    "sarvam-1": Preset(
+        name="sarvam-1",
+        hf="sarvamai/sarvam-1",
+        params="2B",
+        licence="Sarvam non-commercial",
+        instruction_tuned=False,
+        backend="ollama",
+        serve="ollama run sarvam-1",
+        note="Text-completion model optimised for ten Indic languages. NOT "
+             "instruction-tuned: the model card says it 'cannot be used directly as a "
+             "chat or an instruction-following model'. Good for translating and for "
+             "Indic prose, useless for drafting RTL, and the licence is "
+             "non-commercial. Q4 is about 1.5 GB.",
+    ),
+}
+
+
+def preset(name: str) -> Preset | None:
+    """Look up a preset by name, case- and separator-insensitively."""
+    key = name.strip().lower().replace("_", "-").replace(" ", "-")
+    if key in PRESETS:
+        return PRESETS[key]
+    for k, p in PRESETS.items():
+        if p.hf.lower() == name.strip().lower():
+            return p
+    return None
+
+
 def from_env() -> LocalModel | None:
     """Build a client from the environment, or None if nothing is configured.
 
@@ -67,7 +130,12 @@ def from_env() -> LocalModel | None:
     model = os.environ.get("WENGOLD_LLM_MODEL", "").strip()
     if not model:
         return None
-    backend = os.environ.get("WENGOLD_LLM_BACKEND", "ollama").strip().lower()
+    # A known preset carries the route it is actually served by: Sarvam-M is
+    # published for vLLM (OpenAI-compatible), Sarvam-1 for llama.cpp/Ollama. An
+    # explicit environment variable still wins.
+    known = preset(model)
+    backend = os.environ.get("WENGOLD_LLM_BACKEND", "").strip().lower() or (
+        known.backend if known else "ollama")
     url = os.environ.get("WENGOLD_LLM_URL", "").strip() or (
         DEFAULT_OPENAI if backend == "openai" else DEFAULT_OLLAMA)
     return LocalModel(model=model, endpoint=url, backend=backend)
@@ -131,6 +199,7 @@ class LocalModel:
                  backend: str = "ollama", timeout: float = 120.0,
                  temperature: float = 0.2):
         self.model = model
+        self.preset = preset(model)
         self.endpoint = endpoint.rstrip("/")
         self.backend = backend
         self.timeout = timeout
@@ -231,8 +300,25 @@ class LocalModel:
         return data
 
     # ---- the jobs the kernel cannot do ---------------------------------
+    def _require_instruction_following(self, job: str) -> None:
+        """A base completion model continues text; it does not answer.
+
+        `sarvam-1`'s own model card says it "cannot be used directly as a chat or an
+        instruction-following model". Asking it to draft RTL returns plausible
+        continuation, which this tool would then present as an answer — so it
+        refuses and says which model to use instead.
+        """
+        if self.preset is not None and not self.preset.instruction_tuned:
+            raise LLMUnavailable(
+                f"{self.model} is a text-completion model, not an "
+                f"instruction-following one, so it cannot {job}. Its model card says "
+                f"it cannot be used as a chat model. Use sarvam-m (24B, "
+                f"instruction-tuned, Apache-2.0) for this, or keep {self.model} for "
+                f"Indic prose and translation.")
+
     def explain_failure(self, verdict_text: str) -> str:
         """Prose explanation of a failure the kernel already established."""
+        self._require_instruction_following("explain a failure")
         return self.ask(
             "Explain this silicon-verification result to an engineer, in at most "
             "four sentences. Do not speculate about causes you cannot see in the "
@@ -245,6 +331,7 @@ class LocalModel:
         The output is a *suggestion*: nothing here has been simulated, elaborated
         or checked, and the caller must say so.
         """
+        self._require_instruction_following("draft RTL")
         return self.ask(
             f"Write synthesizable {language} for the following. Return code only, "
             f"no prose. It will be compiled by iverilog and must have no vendor "
@@ -252,4 +339,9 @@ class LocalModel:
             system="You write RTL. You do not claim it is verified.")
 
     def render(self) -> str:
-        return f"  {self.backend}/{self.model} at {self.endpoint} ({self.calls} call(s))"
+        p = self.preset
+        extra = (f"  [{p.params}, {p.licence}, "
+                 f"{'instruction-tuned' if p.instruction_tuned else 'completion only'}]"
+                 if p else "")
+        return (f"  {self.backend}/{self.model} at {self.endpoint} "
+                f"({self.calls} call(s)){extra}")
