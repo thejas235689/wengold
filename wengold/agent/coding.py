@@ -297,12 +297,9 @@ def _draft_step(n: int, goal: str, root: str, apply: bool):
                     action=f"draft_rtl via {model.model}", ok=False,
                     outcome=f"model unavailable: {e}")
 
-    # strip a markdown fence if the model wrapped the code
-    body = rtl.strip()
-    if body.startswith("```"):
-        body = "\n".join(body.splitlines()[1:])
-        if body.rstrip().endswith("```"):
-            body = body.rstrip()[:-3]
+    # `draft_rtl` already unfenced this; strip again only for a caller that
+    # supplied its own text, so the loop stays correct if the client changes.
+    body = model.unfence(rtl)
     name = _module_name(body) or "drafted"
     path = Path(root) / f"{name}.sv"
 
