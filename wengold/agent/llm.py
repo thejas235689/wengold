@@ -325,6 +325,27 @@ class LocalModel:
             "text, and do not claim the design is correct.\n\n" + verdict_text,
             system="You explain verification results. You never invent facts.")
 
+    @staticmethod
+    def unfence(text: str) -> str:
+        """Strip a markdown code fence, whatever shape the model used.
+
+        This lived only in the agentic loop, so every other caller of `draft_rtl`
+        got raw fenced text. A real model proved it on the first run: it returned
+        ```\n#include ...\n``` and the loop was the only thing that stripped it.
+        Stripping belongs next to the model, not next to one of its callers.
+        """
+        body = (text or "").strip()
+        if not body.startswith(("```", "~~~")):
+            return body
+        lines = body.splitlines()[1:]                       # drop the opening fence
+        # cut at the closing fence wherever it is: a model that adds "Hope this
+        # helps!" after the block must not have that written into a .sv file
+        for i, ln in enumerate(lines):
+            if ln.strip() in ("```", "~~~"):
+                lines = lines[:i]
+                break
+        return "\n".join(lines).strip()
+
     def draft_rtl(self, spec: str, language: str = "SystemVerilog") -> str:
         """RTL from a description the spec grammar does not cover.
 
@@ -332,11 +353,11 @@ class LocalModel:
         or checked, and the caller must say so.
         """
         self._require_instruction_following("draft RTL")
-        return self.ask(
+        return self.unfence(self.ask(
             f"Write synthesizable {language} for the following. Return code only, "
             f"no prose. It will be compiled by iverilog and must have no vendor "
             f"primitives.\n\n{spec}",
-            system="You write RTL. You do not claim it is verified.")
+            system="You write RTL. You do not claim it is verified."))
 
     def render(self) -> str:
         p = self.preset
