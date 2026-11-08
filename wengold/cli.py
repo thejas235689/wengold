@@ -373,6 +373,17 @@ def cmd_fsl(args) -> int:
 
 def cmd_doctor(args) -> int:
     """Check the environment: the front-end, the cache, and any local model."""
+    if args.presets:
+        from .agent.llm import PRESETS
+        print("  local model presets")
+        for name, p in PRESETS.items():
+            tuned = "instruction-tuned" if p.instruction_tuned else "completion only"
+            print(f"    {name:<10} {p.params:<5} {p.licence:<24} {tuned}")
+            print(f"      {p.hf}")
+            print(f"      {p.serve}")
+            print(f"      {p.note}")
+        return 0
+
     from .graph.cache import cache_dir, disabled, stats
     from .graph.slang_backend import available
 
@@ -385,7 +396,7 @@ def cmd_doctor(args) -> int:
     rc = 0
 
     if args.llm:
-        from .agent.llm import LLMUnavailable, from_env, probe
+        from .agent.llm import LLMUnavailable, from_env, probe, preset
         print("  local model")
         client = from_env()
         if client is None:
@@ -394,6 +405,13 @@ def cmd_doctor(args) -> int:
             print("    and prose explanation, not speed.")
             return rc
         print(f"    configured         {client.backend}/{client.model}")
+        p = preset(client.model)
+        if p is not None:
+            print(f"    preset             {p.hf} — {p.params}, {p.licence}")
+            print(f"    instruction-tuned  {'yes' if p.instruction_tuned else 'NO — '
+                   'draft_rtl and explain will refuse'}")
+            if not p.instruction_tuned:
+                print(f"    serve with         {p.serve}")
         try:
             info = probe(client.endpoint, client.backend, timeout=args.timeout)
             print(f"    server             up — {len(info.models)} model(s)")
@@ -1199,6 +1217,8 @@ def main(argv=None) -> int:
     p.add_argument("--llm", action="store_true",
                    help="also probe the local model and round-trip one request")
     p.add_argument("--timeout", type=float, default=30.0)
+    p.add_argument("--presets", action="store_true",
+                   help="list the local models this project knows how to run")
     p.set_defaults(func=cmd_doctor)
 
     p = sub.add_parser("agentic",
