@@ -110,3 +110,52 @@ worse claim than "there is no model".
 
 Model size against RAM, roughly: 7B needs ~8 GB, 14B ~16 GB, 32B ~32 GB. On CPU,
 expect a few seconds per answer; a GPU changes that by an order of magnitude.
+
+## Sarvam, locally
+
+Two Sarvam models are open-weight on the Hub. They are not interchangeable, and the
+difference decides what each can be used for.
+
+| | `sarvam-m` | `sarvam-1` |
+| --- | --- | --- |
+| parameters | 24B | 2B |
+| base | Mistral-Small-3.1-24B | trained from scratch |
+| instruction-tuned | **yes** | **no** |
+| licence | Apache-2.0 | Sarvam non-commercial |
+| context | 32K | 8K |
+| serve | `vllm serve sarvamai/sarvam-m --port 8080` | `ollama run sarvam-1` |
+| RAM at Q4 | ~16 GB (BF16 ~48 GB) | ~1.5 GB |
+
+```bash
+wengold doctor --presets          # both, with licence and capability
+export WENGOLD_LLM_MODEL=sarvam-m
+wengold doctor --llm              # probe, confirm the model, round-trip one request
+```
+
+`from_env()` routes each preset to the backend it is published for — Sarvam-M to
+vLLM's OpenAI-compatible endpoint, Sarvam-1 to Ollama. Set `WENGOLD_LLM_BACKEND` to
+override.
+
+### Why Sarvam-1 is refused for drafting and explaining
+
+Its model card says it *"cannot be used directly as a chat or an instruction-following
+model"*. A completion model continues text; it does not answer. Asked for *"a FIFO
+with almost-full"* it returns plausible continuation, and this tool would present
+that as a draft. So both instruction jobs raise instead, naming the model that can
+do the job.
+
+Sarvam-1 remains useful for what it is actually good at — Indic prose and
+translation — through `ask`.
+
+### The licence
+
+Sarvam-M's weights are Apache-2.0, so a local copy does not expire even though the
+hosted Sarvam-M endpoint has been deprecated. Sarvam-1 is non-commercial, which is a
+different proposition if you intend to ship. `doctor --presets` prints it rather than
+leaving it in a README nobody reads.
+
+### What is verified
+
+The preset table, the routing, the refusal and the CLI output are tested. **Neither
+model has been run** — this was written where no 24B model fits. `doctor --llm` on
+your machine is the check that closes that.
