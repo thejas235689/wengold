@@ -14,6 +14,58 @@ what the tags are for.
 
 ---
 
+## [0.66.1] — 2026-11-08
+
+### The client has now met a real model
+Every release since v0.60.0 carried the same caveat: *the client has never been run
+against a real model*. That is fixed, not by argument but by running one.
+
+`tools/verify-real-model.py` loads a model with transformers, serves it on an
+OpenAI-compatible endpoint, and drives `wengold.agent.llm` at it — probe, `ask`,
+`explain_failure`, `draft_rtl`. It is repeatable on any machine:
+
+```sh
+python3 tools/verify-real-model.py                          # 135M, ~260 MB
+python3 tools/verify-real-model.py --model sarvamai/sarvam-1
+```
+
+### It found a defect on the first run
+The model returned:
+
+````
+```
+#include <util/io.h>
+...
+```
+````
+
+`draft_rtl` handed that back **with the fence still on it**. The markdown stripping
+lived only in the agentic loop, so the loop was the one caller that happened to be
+safe and every other caller got raw markdown. The audit had predicted this in v0.64.0
+("llm.py strips nothing; the stripping is in coding._draft_step") — a mock never
+showed it, a real model showed it immediately.
+
+`LocalModel.unfence()` now lives next to the model and handles every shape: plain
+fences, language-tagged fences, `~~~`, an unclosed fence, and prose after the closing
+fence. `coding.py` calls the same helper rather than its own copy.
+
+### What the run actually established
+- the request shape is right for a real server
+- real tokenization and generation round-trip through the client
+- `finish_reason` parsing works on a real response
+- `draft_rtl` returns code, not markdown
+- and the latency claim from v0.60.0 is now measured: **12–24 s per call on 2 CPU
+  cores for a 135M model**, which is why a model does not go in the decision loop
+
+### What it still does not establish
+**Sarvam-M has not been run.** It is 24B; at Q4 it needs ~16 GB and this machine has
+2 GB, so it could not even be loaded. The client is now proven against a real model;
+Sarvam-M specifically is proven only in the sense that it speaks the same protocol.
+`wengold doctor --llm` against a served Sarvam-M is still the check for that.
+
+**1029 tests passing**, 15 skipped.
+---
+
 ## [0.66.0] — 2026-11-08
 
 ### Sarvam, locally — and the distinction that matters
