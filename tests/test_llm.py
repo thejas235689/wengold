@@ -252,3 +252,31 @@ def test_a_truncated_http_body_raises_llm_unavailable():
     finally:
         srv.shutdown()
         srv.server_close()
+
+
+# ---- found by running a real model, not a mock -------------------------
+def test_draft_rtl_unfences_whatever_shape_the_model_used():
+    """A real model returned ```\\n#include ...\\n``` on the first run. The fence
+    stripping lived only in the agentic loop, so every other caller of `draft_rtl`
+    got raw markdown — and the loop was the only thing that happened to be safe.
+    """
+    from wengold.agent.llm import LocalModel
+    shapes = {
+        "```\nmodule a; endmodule\n```": "module a; endmodule",
+        "```systemverilog\nmodule b; endmodule\n```": "module b; endmodule",
+        "~~~\nmodule c; endmodule\n~~~": "module c; endmodule",
+        "```\nmodule d; endmodule\n```\nHope this helps!": "module d; endmodule",
+        "```\nmodule e; endmodule": "module e; endmodule",
+        "module f; endmodule": "module f; endmodule",
+    }
+    for raw, want in shapes.items():
+        assert LocalModel.unfence(raw) == want, raw
+
+
+def test_draft_rtl_strips_the_fence_before_returning():
+    """Through the real client, not the helper: a fenced answer must come back as
+    code."""
+    with Mock(answer="```\nmodule m; endmodule\n```") as srv:
+        out = LocalModel("m", srv.url).draft_rtl("a module")
+    assert out == "module m; endmodule"
+    assert not out.startswith("```")
