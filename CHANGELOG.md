@@ -14,6 +14,60 @@ what the tags are for.
 
 ---
 
+## [0.66.0] — 2026-11-08
+
+### Sarvam, locally — and the distinction that matters
+Two Sarvam models are open-weight and they are **not interchangeable**:
+
+| | Sarvam-M | Sarvam-1 |
+| --- | --- | --- |
+| size | 24B | 2B |
+| instruction-tuned | **yes** | **no** |
+| licence | Apache-2.0 | non-commercial |
+| served by | `vllm serve sarvamai/sarvam-m` | `ollama run sarvam-1` |
+| good for | drafting RTL, explaining a failure | Indic prose and translation |
+
+```bash
+wengold doctor --presets        # both, with what each can do
+export WENGOLD_LLM_MODEL=sarvam-m
+wengold doctor --llm            # probe, check the model is there, round-trip one request
+```
+
+`from_env()` now routes each preset to the backend it is actually published for —
+Sarvam-M to vLLM's OpenAI-compatible endpoint, Sarvam-1 to Ollama — because picking
+the wrong one means the tool talks to nothing. An explicit `WENGOLD_LLM_BACKEND`
+still wins.
+
+### Why Sarvam-1 is refused for two jobs
+Sarvam-1's model card says it *"cannot be used directly as a chat or an
+instruction-following model"*. It continues text. Asking it for *"a FIFO with
+almost-full"* returns plausible-looking continuation, which this tool would then
+present as a draft — so `draft_rtl` and `explain_failure` raise and name the model
+that can do the job instead:
+
+```
+sarvam-1 is a text-completion model, not an instruction-following one, so it
+cannot draft RTL. Its model card says it cannot be used as a chat model. Use
+sarvam-m (24B, instruction-tuned, Apache-2.0) for this...
+```
+
+A preset is a convenience, not a whitelist: a model this project has never heard of
+is asked normally.
+
+### The licence is not a footnote
+Sarvam-1 is non-commercial. Sarvam-M's weights are Apache-2.0, so a local copy does
+not expire even though the hosted Sarvam-M endpoint is deprecated — the weights are
+still on the Hub. `doctor --presets` prints the licence next to each, because a
+model you cannot ship is a different proposition from one you can.
+
+### Still true
+The client has never been run against a real model — this sandbox has 2 CPUs and
+2 GB of RAM, and Sarvam-M needs roughly 16 GB at Q4. `doctor --llm` on a machine
+that has one is the check that closes it.
+
+**996 tests passing**, 15 skipped.
+---
+
 ## [0.65.0] — 2026-11-07
 
 ### All 34 open CDC/RDC findings fixed, in parallel
