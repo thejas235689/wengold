@@ -63,7 +63,8 @@ fence. `coding.py` calls the same helper rather than its own copy.
 Sarvam-M specifically is proven only in the sense that it speaks the same protocol.
 `wengold doctor --llm` against a served Sarvam-M is still the check for that.
 
-**1029 tests passing**, 15 skipped.
+**1029 tests passing**, 15 skipped, verified from a fresh checkout of `main`
+(973 + 25 + 30 across three runs).
 ---
 
 ## [0.66.0] — 2026-11-08
