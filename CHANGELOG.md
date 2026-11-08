@@ -65,7 +65,8 @@ The client has never been run against a real model — this sandbox has 2 CPUs a
 2 GB of RAM, and Sarvam-M needs roughly 16 GB at Q4. `doctor --llm` on a machine
 that has one is the check that closes it.
 
-**996 tests passing**, 15 skipped.
+**996 tests passing**, 15 skipped, verified from a fresh checkout of `main`
+(971 + 25 across two runs).
 ---
 
 ## [0.65.0] — 2026-11-07
