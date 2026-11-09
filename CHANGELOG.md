@@ -47,7 +47,8 @@ the interpreter and whether it satisfies 3.11, pip/numpy/PyQt6 presence, where t
 script thinks the package is, whether the prefix is writable, and whether
 `~/.local/bin` is on `PATH`. Changes nothing.
 
-**1006 tests passing**, 15 skipped.
+**1006 tests passing**, 15 skipped, verified from a fresh checkout of `main`
+(981 + 25 across two runs).
 ---
 
 ## [0.67.0] — 2026-11-09
