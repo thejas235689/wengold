@@ -876,7 +876,7 @@ design.
 
 ## Status
 
-**v0.67.3 — 1014 tests passing**, 15 skipped, and CI runs them on every push. The
+**v0.67.4 — 1014 tests passing**, 15 skipped, and CI runs them on every push. The
 graph, kernel, ledger, MCP server, formal loop, register-map and CDC front-ends,
 the VHDL front-end, root cause, the IDE with waveforms, the text-to-spec
 front-end, failure reproduction, singularity analysis, the Accellera CDC/RDC
