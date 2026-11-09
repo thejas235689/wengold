@@ -14,6 +14,29 @@ what the tags are for.
 
 ---
 
+## [0.66.2] — 2026-11-09
+
+### The README understated the project
+Its "What is not done" section said **"No safety metric is computed"**. That stopped
+being true at v0.57.0: `wengold fsl --metrics` computes SPFM, LFM, PMHF, SFF, PFH and
+PFD, printing the formula and its inputs, and refuses on a partial sum rather than
+reporting a ratio over missing rates.
+
+Verified by running it. The corrected line says what is actually true — a metric is
+computed but never judged against an ASIL or SIL target, so a clean report is not a
+safety case.
+
+Two more gaps are now written down rather than left to be discovered:
+
+- **No design partner.** Every number is self-assessed. This is the gap that matters
+  most: the tool has been measured against public repositories and its own fixtures,
+  never against a team's real signoff flow.
+- **The model client is proven against a real model, but not against Sarvam.**
+  `tools/verify-real-model.py` drives it with real weights over real HTTP; Sarvam-M
+  is 24B and has never been run here.
+
+---
+
 ## [0.66.1] — 2026-11-08
 
 ### The client has now met a real model
