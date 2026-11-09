@@ -32,15 +32,48 @@ when it cannot tell, it says `unknown` rather than guessing.
 
 ## Install
 
+WENGOLD needs **Python 3.11 or newer and nothing else**. No pip, no root, no package
+manager:
+
 ```bash
 git clone https://github.com/thejas235689/wengold.git
 cd wengold
-python -m pip install -e ".[open]"     # open toolchain only
-python -m wengold.cli --help
+sh wengold.sh --version
+sh wengold.sh index ./rtl
 ```
 
-`numpy` is required by `wengold learn` and `wengold spec-from-text` and by nothing
-else. The graph, the kernel, the front-ends and the CLI are standard library only.
+(`sh wengold.sh` rather than `./wengold.sh`: the script is committed as mode 644, so
+`./` gives "Permission denied". `chmod +x wengold.sh` if you prefer `./`.)
+
+`wengold.sh` finds a suitable interpreter itself (`python3.13`, `python3.12`,
+`python3.11`, then `python3`) and, if none is new enough, prints the exact `dnf` line
+instead of a traceback. It runs from `PYTHONPATH`, so nothing is written and removing
+the checkout removes every trace.
+
+```bash
+sh wengold.sh --where      # which interpreter, and which extras are present
+```
+
+Every optional package is listed with **what its absence costs**, never as a failure:
+
+| optional | what it enables | without it |
+| --- | --- | --- |
+| `pyslang` | a real SystemVerilog parse | bounded regex front-end; fewer modules found, and it says so |
+| `z3-solver` | the formal loop | `wengold formal` is unavailable |
+| `numpy` | `learn`, `spec-from-text` | those two commands are unavailable |
+| `PyQt6` | the native window | `wengold desktop` falls back to a browser |
+
+`pyproject.toml` lists numpy, but `import wengold` works without it — verified, and
+pinned by `tests/test_no_install.py`, which runs the CLI with all four blocked.
+
+For a desktop install (launcher, menu entry, icon):
+
+```bash
+sh linux/install.sh              # per-user, ~/.local, no root
+```
+
+On Rocky/RHEL see [`docs/INSTALL-ROCKY.md`](docs/INSTALL-ROCKY.md) — the trap there is
+that Rocky 9 ships Python 3.9, and replacing the system `python3` breaks `dnf`.
 
 ## What is implemented
 
@@ -683,8 +716,14 @@ wengold vibe "an 8-bit timer with a match output"   # spec -> RTL -> testbench -
 wengold review ./rtl --changed timer      # fix what a failed check actually showed
 wengold learn dbscan ./rtl                # clustering, triage, RL, regression
 wengold spec-from-text "..." --arch transformer
+wengold agentic ./rtl --goal "make this elaborate"   # act on what the kernel can justify
 wengold desktop                           # native Linux window
 wengold serve                             # run the MCP server over stdio
+
+# environment
+wengold doctor                            # front-end, parse cache, local model
+wengold doctor --presets                  # the local models this project knows
+wengold doctor --llm                      # probe the model and round-trip one request
 ```
 
 ## Tool coverage
@@ -837,17 +876,18 @@ design.
 
 ## Status
 
-**v0.65.0 — 999 tests passing**, 1 skipped, and CI runs them on every push. The
+**v0.67.3 — 1014 tests passing**, 15 skipped, and CI runs them on every push. The
 graph, kernel, ledger, MCP server, formal loop, register-map and CDC front-ends,
 the VHDL front-end, root cause, the IDE with waveforms, the text-to-spec
 front-end, failure reproduction, singularity analysis, the Accellera CDC/RDC
 standard (Clauses 4, 5, 6, 7, 8 and the Annex C fixtures — all 34 findings from the
 CDC audit are closed, each pinned by a test that fails without the fix), the
-Accellera Functional
-Safety Language v1.0, spec-to-RTL generation (`vibe`) and fix suggestion (`review`)
-are all implemented and tested. There is also a native desktop app
-(`wengold desktop`) and a VS Code / Cursor extension. See
-[`docs/roadmap.md`](docs/roadmap.md).
+Accellera Functional Safety Language v1.0 with its ISO 26262 / IEC 61508 metrics,
+spec-to-RTL generation (`vibe`), fix suggestion (`review`), the agentic loop
+(`agentic`), and an optional local model for drafting and explanation
+(`doctor --presets`) are all implemented and tested. There is also a native desktop
+app (`wengold desktop`), a VS Code / Cursor extension, and a Linux installer
+(`linux/install.sh`) with a `.deb`. See [`docs/roadmap.md`](docs/roadmap.md).
 
 ### How the numbers are checked
 
@@ -911,6 +951,11 @@ Stated here rather than discovered by a reader:
 - **No design partner yet.** Every number here is self-assessed. This is the gap
   that matters most: the tool has been measured against public repositories and its
   own fixtures, never against a team's real signoff flow.
+- **No commercial EDA tool has been run.** WENGOLD drives Verilator, iverilog/vvp,
+  Yosys and GHDL when they are on `PATH`, and reports `tool_missing` — never a pass —
+  when one is not. It has never driven VCS, Xcelium, Questa, Vivado or JasperGold,
+  because none of them can be obtained here. The commercial-tool rows in the coverage
+  table are claims about the interface, not about runs.
 - **The local-model client is proven against a real model, but not against Sarvam.**
   `tools/verify-real-model.py` drives it with real weights over real HTTP (v0.66.1),
   which is how the markdown-fence defect was found. Sarvam-M is 24B and needs ~16 GB,
