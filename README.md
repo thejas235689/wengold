@@ -890,9 +890,13 @@ Stated here rather than discovered by a reader:
 - **The CDC work does not decide whether a crossing is safe.** It reads and writes
   the Accellera format and checks the collateral against the RTL; a passing
   assertion means the declared data stability held, not that the design is correct.
-- **No safety metric is computed.** SPFM, LFM, PMHF and SFF need the ISO 26262 and
-  IEC 61508 formulas over per-failure-mode rates, which the FSL standard references
-  but does not restate. Declared values are collected and range-checked only.
+- **A safety metric is computed, but not judged.** `wengold fsl --metrics` computes
+  SPFM, LFM, PMHF, SFF, PFH and PFD from the declared failure rates, printing the
+  formula and its inputs. It **refuses on a partial sum** rather than reporting a
+  ratio over missing rates, and it never compares a metric against an ASIL or SIL
+  target — so a clean report is not a safety case. (This line used to say no metric
+  was computed at all; that stopped being true at v0.57.0 and the README was not
+  updated with it.)
 - **One soundness test is not stable across toolchains.** `test_slice_write_soundness`
   reported `unknown` where it expects `fail` in one full-suite run that had the OSS
   CAD Suite on `PATH`, and did not reproduce without it. It is written down here
@@ -904,7 +908,14 @@ Stated here rather than discovered by a reader:
   held.
 - **The ML layer does not beat a majority baseline** against simulation ground
   truth. It is measured, reported, and kept behind the CLI.
-- **No design partner yet.** Every number here is self-assessed.
+- **No design partner yet.** Every number here is self-assessed. This is the gap
+  that matters most: the tool has been measured against public repositories and its
+  own fixtures, never against a team's real signoff flow.
+- **The local-model client is proven against a real model, but not against Sarvam.**
+  `tools/verify-real-model.py` drives it with real weights over real HTTP (v0.66.1),
+  which is how the markdown-fence defect was found. Sarvam-M is 24B and needs ~16 GB,
+  so it has never been run here; `wengold doctor --llm` against a served copy is the
+  remaining check.
 
 ## Documentation
 
