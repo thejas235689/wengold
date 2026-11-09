@@ -61,7 +61,8 @@ way a user would: `--version`, a real subcommand, the desktop entry pointing at 
 GUI, a clean uninstall, and a refusal when the script is copied away from the
 package.
 
-**1004 tests passing**, 15 skipped.
+**1004 tests passing**, 15 skipped, verified from a fresh checkout of `main`
+(979 + 25 across two runs), including the installer run for real.
 ---
 
 ## [0.66.2] — 2026-11-09
