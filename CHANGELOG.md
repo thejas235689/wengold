@@ -14,6 +14,56 @@ what the tags are for.
 
 ---
 
+## [0.67.0] — 2026-11-09
+
+### Installing on Rocky Linux — and the bug that found
+Writing the guide meant running the installer, which is how this surfaced:
+
+**The installed launcher ran the GUI instead of the CLI.** `linux/install.sh` wrote
+a launcher that exec'd `wengold.native`, so on an installed copy *every* subcommand
+opened a window — `wengold --version` and `wengold cdc file.sv` both tried to start
+Qt. Only `wengold desktop` should do that.
+
+Worse, the installer's own verification hid it:
+
+```sh
+"$BIN/$APP" --version >/dev/null 2>&1 || true     # swallows the failure
+```
+
+An installer that says "an installer that does not check its own result is a script
+that hopes", one line above a check that cannot fail. Fixed:
+
+- the launcher runs `wengold.cli`, so every subcommand works
+- the `.desktop` entry runs `wengold desktop`, which is the one place the GUI is
+  the right entry point
+- `wengold --version` exists at all — it did not, though the installer used it
+- the verification now runs the launcher it wrote and **fails** if `--version` does
+  not answer with the right version
+
+Proven by installing with the old launcher: the install now stops with
+`error: installed, but .../wengold --version does not work`.
+
+### `docs/INSTALL-ROCKY.md`
+Rocky is RHEL-family, so the `.deb` in `dist/` is not for it — but `install.sh` is
+plain POSIX shell with no package manager and runs unchanged.
+
+The one real trap is the Python version: `requires-python = ">=3.11"` and Rocky 9
+ships **3.9**. The guide shows installing `python3.11` alongside it and shimming
+`python3` on `PATH` **for the install only** — repointing the system `python3` on
+Rocky 9 breaks `dnf`, which runs on it.
+
+Also listed: the Qt system libraries under their RHEL names (`mesa-libGL`,
+`libxkbcommon-x11`, `xcb-util-*`), which differ from Debian's.
+
+### `tests/test_installer.py`
+Six tests that run the installer into a throwaway `HOME` and then use the result the
+way a user would: `--version`, a real subcommand, the desktop entry pointing at the
+GUI, a clean uninstall, and a refusal when the script is copied away from the
+package.
+
+**1004 tests passing**, 15 skipped.
+---
+
 ## [0.66.2] — 2026-11-09
 
 ### The README understated the project
