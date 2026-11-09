@@ -14,6 +14,51 @@ what the tags are for.
 
 ---
 
+## [0.67.2] — 2026-11-09
+
+### If installing the tools is failing, you do not need them
+The graph, the kernel, the front-ends and the CLI are **standard library only**. Only
+the extras are optional, and `pyproject.toml` has listed numpy as a dependency while
+`import wengold` works without it — so the tool has been installable-with-nothing
+since v0.1.0 and the docs never said so.
+
+`./wengold.sh` is that path:
+
+```bash
+git clone https://github.com/thejas235689/wengold.git
+cd wengold
+./wengold.sh --version
+./wengold.sh doctor
+./wengold.sh index path/to/rtl
+```
+
+No pip, no root, no package manager, nothing written outside the checkout. It finds
+a suitable interpreter itself (`python3.13`, `python3.12`, `python3.11`, then
+`python3`) and, if none is new enough, prints the exact `dnf` line instead of a
+traceback.
+
+`./wengold.sh --where` reports which interpreter it found and which extras are
+present — each one with what its absence costs, rather than as a failure:
+
+```
+optional        present  what its absence costs
+pyslang         yes      a real SystemVerilog parse; without it the bounded regex
+                         front-end finds fewer modules
+z3              yes      the formal loop
+numpy           yes      learn and spec-from-text
+PyQt6           no       the native window; the browser fallback still works
+
+none of these is required to run wengold.
+```
+
+### Pinned by tests
+`tests/test_no_install.py` runs the CLI with numpy, pyslang, z3 and PyQt6 all
+blocked, so a change that quietly adds a hard dependency fails there rather than on
+a user's machine.
+
+**1011 tests passing**, 15 skipped.
+---
+
 ## [0.67.1] — 2026-11-09
 
 ### The installer now says why it failed
