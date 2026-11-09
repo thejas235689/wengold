@@ -23,7 +23,16 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 
-from pyslang import syntax as S
+# pyslang is optional everywhere else in this project — the graph falls back to a
+# bounded regex elaborator and says so. Importing it unguarded here made `vibe`
+# die with a raw ModuleNotFoundError, which reads as a broken install rather than
+# a missing optional tool.
+try:
+    from pyslang import syntax as S
+    _HAVE_SLANG = True
+except ImportError:                                              # pragma: no cover
+    S = None
+    _HAVE_SLANG = False
 
 from .spec import ModuleSpec
 
@@ -78,6 +87,17 @@ def _walk(node):
 
 
 def _parse(source: str):
+    """Parse with slang, or refuse clearly when it is not installed.
+
+    Refusing is the right behaviour: the conformance check reads a real syntax
+    tree, and a regex imitation would report conformance it had not established.
+    """
+    if not _HAVE_SLANG:
+        raise RuntimeError(
+            "the conformance check needs pyslang to read the RTL it generated, and "
+            "pyslang is not installed. Install it with "
+            "`python3 -m pip install --user pyslang`, or run without the "
+            "conformance step. (The rest of wengold runs without pyslang.)")
     return S.SyntaxTree.fromText(source, name="<rtl>")
 
 
