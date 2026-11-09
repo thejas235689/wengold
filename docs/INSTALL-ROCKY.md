@@ -1,8 +1,38 @@
 # Installing WENGOLD on Rocky Linux
 
+## If installing tools is failing, you do not need them
+
+The graph, the kernel, the front-ends and the CLI are **standard library only**. No
+pip, no root, no package manager, nothing written outside the checkout:
+
+```bash
+git clone https://github.com/thejas235689/wengold.git
+cd wengold
+./wengold.sh --version
+./wengold.sh doctor
+./wengold.sh index path/to/rtl
+```
+
+The only requirement is **Python 3.11 or newer**. `./wengold.sh` finds it for you
+(trying `python3.13`, `python3.12`, `python3.11`, then `python3`) and says what to
+install if none is new enough.
+
+```bash
+./wengold.sh --where      # which interpreter, and which extras are present
+```
+
+Everything below is optional. pyslang gives a real SystemVerilog parse instead of
+the bounded regex fallback; z3 enables the formal loop; numpy enables `learn` and
+`spec-from-text`; PyQt6 enables the native window. **None of them is required to
+run wengold**, and each one's absence is reported as what it costs rather than as a
+failure.
+
+---
+
 Rocky is RHEL-family, so the `.deb` in `dist/` is **not** for you — it is Debian
-packaging. Everything else works: `linux/install.sh` is plain POSIX shell and uses
-no package manager at all, so it runs unchanged on Rocky.
+packaging. The full installer works too: `linux/install.sh` is plain POSIX shell and
+uses no package manager at all, so it runs unchanged on Rocky. It adds a launcher,
+a menu entry and an icon; `./wengold.sh` adds none of those and needs nothing.
 
 There are two things that differ from a Debian box: **the Python version** and **the
 Qt system libraries**.
