@@ -14,6 +14,42 @@ what the tags are for.
 
 ---
 
+## [0.67.1] — 2026-11-09
+
+### The installer now says why it failed
+A Rocky user reported the install still not working, and the installer gave them
+nothing to work with. Two gaps:
+
+- **No Python version check.** `pyproject.toml` requires ≥3.11; the installer ran
+  whatever `python3` it found. On Rocky/RHEL 9 that is 3.9, so the install
+  proceeded and then failed at `the package did not import after installation` —
+  a message that names no cause and no fix.
+- **No numpy check.** It is a declared runtime dependency. The package imports
+  without it, so nothing failed at install time and `wengold learn` broke later.
+
+Both now report themselves, and the version error names the exact commands:
+
+```
+error: WENGOLD needs Python 3.11 or newer; this is 3.9 at /usr/bin/python3
+
+On Rocky/RHEL 9 the system python3 is 3.9. Install a newer one
+alongside it — do NOT replace the system python3, dnf runs on it:
+
+    sudo dnf install -y python3.11 python3.11-pip
+    mkdir -p ~/.local/bin-py
+    ln -sf /usr/bin/python3.11 ~/.local/bin-py/python3
+    PATH="$HOME/.local/bin-py:$PATH" sh linux/install.sh
+```
+
+### `linux/install.sh --diagnose`
+Prints everything needed to debug a failed install in one block: distro and kernel,
+the interpreter and whether it satisfies 3.11, pip/numpy/PyQt6 presence, where the
+script thinks the package is, whether the prefix is writable, and whether
+`~/.local/bin` is on `PATH`. Changes nothing.
+
+**1006 tests passing**, 15 skipped.
+---
+
 ## [0.67.0] — 2026-11-09
 
 ### Installing on Rocky Linux — and the bug that found
