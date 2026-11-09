@@ -87,3 +87,37 @@ def test_the_installer_refuses_when_copied_away_from_the_package(tmp_path):
                        capture_output=True, text=True, timeout=60)
     assert r.returncode != 0
     assert "checkout" in (r.stdout + r.stderr)
+
+
+def test_an_old_python_is_refused_with_the_fix(monkeypatch, tmp_path):
+    """A 3.9 interpreter used to install and then fail at "the package did not
+    import", which says nothing about why. It must name the version and the fix."""
+    shim = tmp_path / "bin"
+    shim.mkdir()
+    fake = shim / "python3"
+    fake.write_text(
+        "#!/bin/sh\n"
+        'case "$2" in\n'
+        '  *"version_info >= (3, 11)"*) exit 1 ;;\n'
+        '  *"version_info[:2]"*) echo "3.9"; exit 0 ;;\n'
+        'esac\n'
+        'exec ' + sys.executable + ' "$@"\n')
+    fake.chmod(0o755)
+    env = dict(os.environ, HOME=str(tmp_path / "h"),
+               PATH=f"{shim}:{os.environ['PATH']}")
+    r = subprocess.run(["sh", str(INSTALL)], cwd=REPO, env=env,
+                       capture_output=True, text=True, timeout=60)
+    out = r.stdout + r.stderr
+    assert r.returncode != 0
+    assert "needs Python 3.11" in out
+    assert "python3.11" in out, "it must name the package to install"
+    assert "dnf runs on it" in out, "and warn against replacing the system python3"
+
+
+def test_diagnose_prints_what_a_failed_install_needs(home):
+    h, env, r = home
+    out = subprocess.run(["sh", str(INSTALL), "--diagnose"], cwd=REPO,
+                         env=env, capture_output=True, text=True, timeout=60)
+    assert out.returncode == 0
+    for key in ("distro", "python3:", "pip:", "numpy:", "package:", "writable:"):
+        assert key in out.stdout, f"diagnose is missing {key}"
