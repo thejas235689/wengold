@@ -84,8 +84,13 @@ mkdir -p "$BIN"
 cat > "$BIN/$APP" <<LAUNCHER
 #!/bin/sh
 # WENGOLD launcher — written by linux/install.sh
+#
+# This runs the CLI, not the GUI. It used to exec $APP.native, which meant an
+# installed copy answered every subcommand by opening a window: \`wengold --version\`
+# and \`wengold cdc file.sv\` both tried to start Qt. \`wengold desktop\` is the way
+# into the GUI, and the .desktop entry below calls it directly.
 export PYTHONPATH="$LIB\${PYTHONPATH:+:\$PYTHONPATH}"
-exec "$PY" -m $APP.native "\$@"
+exec "$PY" -m $APP.cli "\$@"
 LAUNCHER
 chmod 0755 "$BIN/$APP"
 say "launcher -> $BIN/$APP"
@@ -97,7 +102,9 @@ say "icon -> $ICONS/$APP.svg"
 
 # Exec takes the absolute launcher path. An unquoted path with spaces in it is
 # the classic way a .desktop entry silently stops working.
-sed -e "s|@BIN@|$BIN/$APP|g" \
+# The menu entry starts the window, not the CLI — that is the one place the GUI is
+# the right entry point.
+sed -e "s|@BIN@|$BIN/$APP desktop|g" \
     -e "s|@ICON@|$APP|g" \
     "$HERE/wengold.desktop.in" > "$APPS/$APP.desktop"
 chmod 0644 "$APPS/$APP.desktop"
@@ -115,12 +122,22 @@ fi
 
 # ---- verify --------------------------------------------------------------
 # An installer that does not check its own result is a script that hopes.
-"$BIN/$APP" --version >/dev/null 2>&1 || true
+# Check the thing the user will actually run, not just that the package imports.
+# The old line ran the launcher with `|| true`, so a launcher that started a GUI
+# instead of printing a version passed silently.
 if ! PYTHONPATH="$LIB" "$PY" -c "import $APP; print($APP.__version__)" >/dev/null 2>&1; then
     fail "the package did not import after installation"
 fi
 VER=$(PYTHONPATH="$LIB" "$PY" -c "import $APP; print($APP.__version__)")
-say "verified: $APP $VER imports from $LIB"
+if ! OUT=$("$BIN/$APP" --version 2>&1); then
+    printf '  error: the launcher failed:\n\n%s\n\n' "$OUT" >&2
+    fail "installed, but \`$BIN/$APP --version\` does not work"
+fi
+case "$OUT" in
+    *"$VER"*) ;;
+    *) fail "launcher printed '$OUT', expected version $VER" ;;
+esac
+say "verified: $APP $VER — launcher answers --version"
 
 if [ "$QT_OK" = 0 ]; then
     printf '\n  PyQt6 is not installed, so the native window cannot start.\n'
