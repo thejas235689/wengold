@@ -14,6 +14,37 @@ what the tags are for.
 
 ---
 
+## [0.67.4] — 2026-11-09
+
+### README brought up to date
+It still said **v0.65.0 — 999 tests** and documented an install that began with
+`pip install -e ".[open]"`. Both were wrong in ways that mattered:
+
+- **The status line was two versions and fifteen tests stale.** Now v0.67.3, 1014
+  tests, 15 skipped — measured from a fresh checkout, not copied from the changelog.
+- **The install section led with pip.** WENGOLD needs Python 3.11 and nothing else;
+  `sh wengold.sh` runs it with no pip, no root and no package manager. The optional
+  packages are now a table with **what each one's absence costs**, which is what
+  `--where` prints.
+- **Rocky Linux was not mentioned at all**, though the Python-version trap there is
+  the one thing most likely to stop an install.
+- **The CLI list was missing** `agentic`, `doctor`, `doctor --presets` and
+  `doctor --llm`.
+- **A commercial-tool gap was missing from "What is not done".** WENGOLD drives
+  Verilator, iverilog/vvp, Yosys and GHDL and reports `tool_missing` — never a pass —
+  when one is absent. It has never driven VCS, Xcelium, Questa, Vivado or JasperGold.
+
+### Following the README's own instructions found a bug in them
+`./wengold.sh --version` — the first command a new user runs — failed with
+**"Permission denied"**. `wengold.sh` and `linux/install.sh` are committed as mode
+100644, so the executable bit is not set. Every doc now uses `sh wengold.sh`, which
+works with the mode the repo actually has, and the README says why.
+
+The README's install block was then run verbatim, from a clean copy: clone, `--version`,
+`index`, `--where`. All four work.
+
+---
+
 ## [0.67.3] — 2026-11-09
 
 ### Using the agentic loop found a bug in `vibe`
