@@ -14,6 +14,55 @@ what the tags are for.
 
 ---
 
+## [0.67.3] — 2026-11-09
+
+### Using the agentic loop found a bug in `vibe`
+Running `wengold vibe` on a machine without pyslang produced a raw traceback:
+
+```
+File "wengold/generate/conform.py", line 26, in <module>
+    from pyslang import syntax as S
+ModuleNotFoundError: No module named 'pyslang'
+```
+
+A module-level import of an **optional** dependency. Every other part of the project
+treats pyslang as optional and says what its absence costs — the graph falls back to
+a bounded regex elaborator and prints "an under-estimate, not the design". This one
+died, and a traceback reads as a broken install rather than a missing extra.
+
+Now guarded. Importing the module works without pyslang; only *parsing* needs it,
+and it refuses clearly:
+
+> the conformance check needs pyslang to read the RTL it generated, and pyslang is
+> not installed. Install it with `python3 -m pip install --user pyslang`, or run
+> without the conformance step. (The rest of wengold runs without pyslang.)
+
+Refusing is right rather than falling back to a regex: a regex imitation would
+report conformance it had not established.
+
+### What the loop actually did, on a real design
+A design with a module instantiated but never defined:
+
+```
+ok 1. stub the modules the graph knows are missing
+    fact:   instantiated but not defined: missing_block; completeness() marks
+            missing_block, top unresolved as a consequence
+    action: propose a diff against wengold_stubs.sv
+    result: written to wengold_stubs.sv
+```
+
+The stub's ports were recovered from the instantiation site, not invented. After it,
+`wengold index` reports `complete: True, unresolved: 0` — the gap is genuinely closed.
+
+Then it stopped honestly:
+
+```
+stopped: 2 result(s) are not valid and no kernel-justified action settles them
+```
+
+**1014 tests passing**, 15 skipped.
+---
+
 ## [0.67.2] — 2026-11-09
 
 ### If installing the tools is failing, you do not need them
