@@ -9,6 +9,7 @@
 #   ./linux/install.sh --prefix DIR # somewhere else
 #   sudo ./linux/install.sh --system # /usr/local, all users
 #   ./linux/install.sh --check      # report what is missing, change nothing
+#   ./linux/install.sh --diagnose   # everything needed to debug a failed install
 #
 # It is a shell script rather than a Makefile because a Linux user with a
 # terminal should be able to read every line of what it does to their home
@@ -22,6 +23,7 @@ REPO=$(dirname -- "$HERE")
 PREFIX=${PREFIX:-}
 SYSTEM=0
 CHECK=0
+DIAGNOSE=0
 WITH_QT=1
 
 while [ $# -gt 0 ]; do
@@ -30,6 +32,7 @@ while [ $# -gt 0 ]; do
         --system) SYSTEM=1; shift ;;
         --no-qt) WITH_QT=0; shift ;;
         --check) CHECK=1; shift ;;
+        --diagnose) DIAGNOSE=1; shift ;;
         -h|--help) sed -n '2,16p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
         *) echo "unknown option: $1" >&2; exit 2 ;;
     esac
@@ -53,10 +56,54 @@ PY=$(command -v python3 || true)
 PYVER=$("$PY" -c 'import sys; print("%d.%d" % sys.version_info[:2])')
 say "python3 $PYVER at $PY"
 
+# pyproject.toml requires >=3.11. Without this check a 3.9 interpreter installs
+# and then fails at "the package did not import", which says nothing about why.
+if ! "$PY" -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 11) else 1)'; then
+    printf '\n  error: WENGOLD needs Python 3.11 or newer; this is %s at %s\n\n' \
+        "$PYVER" "$PY" >&2
+    printf '  On Rocky/RHEL 9 the system python3 is 3.9. Install a newer one\n' >&2
+    printf '  alongside it — do NOT replace the system python3, dnf runs on it:\n\n' >&2
+    printf '      sudo dnf install -y python3.11 python3.11-pip\n' >&2
+    printf '      mkdir -p ~/.local/bin-py\n' >&2
+    printf '      ln -sf /usr/bin/python3.11 ~/.local/bin-py/python3\n' >&2
+    printf '      PATH="$HOME/.local/bin-py:$PATH" sh linux/install.sh\n\n' >&2
+    printf '  See docs/INSTALL-ROCKY.md.\n' >&2
+    exit 1
+fi
+
+# numpy is a declared runtime dependency (`wengold learn`, `spec-from-text`).
+# The package imports without it, so a missing numpy is not fatal here — but
+# saying so now beats a traceback three commands later.
+NUMPY_OK=1
+"$PY" -c 'import numpy' >/dev/null 2>&1 || NUMPY_OK=0
+[ "$NUMPY_OK" = 1 ] || say "numpy: MISSING — \`$PY -m pip install --user numpy\`"
+
 # ---- what is missing -----------------------------------------------------
 QT_OK=1
 if ! "$PY" -c 'import PyQt6.QtWidgets' >/dev/null 2>&1; then
     QT_OK=0
+fi
+
+if [ "$DIAGNOSE" = 1 ]; then
+    say "distro"
+    [ -r /etc/os-release ] && . /etc/os-release && say "  ${PRETTY_NAME:-unknown}"
+    say "  kernel: $(uname -srm)"
+    say "python"
+    say "  python3:    $PY ($PYVER)"
+    "$PY" -c 'import sys; print("  ok for 3.11+:", sys.version_info >= (3,11))' 2>/dev/null || true
+    for m in pip numpy PyQt6.QtWidgets; do
+        if "$PY" -c "import $m" >/dev/null 2>&1; then say "  $m: present"
+        else say "  $m: MISSING"; fi
+    done
+    say "  which pip:  $(command -v pip3 || command -v pip || echo none)"
+    say "repo"
+    say "  script:     $HERE"
+    say "  package:    $REPO/$APP ($([ -d "$REPO/$APP" ] && echo present || echo MISSING))"
+    say "  prefix:     $PREFIX"
+    say "  writable:   $([ -w "$(dirname "$PREFIX")" ] && echo yes || echo no)"
+    say "shell"
+    say "  PATH has ~/.local/bin: $(case ":$PATH:" in *":$HOME/.local/bin:"*) echo yes;; *) echo no;; esac)"
+    exit 0
 fi
 
 if [ "$CHECK" = 1 ]; then
