@@ -1071,8 +1071,14 @@ def cmd_demo(args) -> int:
 
 
 def main(argv=None) -> int:
+    from . import __version__ as _version
     parser = argparse.ArgumentParser(prog="wengold",
                                      description="WENGOLD — open silicon verification.")
+    # `--version` is what every installer and every user reaches for first, and
+    # linux/install.sh uses it to verify its own result. Without it the install
+    # looked successful while the launcher was opening a GUI.
+    parser.add_argument("--version", action="version",
+                        version=f"wengold {_version}")
     sub = parser.add_subparsers(dest="cmd", required=True)
 
     p = sub.add_parser("index", help="index a project into a dependency graph")
