@@ -214,10 +214,25 @@ class GraphBuilder:
         # Falling back silently is dangerous: the bounded regex elaborator finds a
         # fraction of the modules, so the same project can index to hundreds of
         # blocks or to a handful depending on what is installed.
-        self.graph.notes.append(
-            "slang (pyslang) is not installed — fell back to the bounded regex "
-            "elaborator, which finds far fewer modules. The block count below is "
-            "an under-estimate, not the design.")
+        # The note must name the real reason. It used to say "pyslang is not
+        # installed" unconditionally, so asking for the regex backend on a machine
+        # that HAS pyslang reported a missing dependency that was installed.
+        from .slang_backend import available as _slang_available
+        if backend == "regex":
+            self.graph.notes.append(
+                "the regex backend was requested, so the bounded regex elaborator "
+                "was used. It finds fewer modules than slang and invents nodes for "
+                "ports; the block count below is an under-estimate, not the design.")
+        elif _slang_available():
+            self.graph.notes.append(
+                "slang is installed but produced no units for these files, so the "
+                "bounded regex elaborator was used. The block count below is an "
+                "under-estimate, not the design.")
+        else:
+            self.graph.notes.append(
+                "slang (pyslang) is not installed — fell back to the bounded regex "
+                "elaborator, which finds far fewer modules. The block count below is "
+                "an under-estimate, not the design.")
         elab = Elaborator(sv or files, include_dirs).elaborate()
 
         # packages
