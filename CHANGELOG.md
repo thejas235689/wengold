@@ -14,6 +14,42 @@ what the tags are for.
 
 ---
 
+## [0.68.2] — 2026-11-10
+
+### `wengold tools` — the way out of "simulators aren't installed"
+
+A verification report said *"simulator-backed verification: blocked because the
+external simulators weren't installed. WENGOLD reported the checks as
+inconclusive."* That was honest and useless: the user was told what was missing
+and given nothing to do about it.
+
+`wengold tools` now reports what is present, and `wengold tools --install` fetches
+the YosysHQ OSS CAD Suite — iverilog, verilator, yosys, ghdl — into
+`~/.local/share/wengold/tools`, then **runs every binary it installed** before
+claiming success. An archive that unpacks but whose binaries abort is not an
+install.
+
+Deliberate limits: nothing system-wide (no root, no package manager), PATH is not
+edited behind your back (`--where` prints the line), the release is pinned and
+recorded, and a failed download is a failure rather than a silent skip.
+
+**The runner finds it without PATH.** `wengold tools --install` would otherwise be
+useless unless the user also edited their shell profile, and "installed but not
+found" is the worst of both.
+
+### Three bugs found while building it
+- The release tag is dashed (`2026-11-10`) while the asset name is not
+  (`...-20261110.tgz`). Building both from one string gave a 404 that looked like a
+  network failure.
+- `vvp` was probed with no arguments, which prints "no input file" and exits 255 by
+  design, so a working runtime was reported missing.
+- `from .tools.install` inside `wengold/agent/runners.py` resolves to
+  `wengold.agent.tools` and silently found nothing.
+
+**1029 tests passing**, 3 skipped.
+
+---
+
 ## [0.68.1] — 2026-11-10
 
 ### Nine fixes that a working tree had swallowed
