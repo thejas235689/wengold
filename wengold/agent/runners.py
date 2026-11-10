@@ -489,6 +489,15 @@ class ToolRunner:
     # matching only the word "assert" classified counter_tb.sv as uncheckable
     # when it fails correctly.
     ASSERT_PATTERN = re.compile(r"\bassert\b|\$fatal|\$error", re.IGNORECASE)
+    # A check that cannot fire is not a check. `if (1'b0) $fatal(...)` matches
+    # ASSERT_PATTERN, so a testbench whose only "assertion" is dead was reported
+    # as a pass — "ran to completion with no assertion firing" — which is a
+    # vacuous pass. The regex sees the word; it cannot see that the guard is
+    # constant.
+    DEAD_GUARD = re.compile(
+        r"if\s*\(\s*(?:1'[bB]0|0|\'0|\bfalse\b)\s*\)"
+        r"[^{;]*\{?[^}]{0,400}?(?:\$fatal|\$error|assert)",
+        re.IGNORECASE | re.DOTALL)
 
     def testbench(self) -> tuple[str | None, bool]:
         """The first testbench file, and whether it contains assertions."""
@@ -594,6 +603,17 @@ class ToolRunner:
                 "the design did not compile, so it could not be simulated")
         rc, log, secs = self._run([self.tools.found["vvp"], str(out)])
         if rc == 0:
+            # A pass needs a check that could have failed.
+            try:
+                tb_text = Path(tb).read_text(errors="replace")
+            except OSError:
+                tb_text = ""
+            if self.DEAD_GUARD.search(tb_text):
+                return self._outcome(
+                    rid, kind, "iverilog", "inconclusive", rc, log, secs,
+                    f"{Path(tb).name} ran but its only check is guarded by a "
+                    f"constant-false condition, so it cannot fail. That is not "
+                    f"evidence the design is correct")
             return self._outcome(
                 rid, kind, "iverilog", "pass", rc, log, secs,
                 f"simulation of {Path(tb).name} ran to completion with no "
