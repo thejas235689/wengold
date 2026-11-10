@@ -14,6 +14,56 @@ what the tags are for.
 
 ---
 
+## [0.68.0] — 2026-11-10
+
+### The IDE became an editor
+`wengold ide ./rtl --out page.html` was a snapshot: everything embedded at build
+time, no backend, read-only. Running the same command with `--serve` adds the
+backend: it prints the URL it bound, the project root it will write within, and the
+reminder that writes are confined to that root and the socket is loopback only.
+
+The page gains a **Save / Build / Suggest** toolbar, an editable code pane, Ctrl+S
+and an `unsaved` marker. It detects a backend at load; the static file stays
+read-only, because an editor that silently loses your typing is worse than none.
+
+### The write boundary is the design
+An HTTP endpoint that writes files is a remote-code-execution surface if it is
+loose. Six constraints, each with a test:
+
+| guard | refuses |
+| --- | --- |
+| bind | `127.0.0.1` only — no LAN exposure |
+| token | every mutating request carries a per-run token (403 without) |
+| traversal | a parent-relative path resolves outside the root |
+| absolute | an absolute path is not accepted |
+| symlink | a link inside the root pointing out is resolved and refused |
+| extension | only `.sv .svh .v .vh .vhd .vhdl` |
+| creation | **existing files only** — save cannot create a request-supplied name |
+
+The client cannot choose what Build runs: `run_build()` re-indexes with this
+module's own logic and returns the real graph, including the honest note when
+pyslang is missing. A refused save returns a reason and a status, never a silent
+no-op, and a write that does not read back as written raises.
+
+### Suggestions from a local model
+`POST /api/suggest` asks the configured model about the open file, **grounded in
+the kernel's facts**: the file/block/edge counts and the parser's own notes go into
+the prompt alongside the source. The facts come back with the answer and are
+rendered under it, so the advice can be checked against what the tool actually
+knows. The answer is labelled `unchecked`, and nothing is written.
+
+No model is a `note`, not an error: the facts still come back, with the fix named.
+
+### Two bugs found while building it
+- The server's URL never appeared when piped: `print` is block-buffered on a pipe
+  and a server runs forever, so the line telling you where it is never flushed.
+- `wengold ide --out some-dir/` raised `IsADirectoryError`, and a directory is what
+  a person types.
+
+**1023 tests passing**, 8 skipped.
+
+---
+
 ## [0.67.4] — 2026-11-09
 
 ### README brought up to date
