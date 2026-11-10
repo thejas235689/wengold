@@ -576,6 +576,53 @@ def cmd_rootcause(args) -> int:
     return status
 
 
+def cmd_tools(args) -> int:
+    """Report the open-source toolchain, and install it when asked.
+
+    The verification run that motivated this reported "simulator-backed
+    verification: blocked because the external simulators weren't installed" and
+    called its own checks inconclusive. That was honest and useless. This command
+    is the answer to "so what do I do".
+    """
+    from .tools.install import OSS_SUITE_VERSION, detect, install_suite, path_line
+
+    if args.install:
+        try:
+            r = install_suite(version=args.version or OSS_SUITE_VERSION)
+        except RuntimeError as e:
+            print(f"  could not install: {e}")
+            return 1
+        print(f"\n  installed {r['version']} — {r['working']}/{r['total']} "
+              f"binaries run")
+        for p in r["probe"]:
+            mark = "ok  " if p["ok"] else "MISS"
+            detail = (p.get("version") or p.get("why", "")).strip()
+            print(f"    {mark} {p['tool']:<10} {detail[:52]}")
+        print(f"\n  to use it in this shell:\n    {path_line(r['dir'])}")
+        print("  WENGOLD finds it without PATH; the line is for other tools.")
+        return 0
+
+    d = detect()
+    if args.where:
+        if d.get("dir"):
+            print(path_line(d["dir"]))
+            return 0
+        print("  no WENGOLD-managed toolchain; run: wengold tools --install")
+        return 1
+
+    print(f"  {'installed' if d['installed'] else 'not installed'}"
+          + (f" ({d['source']}: {d['dir']})" if d.get("dir") else ""))
+    for p in d["probe"]:
+        mark = "ok  " if p["ok"] else "--  "
+        detail = (p.get("version") or "missing").strip()[:34]
+        print(f"    {mark} {p['tool']:<10} {detail:<34} {p['what']}")
+    if not d["installed"]:
+        print("\n  install them: wengold tools --install")
+        print("  without them, simulation and formal checks are reported "
+              "inconclusive rather than passed — a missing tool is not a pass.")
+    return 0 if d["installed"] else 1
+
+
 def cmd_ide(args) -> int:
     """Write a self-contained IDE for a project: files, RTL, change, pending."""
     from . import __version__
@@ -1309,6 +1356,17 @@ def main(argv=None) -> int:
     p.add_argument("--change", action="append", default=[],
                    help="a node that changed (repeatable)")
     p.set_defaults(func=cmd_rootcause)
+
+    p = sub.add_parser("tools", help="what is installed, and install the "
+                                     "open-source toolchain")
+    p.add_argument("--install", action="store_true",
+                   help="download the OSS CAD Suite (iverilog, verilator, yosys, "
+                        "ghdl) into ~/.local/share/wengold/tools")
+    p.add_argument("--version", default=None,
+                   help="with --install: the suite release to fetch")
+    p.add_argument("--where", action="store_true",
+                   help="print the PATH line for an existing install")
+    p.set_defaults(func=cmd_tools)
 
     p = sub.add_parser("ide", help="write a self-contained IDE for a project, "
                                    "or serve one you can edit in")
