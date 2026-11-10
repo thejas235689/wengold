@@ -119,9 +119,24 @@ def cmd_formal(args) -> int:
     except UnsupportedConstruct as exc:
         # A property that names a signal the file does not define is a user error,
         # not a crash. It used to surface as a Python traceback.
-        print(f"  cannot prove: {exc}")
-        print(f"  the property refers to something this file does not define; "
-              f"check the signal name against {args.file}")
+        # The advice has to match the cause. It said "check the signal name" for
+        # every refusal, so an unsupported system function sent the user to
+        # inspect a signal that exists and is spelled correctly.
+        msg = str(exc)
+        print(f"  cannot prove: {msg}")
+        if "unsupported primary" in msg and "$" in msg:
+            print("  that is a SystemVerilog system function, which the formal "
+                  "front-end does not model. It is not a missing signal.")
+        elif "unsupported primary" in msg:
+            print("  that token is outside the formal subset.")
+        elif "needs the operand width" in msg:
+            print("  this is a limitation of the chosen engine, not of the "
+                  "property. Re-run with --engine z3.")
+        elif "not supported by the formal front-end" in msg:
+            print("  the property uses a construct outside the formal subset.")
+        else:
+            print(f"  the property refers to something this file does not define; "
+                  f"check the signal name against {args.file}")
         return 2
     for r in out["results"]:
         print(f"  {r.status:>8}  {r.property:<10} {r.engine:<8} {r.detail}")
