@@ -9,3 +9,5 @@ adds the backend, and the whole design is about making one narrow capability saf
 That is deliberately stricter than "an editor":
 
   * **bind to 127.0.0.1 only.** No `0.0.0.0`, no LAN exposure. A file-writing HTTP
+    endpoint reachable from the network is a remote code execution surface.
+  * **root-confined.** Every path is resolved and must sit under the project root
