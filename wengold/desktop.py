@@ -21,7 +21,7 @@ Endpoints:
 | `/api/singularity` | condition number and the blocks with the largest blast radius |
 
 The server binds to 127.0.0.1 only. It has no authentication because it is not
-reachable off the machine — binding it to 0.0.0.0 would make that untrue, so the
+reachable off the machine — binding it to a wildcard address would make that untrue, so the
 option is not offered.
 """
 from __future__ import annotations
@@ -85,6 +85,7 @@ white-space:pre-wrap;word-break:break-word}
 #out .cmd{color:var(--red)}
 #out .dim{color:var(--dim2)}
 #out .ok{color:var(--grey)}
+#out .note{color:var(--ink)}   /* a note is not a failure */
 #inrow{display:flex;align-items:center;gap:8px;border-top:1px solid var(--line);
 padding:6px 12px;background:var(--panel)}
 #caret{color:var(--red);font-weight:700}
@@ -303,7 +304,10 @@ async function runCmd(line){
   if(bare.includes(cmd.split(' ')[0])){
     try{
       const r=await get('/api/exec?cmd='+encodeURIComponent(cmd));
-      write('<div class="'+(r.ok?'ok':'dim')+'">'+esc(r.output)+'</div>');
+      // `ok` alone conflated success, a usage hint and a capability note. Only a
+      // real error is dimmed — `explain` without a model prints the answer.
+      const cls=(r.kind==='error')?'dim':(r.ok?'ok':'ok note');
+      write('<div class="'+cls+'">'+esc(r.output)+'</div>');
     }catch(e){write('<div class="dim">error: '+esc(e.message)+'</div>')}
     return;
   }
@@ -429,6 +433,21 @@ CLI_COMMANDS = ("summary", "files", "blocks", "verdicts", "singularity",
                 "review", "vibe", "agentic", "ask", "explain", "help")
 
 
+def _table(rows, headers=("metric", "value")) -> str:
+    """Aligned two-column text. The transcript is monospace, so this is a table.
+
+    Deliberately not a boxed grid: the pane is narrow and resizable, and a border
+    that wraps is worse than columns that do not.
+    """
+    rows = [(str(a), str(b)) for a, b in rows]
+    w = max([len(headers[0])] + [len(a) for a, _ in rows])
+    v = max([len(headers[1])] + [len(b) for _, b in rows])
+    out = [f"  {headers[0]:<{w}}  {headers[1]:>{v}}",
+           f"  {'-' * w}  {'-' * v}"]
+    out += [f"  {a:<{w}}  {b:>{v}}" for a, b in rows]
+    return "\n".join(out)
+
+
 def _page(state: dict) -> str:
     """The app HTML with the initial state inlined."""
     import json as _json
@@ -539,15 +558,20 @@ def _exec(state: dict, line: str) -> dict:
     parts = raw.split()
     verb, args = parts[0].lower(), parts[1:]
     if verb not in CLI_COMMANDS:
-        return {"ok": False, "output": f"unknown command: {verb}. try: help"}
+        return {"ok": False, "kind": "error",
+                "output": f"unknown command: {verb}. try: help"}
 
     if verb == "summary":
         s = state
-        return {"ok": True, "output": (
-            f"files {s['files']}  nodes {s['nodes']}  edges {s['edges']}\n"
-            f"blocks {s['blocks']}  unresolved {s['unresolved']}\n"
-            f"design units {s['design_units']} of {s['files']} file(s)\n"
-            f"complete {s['complete']}")}
+        return {"ok": True, "output": _table([
+            ("files", s["files"]),
+            ("design units", f"{s['design_units']} of {s['files']}"),
+            ("blocks", s["blocks"]),
+            ("nodes", s["nodes"]),
+            ("edges", s["edges"]),
+            ("unresolved", s["unresolved"]),
+            ("complete", s["complete"]),
+        ])}
 
     if verb == "agentic":
         # The agentic loop. Unlike `vibe`, which generates, this decides what to
@@ -576,7 +600,7 @@ def _exec(state: dict, line: str) -> dict:
         from .agent.llm import LLMUnavailable, from_env
         model = from_env()
         if model is None:
-            return {"ok": False, "output":
+            return {"ok": False, "kind": "note", "output":
                     "no local model configured.\n"
                     "  set WENGOLD_LLM_MODEL=qwen2.5-coder:7b and run `ollama serve`\n"
                     "  check it with: wengold doctor --llm\n"
@@ -608,8 +632,12 @@ def _exec(state: dict, line: str) -> dict:
                          f"{r.get('reason', '')}")
         fact_block = "\n".join(facts)
         if model is None:
-            return {"ok": False, "output":
-                    "no local model configured — but the facts need no model:\n\n"
+            # `explain` succeeded: the facts are the answer and they need no model.
+            # ok=False made the pane style the answer as dimmed secondary text,
+            # which reads as "this did not work" about a command that worked.
+            return {"ok": True, "kind": "note", "output":
+                    "the facts need no model; the prose does.\n"
+                    "set WENGOLD_LLM_MODEL to add it (wengold doctor --presets).\n\n"
                     + fact_block}
         try:
             prose = model.explain_failure(fact_block)
@@ -629,7 +657,7 @@ def _exec(state: dict, line: str) -> dict:
         from .vibe import render, vibe
         target = " ".join(args) if args else ""
         if not target:
-            return {"ok": False, "output":
+            return {"ok": False, "kind": "usage", "output":
                     "vibe needs a spec file or a sentence, e.g.\n"
                     "  vibe examples/timer/timer.spec.yaml\n"
                     "  vibe a register block with a control and a status register"}
@@ -683,9 +711,10 @@ def _exec(state: dict, line: str) -> dict:
             return {"ok": True, "output": (
                 f"{r['id']}\n  verdict {r['verdict']}\n  {r['reason']}")}
         counts = v["counts"]
-        head = (f"change: {v['change']}\n"
-                + "  ".join(f"{k} {n}" for k, n in sorted(counts.items())))
-        return {"ok": True, "output": head}
+        return {"ok": True, "output":
+                f"change: {v['change']}\n"
+                + _table([(k, n) for k, n in sorted(counts.items())],
+                         headers=("verdict", "count"))}
 
     if verb == "singularity":
         s = _singularity(state)
@@ -693,10 +722,12 @@ def _exec(state: dict, line: str) -> dict:
         # the first entry of `singular`. Reading `s['worst']` raised KeyError and
         # took the whole connection down.
         worst = s["singular"][0]["name"] if s.get("singular") else "(none)"
-        return {"ok": True, "output": (
-            f"blocks {s['blocks']}  condition {s['condition_number']:.2f}\n"
-            f"worst {worst} ({s['worst_radius']} blocks)  "
-            f"median {s['median']:.0f}\n{s['verdict']}")}
+        return {"ok": True, "output": _table([
+            ("blocks", s["blocks"]),
+            ("condition", f"{s['condition_number']:.2f}"),
+            ("worst", f"{worst} ({s['worst_radius']} blocks)"),
+            ("median", f"{s['median']:.0f}"),
+        ]) + f"\n  {s['verdict']}"}
 
     return {"ok": True, "output": ""}
 
