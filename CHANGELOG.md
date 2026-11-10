@@ -14,6 +14,41 @@ what the tags are for.
 
 ---
 
+## [0.68.1] — 2026-11-10
+
+### Nine fixes that a working tree had swallowed
+These were found by a seven-role verification run against `examples/soc_top` and
+fixed, but the fixes lived only in a working tree and were lost when the
+environment recycled. Rebuilt here, each with a regression test.
+
+| fix | the bad behaviour it removed |
+| --- | --- |
+| regex-backend note | said pyslang was missing on a machine where it was installed |
+| z3 sort guard | a sort mismatch escaped as a raw traceback from inside z3 |
+| refusal advice | every refusal said "check the signal name", including for a system function |
+| explicit engine | `~1` evaluated as `-2` (truthy) where hardware gives `0`; the engine refuted true properties with impossible witnesses |
+| runner dead guard | `if (1'b0) $fatal(...)` was reported as a pass — a vacuous testbench |
+| vibe draft | the generated testbench drove a hardcoded `clk_i`/`rst_ni` and did not compile as emitted |
+| pane tables | `summary`/`verdicts`/`singularity` printed unaligned single lines |
+| pane states | `explain` printed the kernel's verdicts and reported failure, so the answer was styled as dimmed secondary text |
+| CI matrix | one OS and one Python; a macOS-only breakage could not be seen |
+
+The explicit-engine fix is the one that mattered: an engine documented as
+"complete and sound" was inverting logic. It now refuses `~` and points at
+`--engine z3`, which carries widths. An engine that answers wrongly is worse than
+one that declines.
+
+### CI now covers systems and installation
+`test` runs Ubuntu, macOS and Windows across Python 3.11/3.12/3.13. Three further
+jobs: `no-dependencies` asserts a clean runner has no third-party packages and
+runs the CLI anyway; `install` writes the installer, uses the launcher, starts the
+IDE server from the installed copy, and uninstalls; `old-python` forces a 3.9
+interpreter and requires the refusal to name the version and the package.
+
+**1041 tests passing**, 15 skipped.
+
+---
+
 ## [0.68.0] — 2026-11-10
 
 ### The IDE became an editor
