@@ -649,7 +649,18 @@ def cmd_ide(args) -> int:
     html = build(root, graph, changed_files, befores, results, changes,
                  project=root.name, revision=args.revision, version=__version__,
                  wave=wave)
+    if args.serve:
+        # Serve instead of writing: the page needs a backend to edit, save and
+        # build. The static file stays available and stays read-only.
+        from .ide_server import serve
+        return serve(root, lambda: html, port=args.port,
+                     open_browser=not args.no_browser)
+
     out = Path(args.out)
+    # `--out some-dir/` is what a person types; writing a file at a path that is
+    # already a directory raised IsADirectoryError.
+    if out.is_dir() or str(args.out).endswith(("/", "\\")):
+        out = out / "index.html"
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(html, encoding="utf-8")
 
@@ -1284,7 +1295,8 @@ def main(argv=None) -> int:
                    help="a node that changed (repeatable)")
     p.set_defaults(func=cmd_rootcause)
 
-    p = sub.add_parser("ide", help="write a self-contained IDE for a project")
+    p = sub.add_parser("ide", help="write a self-contained IDE for a project, "
+                                   "or serve one you can edit in")
     p.add_argument("path", nargs="?", default=".")
     p.add_argument("--include", action="append", default=[])
     p.add_argument("--define", action="append", default=[])
@@ -1305,6 +1317,12 @@ def main(argv=None) -> int:
     p.add_argument("--wave-engine", default="explicit",
                    choices=["explicit", "z3"], help="engine for --property")
     p.add_argument("--out", default="wengold-ide.html")
+    p.add_argument("--serve", action="store_true",
+                   help="serve the IDE on 127.0.0.1 so it can edit, save and build")
+    p.add_argument("--port", type=int, default=0,
+                   help="with --serve: bind this port (0 picks a free one)")
+    p.add_argument("--no-browser", action="store_true",
+                   help="with --serve: do not open a browser")
     p.set_defaults(func=cmd_ide)
 
     p = sub.add_parser("spec-from-text",
