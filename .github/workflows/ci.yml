@@ -18,11 +18,20 @@ on:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    name: test ${{ matrix.os }} / py${{ matrix.python-version }}
+    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.12"]
+        # one system was not a matrix: a macOS-only breakage or a 3.11 syntax
+        # regression could not be seen.
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        python-version: ["3.11", "3.12", "3.13"]
+        exclude:
+          - os: macos-latest
+            python-version: "3.13"
+          - os: windows-latest
+            python-version: "3.13"
 
     steps:
       - uses: actions/checkout@v4
@@ -42,7 +51,8 @@ jobs:
           # Pinned to the versions the suite was measured against. An unpinned
           # pyslang is a moving API, and a green local run plus a red CI run is
           # the least useful signal a project can produce.
-          pip install "pytest>=8,<9" "z3-solver>=4.13,<6" "pyslang==12.1.0" "numpy>=1.26,<3"
+          pip install "pytest>=8,<9" "z3-solver>=4.13,<6" "numpy>=1.26,<3"
+          pip install "pyslang==12.1.0" || echo "::warning::pyslang unavailable on ${{ matrix.os }}; front-end tests will skip"
           # the native desktop app; optional at runtime, so the suite skips its
           # tests if this ever fails, but installed here so CI covers it
           pip install "PyQt6>=6.6,<7" || echo "PyQt6 unavailable; native tests will skip"
@@ -68,6 +78,7 @@ jobs:
             2>&1 | tee /tmp/pytest.log
 
       - name: Give GHDL a C compiler
+        if: runner.os == 'Linux'
         # neorv32 analyses 54 of 54 VHDL units once GHDL can start. Without `cc` it
         # reports "installation problem" and reads as a broken toolchain.
         run: |
@@ -79,6 +90,7 @@ jobs:
           echo "$RUNNER_TEMP/ccbin" >> "$GITHUB_PATH"
 
       - name: Check GHDL starts and analyses a VHDL unit
+        if: runner.os == 'Linux'
         run: |
           if ! command -v ghdl >/dev/null 2>&1; then
             echo "ghdl not installed on this runner — skipping"
@@ -179,3 +191,111 @@ jobs:
           assert not errs, [str(e) for e in errs[:3]]
           print('generated SVA parses cleanly')
           "
+
+  # ---------------------------------------------------------------------------
+  # The zero-install claim: Python 3.11+ and nothing else.
+  # ---------------------------------------------------------------------------
+  no-dependencies:
+    name: runs with no packages / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Prove nothing third-party is installed
+        shell: bash
+        run: |
+          # If these are present the job would pass for the wrong reason.
+          for m in pyslang z3 numpy PyQt6; do
+            if python -c "import $m" 2>/dev/null; then
+              echo "::error::$m is installed on a clean runner"
+              exit 1
+            fi
+          done
+      - name: Run the CLI with nothing installed
+        shell: bash
+        run: |
+          sh wengold.sh --version
+          sh wengold.sh doctor
+          sh wengold.sh index examples/soc_top
+
+  # ---------------------------------------------------------------------------
+  # The installer: write it, use it, uninstall it.
+  # ---------------------------------------------------------------------------
+  install:
+    name: install / ubuntu
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install for the current user, with no root
+        run: |
+          export HOME="$RUNNER_TEMP/home"; mkdir -p "$HOME"
+          sh linux/install.sh
+          test -x "$HOME/.local/bin/wengold" || { echo "::error::no launcher"; exit 1; }
+      - name: The launcher answers as the CLI
+        run: |
+          export HOME="$RUNNER_TEMP/home"
+          "$HOME/.local/bin/wengold" --version
+          # a subcommand must work through the launcher, not open a window
+          "$HOME/.local/bin/wengold" cdc --help >/dev/null
+      - name: The IDE server starts from the installed copy and answers
+        shell: bash
+        run: |
+          export HOME="$RUNNER_TEMP/home"
+          # port 0 would bind a random port, so pin one and read the URL the
+          # server prints. A server that starts but does not answer is not
+          # working, and `|| true` here would hide exactly that.
+          "$HOME/.local/bin/wengold" ide examples/soc_top --serve \
+              --port 8731 --no-browser > "$RUNNER_TEMP/ide.log" 2>&1 &
+          pid=$!
+          for i in $(seq 1 30); do
+            grep -q "WENGOLD IDE" "$RUNNER_TEMP/ide.log" && break
+            sleep 1
+          done
+          cat "$RUNNER_TEMP/ide.log"
+          kill "$pid" 2>/dev/null || true
+          grep -q "127.0.0.1:8731" "$RUNNER_TEMP/ide.log" \
+            || { echo "::error::the IDE server did not print its URL"; exit 1; }
+          curl -sf --max-time 5 http://127.0.0.1:8731/ >/dev/null \
+            || { echo "::error::the IDE page did not serve"; exit 1; }
+          echo "the IDE served a page from the installed copy"
+      - name: Uninstall removes exactly what it wrote
+        run: |
+          export HOME="$RUNNER_TEMP/home"
+          sh linux/uninstall.sh
+          test ! -e "$HOME/.local/share/wengold" || { echo "::error::left behind"; exit 1; }
+
+  # ---------------------------------------------------------------------------
+  # An old interpreter must be refused with the fix named.
+  # ---------------------------------------------------------------------------
+  old-python:
+    name: refuses Python 3.9 clearly
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Simulate a 3.9 interpreter
+        shell: bash
+        run: |
+          # wengold.sh tries 3.13, 3.12, 3.11 then python3, so shadowing only
+          # python3 leaves a good interpreter reachable and this passes for the
+          # wrong reason.
+          shim="$RUNNER_TEMP/oldpy"; mkdir -p "$shim"
+          real="$(command -v python3.12 || command -v python3)"
+          for cand in python3.13 python3.12 python3.11 python3; do
+            printf '#!/bin/sh\ncase "$2" in\n  *"version_info >= (3,11)"*) exit 1 ;;\n  *"version_info[:2]"*) echo "3.9"; exit 0 ;;\nesac\nexec %s "$@"\n' "$real" > "$shim/$cand"
+            chmod +x "$shim/$cand"
+          done
+          set +e
+          out=$(PATH="$shim:$PATH" sh wengold.sh --version 2>&1); rc=$?
+          set -e
+          echo "$out"
+          test "$rc" -ne 0 || { echo "::error::3.9 must be refused"; exit 1; }
+          echo "$out" | grep -q "needs Python 3.11" || { echo "::error::name the version"; exit 1; }
