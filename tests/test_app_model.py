@@ -71,7 +71,13 @@ def test_explain_without_a_model_still_gives_the_facts(design, monkeypatch):
     printing."""
     monkeypatch.delenv("WENGOLD_LLM_MODEL", raising=False)
     r = _exec(design, "explain")
-    assert "no local model configured" in r["output"]
+    # The contract changed with the state model: `explain` now reports success,
+    # because the facts ARE the answer, and says what is missing (the prose)
+    # rather than that the command failed.
+    assert r["ok"] is True, r
+    assert r.get("kind") == "note", r
+    assert "the prose does" in r["output"], r
+    assert "the kernel's verdicts" in r["output"], r
     assert r["output"].strip() != "no local model configured"
 
 
