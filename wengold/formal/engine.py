@@ -314,13 +314,27 @@ def z3_check(model: Model, props: list[Property], depth: int = 12,
 
     results: list[FormalResult] = []
     for p, ast in asserts:
-        if p.kind is PropertyKind.SAFETY:
-            results.append(_z3_safety(p, ast, s, envs, transitions, init_terms,
-                                      assume_terms, depth, induction, rtl, regs, ins,
-                                      W, model.widths))
-        else:
-            results.append(_z3_cover(p, ast, s, envs, transitions, init_terms,
-                                     assume_terms, depth, rtl, ins, W))
+        # z3 raises Z3Exception("sort mismatch") while evaluating a property whose
+        # sides have different widths. It escaped as a raw traceback from inside
+        # z3, which reads as a broken tool rather than a property the engine
+        # cannot express. INCONCLUSIVE with a reason is the honest answer, and it
+        # must never become a pass.
+        try:
+            if p.kind is PropertyKind.SAFETY:
+                results.append(_z3_safety(p, ast, s, envs, transitions, init_terms,
+                                          assume_terms, depth, induction, rtl, regs,
+                                          ins, W, model.widths))
+            else:
+                results.append(_z3_cover(p, ast, s, envs, transitions, init_terms,
+                                         assume_terms, depth, rtl, ins, W))
+        except Exception as e:                                   # noqa: BLE001
+            if type(e).__name__ != "Z3Exception":
+                raise
+            results.append(FormalResult(
+                p.name, FormalStatus.UNKNOWN, "z3",
+                detail=(f"z3 could not express this property: {e}. Both sides of a "
+                        f"comparison need the same width, and logical operators "
+                        f"are && / || rather than & / |.")))
     return results
 
 
