@@ -104,13 +104,26 @@ def make_testbench(spec: dict, all_ports=None) -> str:
              for p in source_ports]
     regs = list(getattr(spec, "registers", []) or [])
 
+    # The clock and reset to drive are whichever inputs the port list actually
+    # declares. It used to be the module-level CLK/RST constants ("clk_i"/"rst_ni"),
+    # so a module with `clk`/`rst_n` produced `always #5 clk_i = ~clk_i;` against an
+    # undeclared signal: the draft did not compile as emitted.
+    clock, rst_sig = CLK, RST
+    for p in ports:
+        if p["dir"] != "input":
+            continue
+        if p["name"] in (CLK, "clk", "clock", "clk_i"):
+            clock = p["name"]
+        if p["name"] in (RST, "rst_n", "reset_n", "reset"):
+            rst_sig = p["name"]
+
     decls, conns = [], []
     for p in ports:
         name, width = p["name"], int(p.get("width", 1))
         rng = "" if width == 1 else f"[{width - 1}:0] "
         if p["dir"] == "input":
             init = " = 0"
-            if name == CLK:
+            if name == clock:
                 init = " = 0"
             decls.append(f"  logic {rng}{name}{init};")
             conns.append(f".{name}({name})")
@@ -172,12 +185,12 @@ def make_testbench(spec: dict, all_ports=None) -> str:
     tasks = ""
     if has_bus:
         tasks = (f"  task automatic wr(input [31:0] a, input [31:0] v);\n"
-                 f"    @(posedge {CLK}); reg_wr_i <= 1; reg_addr_i <= a;"
+                 f"    @(posedge {clock}); reg_wr_i <= 1; reg_addr_i <= a;"
                  f" reg_wdata_i <= v;\n"
-                 f"    @(posedge {CLK}); reg_wr_i <= 0;\n  endtask\n\n"
+                 f"    @(posedge {clock}); reg_wr_i <= 0;\n  endtask\n\n"
                  f"  task automatic rd(input [31:0] a, output [31:0] v);\n"
-                 f"    @(posedge {CLK}); reg_rd_i <= 1; reg_addr_i <= a;\n"
-                 f"    @(posedge {CLK}); reg_rd_i <= 0; #1; v = reg_rdata_o;\n"
+                 f"    @(posedge {clock}); reg_rd_i <= 1; reg_addr_i <= a;\n"
+                 f"    @(posedge {clock}); reg_rd_i <= 0; #1; v = reg_rdata_o;\n"
                  f"  endtask\n\n"
                  # every check was the same three lines: read, mask-compare,
                  # fatal. Naming it once removes two lines per check and keeps
@@ -197,13 +210,13 @@ module {module}_tb;
 
   {module} dut({", ".join(conns)});
 
-  always #5 {CLK} = ~{CLK};
+  always #5 {clock} = ~{clock};
 
 {tasks}
 
   initial begin
-    repeat(3) @(posedge {CLK});
-    {RST} <= 1;
+    repeat(3) @(posedge {clock});
+    {rst_sig} <= 1;
     #1;
 {chr(10).join(body) if body else '    // no registers to check'}
     $display("PASSED");
