@@ -153,9 +153,21 @@ class Toolchain:
         # `extra_path` is how a user points at an OSS CAD Suite install without
         # editing PATH for the whole session — the suite's `environment` script is
         # not the only way to reach it, and requiring it would be a worse API.
-        search = None
+        # The toolchain WENGOLD installed itself is found without PATH: `wengold
+        # tools --install` would otherwise be useless unless the user also edited
+        # their shell profile, and "installed but not found" is the worst of both.
+        parts = []
         if extra_path:
-            search = str(extra_path) + os.pathsep + os.environ.get("PATH", "")
+            parts.append(str(extra_path))
+        try:
+            from ..tools.install import _bin_dir, suite_dir
+            managed = _bin_dir(suite_dir())
+            if managed.exists():
+                parts.append(str(managed))
+        except Exception:                                        # noqa: BLE001
+            pass                                     # no managed toolchain: fine
+        parts.append(os.environ.get("PATH", ""))
+        search = os.pathsep.join(p for p in parts if p)
         for name in self.NAMES:
             path = shutil.which(name, path=search)
             if path:
