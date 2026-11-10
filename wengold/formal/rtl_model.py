@@ -270,7 +270,18 @@ def eval_int(node, env: dict, params: dict) -> int:
         raise UnsupportedConstruct(f"unknown signal {name!r}")
     if kind == "un":
         v = eval_int(node[2], env, params)
-        return {"~": lambda x: ~x, "!": lambda x: 0 if x else 1,
+        if node[1] == "~":
+            # Python's `~1` is -2, which is truthy; 1-bit hardware's `~1` is 0,
+            # which is falsy. Without the operand width this evaluator cannot tell
+            # them apart, and it used to return the Python answer — so the
+            # explicit-state engine inverted logic and refuted true properties
+            # with impossible witnesses. An engine that answers wrongly is worse
+            # than one that declines.
+            raise UnsupportedConstruct(
+                "bitwise negation '~' needs the operand width, which the explicit "
+                "evaluator does not carry; use --engine z3 for properties "
+                "containing '~'")
+        return {"!": lambda x: 0 if x else 1,
                 "-": lambda x: -x, "+": lambda x: x}[node[1]](v)
     if kind == "bin":
         op = node[1]
