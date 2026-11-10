@@ -260,6 +260,29 @@ _TEMPLATE = """<!DOCTYPE html>
   .stats b {{ color:#E8E8EA; font-weight:600; }}
   .stats .warn b {{ color:var(--orange); }}
   main {{ display:grid; grid-template-columns:260px 1fr 380px; flex:1; min-height:0; }}
+  #bar {{ display:flex; gap:8px; align-items:center; padding:6px 10px;
+           border-bottom:1px solid var(--line); background:var(--panel); }}
+  #bar button {{ background:#1C1C20; color:#E6E6EA; border:1px solid var(--line);
+                 border-radius:4px; padding:3px 10px; font:inherit; cursor:pointer; }}
+  #bar button:hover {{ border-color:var(--orange); }}
+  #dirty.dirty {{ color:var(--orange); }}
+  #status {{ margin-left:auto; color:var(--grey); }}
+  #status.bad {{ color:#F87171; }}
+  #code textarea {{ width:100%; height:100%; min-height:320px; resize:none;
+                    background:transparent; color:#E6E6EA; border:0; outline:0;
+                    font:inherit; line-height:1.55; padding:10px 12px;
+                    tab-size:4; white-space:pre; }}
+  #advice {{ border-top:1px solid var(--line); padding:10px 12px; max-height:34vh;
+             overflow:auto; background:#101012; }}
+  #advice pre {{ margin:6px 0 0; white-space:pre-wrap; color:#E6E6EA; }}
+  #advice .unchecked {{ margin-left:8px; color:var(--orange); font-size:11px;
+                        border:1px solid var(--orange); border-radius:3px;
+                        padding:0 5px; }}
+  #advice .facts {{ margin-top:10px; color:var(--grey); font-size:11px; }}
+  #advice .facts pre {{ color:#A9A9B0; }}
+  #advice .hint {{ color:var(--grey); font-size:11px; margin-top:6px; }}
+  #advice .bad {{ color:#F87171; }}
+  #advice .note {{ color:#A9A9B0; }}
   #wave {{ flex:none; border-top:1px solid var(--line); max-height:44vh;
            overflow:auto; background:#0E0E10; }}
   #wave.hidden {{ display:none; }}
@@ -371,7 +394,15 @@ _TEMPLATE = """<!DOCTYPE html>
       <div class="tab" data-view="diff">Change</div>
       <div id="which" style="margin-left:auto;color:{grey}"></div>
     </div>
+    <div id="bar" class="hidden">
+      <button id="save" title="Ctrl+S">Save</button>
+      <button id="build" title="re-index the project">Build</button>
+      <button id="suggest" title="ask the local model about this file">Suggest</button>
+      <span id="dirty"></span>
+      <span id="status"></span>
+    </div>
     <div id="code"></div>
+    <div id="advice" class="hidden"></div>
   </section>
   <section>
     <h2>Pending blocks</h2>
@@ -425,6 +456,114 @@ function renderTree() {{
     n.onclick = () => {{ sel = n.dataset.p; renderTree(); renderCode(); }};
 }}
 
+let SERVED = false, TOKEN = "", dirty = false;
+
+async function boot() {{
+  // A served page has a backend; a file:// page does not. Ask, and fall back
+  // silently to read-only rather than showing buttons that cannot work.
+  try {{
+    const r = await fetch("/api/state");
+    if (!r.ok) return;
+    const j = await r.json();
+    TOKEN = j.token; SERVED = true;
+    document.getElementById("bar").classList.remove("hidden");
+    document.getElementById("status").textContent = "serving " + j.root;
+  }} catch (e) {{ /* file:// — read-only */ }}
+}}
+
+function setStatus(msg, bad) {{
+  const el = document.getElementById("status");
+  el.textContent = msg;
+  el.className = bad ? "bad" : "";
+}}
+
+async function saveFile() {{
+  if (!SERVED) return;
+  const ta = document.getElementById("edit");
+  if (!ta || !sel) {{ setStatus("nothing to save", true); return; }}
+  try {{
+    const r = await fetch("/api/save", {{
+      method: "POST",
+      headers: {{"Content-Type": "application/json", "X-Wengold-Token": TOKEN}},
+      body: JSON.stringify({{path: sel, content: ta.value}})
+    }});
+    const j = await r.json();
+    if (!r.ok) {{ setStatus("refused: " + (j.error || r.status), true); return; }}
+    D.sources[sel] = ta.value;
+    dirty = false;
+    document.getElementById("dirty").textContent = "";
+    setStatus(j.changed ? "saved " + sel + " (" + j.bytes + " bytes)"
+                        : "unchanged — nothing written");
+  }} catch (e) {{ setStatus("save failed: " + e.message, true); }}
+}}
+
+async function askModel() {{
+  if (!SERVED) return;
+  const el = document.getElementById("advice");
+  el.classList.remove("hidden");
+  el.innerHTML = '<div class="empty">asking the local model…</div>';
+  setStatus("asking the model…");
+  try {{
+    const r = await fetch("/api/suggest", {{
+      method: "POST",
+      headers: {{"Content-Type": "application/json", "X-Wengold-Token": TOKEN}},
+      body: JSON.stringify({{path: sel}})
+    }});
+    const j = await r.json();
+    const facts = j.facts ? `<div class="facts"><b>what the tool established</b>`+
+                            `<pre>${{esc(j.facts)}}</pre></div>` : "";
+    if (!j.ok) {{
+      // a missing model is not a failure of the file; say which it is
+      const cls = j.kind === "note" ? "note" : "bad";
+      el.innerHTML = `<div class="${{cls}}"><b>${{esc(j.error || "no suggestion")}}</b>`+
+                     (j.hint ? `<div class="hint">${{esc(j.hint)}}</div>` : "")+
+                     `</div>` + facts;
+      setStatus(j.kind === "note" ? "no model configured" : "suggestion failed",
+                j.kind !== "note");
+      return;
+    }}
+    el.innerHTML =
+      `<div class="sug"><b>${{esc(j.model)}}</b>`+
+      `<span class="unchecked">unchecked</span>`+
+      `<pre>${{esc(j.suggestion)}}</pre>`+
+      `<div class="hint">${{esc(j.note)}}</div></div>` + facts;
+    setStatus("suggestion from " + j.model + " — not a check");
+  }} catch (e) {{
+    el.innerHTML = '<div class="bad">suggestion failed: ' + esc(e.message) + '</div>';
+    setStatus("suggestion failed", true);
+  }}
+}}
+
+async function runBuild() {{
+  if (!SERVED) return;
+  setStatus("building…");
+  try {{
+    const r = await fetch("/api/build", {{
+      method: "POST",
+      headers: {{"Content-Type": "application/json", "X-Wengold-Token": TOKEN}},
+      body: JSON.stringify({{}})
+    }});
+    const j = await r.json();
+    if (!r.ok || !j.ok) {{ setStatus("build failed: " + (j.error || r.status), true); return; }}
+    setStatus("built: " + j.files + " files · " + j.blocks + " blocks · " +
+              j.edges + " edges");
+  }} catch (e) {{ setStatus("build failed: " + e.message, true); }}
+}}
+
+document.addEventListener("DOMContentLoaded", () => {{
+  const s = document.getElementById("save"), b = document.getElementById("build");
+  if (s) s.addEventListener("click", saveFile);
+  if (b) b.addEventListener("click", runBuild);
+  const g = document.getElementById("suggest");
+  if (g) g.addEventListener("click", askModel);
+  document.addEventListener("keydown", e => {{
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") {{
+      e.preventDefault(); saveFile();
+    }}
+  }});
+  boot();
+}});
+
 function renderCode() {{
   const el = document.getElementById("code");
   document.getElementById("which").textContent = sel || "";
@@ -448,6 +587,21 @@ function renderCode() {{
 
   const src = D.sources[sel];
   if (src === undefined) {{ el.innerHTML = '<div class="empty">source not embedded</div>'; return; }}
+
+  // Served: the pane is an editor. Static file: read-only, because there is no
+  // backend to write to and an editor that silently loses your typing is worse
+  // than no editor.
+  if (SERVED && sel) {{
+    el.innerHTML = `<textarea id="edit" spellcheck="false"></textarea>`;
+    const ta = document.getElementById("edit");
+    ta.value = src;
+    ta.addEventListener("input", () => {{
+      dirty = ta.value !== src;
+      document.getElementById("dirty").textContent = dirty ? "unsaved" : "";
+      document.getElementById("dirty").className = dirty ? "dirty" : "";
+    }});
+    return;
+  }}
   const lines = src.split("\\n");
   el.innerHTML = lines.map((t, i) =>
     `<div class="ln"><span class="g">${{i + 1}}</span><span class="t">${{esc(t)}}</span></div>`
