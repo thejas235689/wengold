@@ -31,7 +31,11 @@ def classify(name: str, dut_roots: tuple[str, ...] = (),
     if explicit_tb and not explicit_dut:
         return "testbench"
     if explicit_dut and explicit_tb:
-        return "ambiguous"
+        # DUT instances usually live inside tb scope (tb.dut). Longest
+        # explicit matching scope wins; equal-length conflicts stay ambiguous.
+        d_len = max((len(p) for p in dut_roots if _matches_prefix(name, (p,))), default=0)
+        t_len = max((len(p) for p in tb_roots if _matches_prefix(name, (p,))), default=0)
+        return "rtl" if d_len > t_len else "testbench" if t_len > d_len else "ambiguous"
     parts = [p.lower() for p in name.split(".")[:-1]]
     if any(p in DUT_TOKENS for p in parts):
         return "rtl"
