@@ -161,7 +161,7 @@ say "icon -> $ICONS/$APP.svg"
 # the classic way a .desktop entry silently stops working.
 # The menu entry starts the window, not the CLI — that is the one place the GUI is
 # the right entry point.
-sed -e "s|@BIN@|$BIN/$APP desktop --native|g" \
+sed -e "s|@BIN@|\"$BIN/$APP\" desktop --native|g" \
     -e "s|@ICON@|$APP|g" \
     "$HERE/wengold.desktop.in" > "$APPS/$APP.desktop"
 chmod 0644 "$APPS/$APP.desktop"
