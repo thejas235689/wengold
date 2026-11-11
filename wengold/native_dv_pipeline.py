@@ -271,6 +271,15 @@ def make_dv_pipeline_tab(root, files, QtCore, QtGui, QtWidgets):
                         model.text().strip())))
 
     def refresh_files(newfiles):
+        # A project refresh invalidates in-memory DV run assumptions. Saved
+        # source digests remain in exported artifacts for external audit.
+        if state["results"]:
+            state["results"].clear()
+            state["source_fingerprints"] = None
+            for key in ("dvIntake", "dvPlan", "dvUvm", "dvRegression", "dvDebug", "dvCoverage"):
+                controls[key]["evidence"].setPlainText(
+                    "STALE — project source inventory refreshed; rerun this stage.")
+            banner.setText("STALE EVIDENCE — rerun source intake and independent checks")
         for widget, endings in (
             (spec, (".txt", ".md", ".rst", ".yaml", ".yml", ".json", ".pdf")),
             (rtl, (".v", ".sv")),
