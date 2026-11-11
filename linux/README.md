@@ -85,3 +85,39 @@ Each of these was run, not assumed:
 - `build-deb.sh` produces a 200 KB package with `root/root` ownership and clean
   directory modes; extracting it with `dpkg-deb -x` and running the payload starts
   the app.
+
+## Silicon Studio — unified native Linux window
+
+Install Python 3.11+ and PyQt6, then install the launcher:
+
+```sh
+python3 -m pip install --user PyQt6 pyslang
+sh linux/install.sh
+wengold desktop /absolute/path/to/rtl-project
+```
+
+The desktop application now has native PyQt6 tabs for Overview, RTL Editor,
+Waveforms, Formal, Jobs & Signoff, and Agents. All share the same local
+verification state and project-local evidence ledger. The application launcher
+can also be opened from your Linux application menu.
+
+Screenshot test without a running desktop session:
+
+```sh
+QT_QPA_PLATFORM=offscreen python3 -m wengold.native /absolute/path/to/rtl-project --screenshot studio.png
+```
+
+The native RTL editor safely opens and updates existing source files, refusing
+to overwrite an externally modified file. The waveform tab reads actual project
+VCDs, searches RTL for exact identifier matches, and does not invent traces.
+The formal tab queues bounded checks; the job tab shows evidence and reviewer
+decisions. Acceptance is never equivalent to production tapeout signoff.
+
+For a true Linux window, PyQt6 must be present. When it is missing, the CLI may
+fall back to a browser interface rather than silently pretending to be native.
+
+Run the Qt tests with:
+
+```sh
+QT_QPA_PLATFORM=offscreen python3 -m pytest -q tests/test_native_studio.py tests/test_native_app.py
+```
