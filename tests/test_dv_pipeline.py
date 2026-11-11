@@ -163,3 +163,28 @@ def test_ai_closure_plan_references_actual_uncovered_bins(project, monkeypatch):
     assert closure["status"] == "draft_coverage_closure_plan"
     assert closure["uncovered"] == ["overflow"]
     assert "unchanged" in closure["warning"]
+
+
+
+@pytest.mark.skipif(
+    __import__("shutil").which("iverilog") is None or
+    __import__("shutil").which("vvp") is None,
+    reason="Icarus is required for real DV regression")
+def test_bundled_counter_actual_simulation_and_measured_coverage():
+    from pathlib import Path
+    import tempfile
+    import shutil
+    src = Path(__file__).resolve().parents[1] / "examples" / "dv_workflow"
+    with tempfile.TemporaryDirectory(prefix="wengold-dv-regression-") as temp:
+        destination = Path(temp) / "project"
+        shutil.copytree(src, destination)
+        report = dv_pipeline.run_regression(
+            destination, "flows/simulation.json")
+        assert report["ok"], report.get("log")
+        assert report["gate"] == "tool_evidence_present"
+        measured = dv_pipeline.coverage_report(
+            destination, "results/coverage.json", 95.0)
+        assert measured["coverage_percent"] == 75.0
+        assert measured["uncovered"] == ["wraparound"]
+        assert not measured["target_reached"]
+        assert "UNCONFIRMED" in measured["closure"]
