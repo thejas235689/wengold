@@ -197,3 +197,16 @@ def test_ciw_clear_and_copy_controls(project):
     clear.click()
     assert win.transcript.toPlainText() == ""
     win.close()
+
+
+def test_menu_start_prompts_for_project_instead_of_indexing_home(monkeypatch, tmp_path):
+    from PyQt6 import QtWidgets
+    from wengold import native
+    selected = tmp_path / "project"
+    selected.mkdir()
+    (selected / "module.sv").write_text("module selected; endmodule\n")
+    monkeypatch.setattr(QtWidgets.QFileDialog, "getExistingDirectory",
+                        lambda *_args, **_kwargs: "")
+    assert native.main(".") == 0
+    # Cancelling the dialog must not scan a huge home directory.
+    assert selected.exists()
