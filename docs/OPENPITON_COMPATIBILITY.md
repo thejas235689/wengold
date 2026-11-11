@@ -60,3 +60,29 @@ Workflow: `.github/workflows/openpiton-compat.yml`.
 Evidence artifact: `openpiton-wengold-bridge-evidence`.
 Check the actual GitHub Actions job conclusion rather than assuming success
 from the presence of an evidence file.
+
+
+## RISC-V Ariane/CVA6 readiness gate
+
+The updated OpenPiton compatibility workflow separately initializes the *pinned*
+Ariane submodule revision `4c01614f83cd9dd91d115aa190bd4fc6a284b59e`.
+The `tools/check-openpiton-riscv.py` check reads `.gitmodules`, the RISC-V
+platform source list, and `devices_ariane.xml`, confirming expected memory,
+boot ROM, debug, CLINT and PLIC entries. It inspects the actual submodule
+checkout and records HDL source hashes, then runs the normal WENGOLD
+desktop/CIW state over the RV64 boot ROM sources.
+
+Local command:
+
+```bash
+git -C ../openpiton submodule update --init piton/design/chip/tile/ariane
+python3 tools/check-openpiton-riscv.py --openpiton ../openpiton \
+  --require-submodule --report openpiton-riscv-evidence.json
+```
+
+The gate produces `PASS_RISCV_READINESS` only when the pinned submodule,
+peripherals, and source discovery checks pass. It makes NO claim that
+the RISC-V CPU has been fully elaborated, an ISA test has run, or Linux has booted.
+Full RISC-V functionality and coherence require an OpenPiton+Ariane simulator
+configuration, correct toolchains, memories and software images, and real
+functional/coverage evidence. Those are still separate release gates.
