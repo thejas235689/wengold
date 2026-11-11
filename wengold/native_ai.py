@@ -8,7 +8,8 @@ from __future__ import annotations
 import os
 
 from .ai_prompts import PROFILES
-from .ai_workbench import generate, list_models, tool_status, validate_rtl, satya_check
+from .ai_workbench import (generate, list_models, tool_status, validate_rtl, satya_check,
+                           satya_generate_uvm, rustdv_unit_check)
 
 
 def create_ai_tab(root, QtCore, QtGui, QtWidgets, parent=None):
@@ -60,9 +61,15 @@ def create_ai_tab(root, QtCore, QtGui, QtWidgets, parent=None):
     compile_btn.setObjectName("aiCheckRtl")
     satya_btn = QtWidgets.QPushButton("Check PSS with Satya")
     satya_btn.setObjectName("aiCheckSatya")
+    uvm_btn = QtWidgets.QPushButton("Satya → UVM")
+    uvm_btn.setObjectName("aiSatyaUvm")
+    rust_btn = QtWidgets.QPushButton("RustDV Unit Tests")
+    rust_btn.setObjectName("aiRustDv")
     actions.addWidget(generate_btn)
     actions.addWidget(compile_btn)
     actions.addWidget(satya_btn)
+    actions.addWidget(uvm_btn)
+    actions.addWidget(rust_btn)
     actions.addStretch(1)
     outer.addLayout(actions)
 
@@ -72,7 +79,7 @@ def create_ai_tab(root, QtCore, QtGui, QtWidgets, parent=None):
     testbench.setPlaceholderText("Optional existing project-relative self-checking TB: tb/counter_tb.sv")
     top = QtWidgets.QLineEdit()
     top.setObjectName("aiTop")
-    top.setPlaceholderText("Optional simulation top name")
+    top.setPlaceholderText("Simulation top; RustDV project path for Rust check")
     validation.addWidget(QtWidgets.QLabel("Testbench"))
     validation.addWidget(testbench, 2)
     validation.addWidget(QtWidgets.QLabel("Top"))
@@ -112,6 +119,10 @@ def create_ai_tab(root, QtCore, QtGui, QtWidgets, parent=None):
                     result = validate_rtl(*self.values)
                 elif self.op == "satya":
                     result = satya_check(*self.values)
+                elif self.op == "satya_uvm":
+                    result = satya_generate_uvm(*self.values)
+                elif self.op == "rustdv":
+                    result = rustdv_unit_check(*self.values)
                 else:
                     raise ValueError("unknown workbench operation")
                 self.finished.emit(result)
@@ -126,7 +137,7 @@ def create_ai_tab(root, QtCore, QtGui, QtWidgets, parent=None):
             status.setText("A local AI or tool check is still running")
             return
         state["busy"] = True
-        for btn in (discover, generate_btn, compile_btn, satya_btn):
+        for btn in (discover, generate_btn, compile_btn, satya_btn, uvm_btn, rust_btn):
             btn.setEnabled(False)
         status.setText("Running " + op + " (real local execution)…")
         thread = QtCore.QThread(page)
@@ -144,6 +155,9 @@ def create_ai_tab(root, QtCore, QtGui, QtWidgets, parent=None):
                     evidence.setPlainText("Server replied but reports zero models.")
                 else:
                     evidence.setPlainText("Local server models: " + ", ".join(result["models"]))
+            elif op == "satya_uvm" and result.get("ok"):
+                preview.setPlainText(result["code"])
+                evidence.setPlainText("SATYA UVM GENERATED · UNVERIFIED\n" + result.get("note", ""))
             elif op == "generate":
                 state["draft"] = result
                 preview.setPlainText(result["text"])
@@ -206,6 +220,8 @@ def create_ai_tab(root, QtCore, QtGui, QtWidgets, parent=None):
         perform("satya", (root, testbench.text().strip()))
 
     satya_btn.clicked.connect(check_pss)
+    uvm_btn.clicked.connect(lambda: perform("satya_uvm", (root, testbench.text().strip())))
+    rust_btn.clicked.connect(lambda: perform("rustdv", (root, top.text().strip())))
     page.aiPreview = preview
     page.aiEvidence = evidence
     page.aiStatus = status
