@@ -69,6 +69,35 @@ jobs:
           HOME="$RUNNER_TEMP/wengold-home" sh linux/install.sh
           test -x "$RUNNER_TEMP/wengold-home/.local/bin/wengold"
           grep -q -- '--native' "$RUNNER_TEMP/wengold-home/.local/share/applications/wengold.desktop"
+      - name: Verify complete isolated desktop installation from a clean HOME
+        run: |
+          export HOME="$RUNNER_TEMP/wengold-fresh-home"
+          mkdir -p "$HOME"
+          sh linux/install-desktop.sh
+          test -x "$HOME/.local/share/wengold-venv/bin/python"
+          test -x "$HOME/.local/bin/wengold"
+          "$HOME/.local/bin/wengold" --version
+          "$HOME/.local/share/wengold-venv/bin/python" -c "import PyQt6.QtWidgets, pyslang, numpy"
+          test -f "$HOME/.local/share/applications/wengold.desktop"
+          grep -q -- 'desktop --native' "$HOME/.local/share/applications/wengold.desktop"
+          (
+            cd "$RUNNER_TEMP"
+            export PYTHONPATH="$HOME/.local/share/wengold"
+            QT_QPA_PLATFORM=offscreen "$HOME/.local/share/wengold-venv/bin/python" \
+              -m wengold.native "$GITHUB_WORKSPACE/examples" \
+              --screenshot "$GITHUB_WORKSPACE/installed-linux-studio.png"
+          )
+          test -s installed-linux-studio.png
+          sh linux/uninstall.sh
+          test ! -e "$HOME/.local/share/wengold-venv"
+          test ! -e "$HOME/.local/bin/wengold"
+      - name: Upload installed Linux screenshot
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-installed-studio
+          path: installed-linux-studio.png
+          if-no-files-found: warn
       - name: Upload Linux window screenshot
         if: always()
         uses: actions/upload-artifact@v4
