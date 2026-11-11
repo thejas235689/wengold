@@ -33,6 +33,9 @@ jobs:
           - os: windows-latest
             python-version: "3.13"
 
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@v4
 
@@ -113,10 +116,10 @@ jobs:
             echo "PyQt6 not available on this runner — skipping the native render"
             exit 0
           fi
-          python -m wengold.native examples --screenshot /tmp/native.png
+          python -m wengold.native examples --screenshot native.png
           python -c "
           import struct
-          data = open('/tmp/native.png','rb').read()
+          data = open('native.png','rb').read()
           assert data[:8] == b'\x89PNG\r\n\x1a\n', 'not a PNG'
           w, h = struct.unpack('>II', data[16:24])
           print(f'native window rendered {w}x{h}')
@@ -156,7 +159,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: native-window
-          path: /tmp/native.png
+          path: native.png
           if-no-files-found: warn
 
       - name: Upload the pytest log
@@ -184,10 +187,10 @@ jobs:
       - name: Emit and parse CDC assertions
         run: |
           python -m wengold.cli cdc examples/cdc/mixed_clocks.sv \
-            --standard examples/cdc/mixed_clocks_cdc.tcl --sva /tmp/checks.sv
+            --standard examples/cdc/mixed_clocks_cdc.tcl --sva checks.sv
           python -c "
           import pyslang
-          tree = pyslang.syntax.SyntaxTree.fromText(open('/tmp/checks.sv').read())
+          tree = pyslang.syntax.SyntaxTree.fromText(open('checks.sv').read())
           errs = [d for d in tree.diagnostics if d.isError()]
           assert not errs, [str(e) for e in errs[:3]]
           print('generated SVA parses cleanly')
