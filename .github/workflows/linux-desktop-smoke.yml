@@ -5,6 +5,9 @@ on:
     branches: [main]
     paths:
       - 'wengold/native.py'
+      - 'wengold/project_scan.py'
+      - 'wengold/desktop.py'
+      - 'tests/test_project_scan.py'
       - 'wengold/native_ai.py'
       - 'wengold/ai_workbench.py'
       - 'wengold/eda_flows.py'
@@ -58,7 +61,7 @@ jobs:
           python -m compileall -q wengold/native.py wengold/native_ai.py wengold/ai_workbench.py wengold/eda_flows.py wengold/ai_prompts.py wengold/native_ciw.py wengold/native_studio.py wengold/native_waveplot.py wengold/native_wave_debug.py wengold/wave_debug.py wengold/studio_jobs.py wengold/studio_durable.py wengold/studio_attest.py
       - name: Test native app and evidence pipeline
         run: |
-          python -m pytest -q tests/test_eda_flows.py tests/test_ai_workbench.py tests/test_native_studio.py tests/test_native_app.py tests/test_studio_milestone.py tests/test_studio_workspace.py tests/test_studio_durable.py tests/test_wave.py tests/test_wave_debug.py
+          python -m pytest -q tests/test_eda_flows.py tests/test_ai_workbench.py tests/test_native_studio.py tests/test_native_app.py tests/test_studio_milestone.py tests/test_studio_workspace.py tests/test_studio_durable.py tests/test_project_scan.py tests/test_wave.py tests/test_wave_debug.py
       - name: Render full Linux desktop
         run: |
           python -m wengold.native examples --screenshot linux-studio.png
