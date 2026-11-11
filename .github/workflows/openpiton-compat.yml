@@ -47,6 +47,7 @@ jobs:
           sudo apt-get install -y iverilog libegl1 libgl1 libopengl0 libxkbcommon-x11-0 libxcb-cursor0
           python -m pip install --upgrade pip
           python -m pip install 'pyslang==12.1.0' 'PyQt6>=6.6,<7'
+          python -m pip install -e ./wengold
       - name: Index actual OpenPiton bridge and exercise WENGOLD desktop commands
         working-directory: wengold
         run: |
