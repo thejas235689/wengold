@@ -134,3 +134,46 @@ def satya_check(root: str | Path, model_rel: str) -> dict:
         return {"ok": False, "status": "unavailable", "output": "Satya not installed"}
     result = run_tool([exe, "check", str(path)], cwd=str(Path(root).resolve()), timeout=30)
     return {"status": "check_pass" if result["ok"] else "check_failed", **result}
+
+
+
+def satya_generate_uvm(root: str | Path, model_rel: str) -> dict:
+    """Generate UVM sequences with Satya's documented UVM backend.
+
+    This confirms generator invocation only; it does not simulate the sequences.
+    """
+    path = project_file(root, model_rel, (".pss", ".psf", ".json"))
+    exe = shutil.which("satya")
+    if not exe:
+        return {"ok": False, "status": "unavailable", "output": "Satya not installed"}
+    with tempfile.TemporaryDirectory(prefix="wengold-pss-") as tmp:
+        output = Path(tmp) / "sequences.sv"
+        res = run_tool([exe, "gen", str(path), "--backend", "uvm",
+                        "-o", str(output)], cwd=str(Path(root).resolve()), timeout=45)
+        if not res["ok"] or not output.is_file():
+            return {"ok": False, "status": "generation_failed", **res}
+        code = output.read_text(encoding="utf-8", errors="replace")
+        return {"ok": True, "status": "generated_unverified",
+                "output": res["output"], "code": code[:150000],
+                "sha256": hashlib.sha256(code.encode()).hexdigest(),
+                "note": "Generated UVM code has not been compiled or simulated."}
+
+
+def rustdv_unit_check(project_root: str | Path, rel: str = "") -> dict:
+    """Offline Cargo unit tests only; NOT DUT simulation or UVM conformance.
+
+    rel must name an existing Cargo.toml-containing project directory.
+    """
+    base = Path(project_root).resolve()
+    target = (base / rel).resolve()
+    if Path(rel).is_absolute() or not target.is_relative_to(base):
+        raise ValueError("RustDV project must be within project root")
+    if not target.is_dir() or not (target / "Cargo.toml").is_file():
+        raise ValueError("select a RustDV project directory with Cargo.toml")
+    cargo = shutil.which("cargo")
+    if not cargo:
+        return {"ok": False, "status": "unavailable", "output": "Rust cargo not installed"}
+    result = run_tool([cargo, "test", "--offline", "--locked"],
+                      cwd=str(target), timeout=120)
+    return {"status": "unit_tests_pass" if result["ok"] else "unit_tests_failed",
+            "scope": "Rust unit tests only; no RTL simulator launched", **result}
