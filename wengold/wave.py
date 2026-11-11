@@ -129,14 +129,15 @@ def parse_vcd(text: str, limit: int = 4000) -> dict:
             if len(parts) == 2:
                 bits, ident = parts
                 try:
-                    current[ident] = int(bits.replace("x", "0").replace("z", "0"), 2)
+                    current[ident] = (None if any(c in "xXzZ" for c in bits)
+                                      else int(bits, 2))
                 except ValueError:
                     pass
             continue
         m = _SCALAR.match(line)
         if m:
             bit, ident = m.groups()
-            current[ident] = 1 if bit == "1" else 0
+            current[ident] = 1 if bit == "1" else 0 if bit == "0" else None
     if pending is not None:
         history.append((pending, dict(current)))
     if not history:
