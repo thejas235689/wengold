@@ -226,3 +226,26 @@ def test_ui_diagnostics_reports_actual_missing_tools(native_window, monkeypatch)
     menu_actions = [a.text() for menu in window.menuBar().actions()
                     for a in menu.menu().actions() if menu.menu()]
     assert "UI & Tool Diagnostics" in menu_actions
+
+
+def test_graphical_schematic_controls_and_real_cells(native_window):
+    from PyQt6 import QtWidgets
+    root, app, window = native_window
+    panel = window.workspace.implementation
+    for name in ("implSchematicCanvas", "implSchematicTabs",
+                 "implSchematicZoomIn", "implSchematicZoomOut",
+                 "implLiberty", "implSdc", "implEdaManifest",
+                 "implInspectFlow", "implRunFlow", "implEdaEvidence"):
+        assert panel.findChild(QtWidgets.QWidget, name), name
+    canvas = panel.schematicCanvas
+    canvas.showSchematic({
+        "module": "counter", "truncated": False,
+        "cells": [{"id": "gate0", "type": "$_AND_"},
+                  {"id": "ff0", "type": "$_DFF_P_"}],
+        "edges": [{"from": "gate0", "to": "ff0", "bit": 17}]}
+    )
+    assert len(canvas.scene().items()) >= 4
+    factor = canvas.transform().m11()
+    panel.findChild(QtWidgets.QPushButton, "implSchematicZoomIn").click()
+    assert canvas.transform().m11() > factor
+    assert panel.ppaReport.toPlainText().startswith("Timing: NOT RUN")
