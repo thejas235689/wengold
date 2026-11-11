@@ -944,6 +944,8 @@ def _handler(state: dict):
     import secrets
     from .studio_workspace import Refused, source as studio_source, save_source, list_evidence, waveform as studio_waveform, formal_report, MAX_BODY
     token = secrets.token_urlsafe(32)
+    from .studio_jobs import StudioJobs
+    jobs = StudioJobs(state["path"])
     cache: dict = {}
 
     class H(BaseHTTPRequestHandler):
@@ -994,6 +996,19 @@ def _handler(state: dict):
                     payload = {"ok": False,
                                "output": f"{type(exc).__name__}: {exc}"}
                 self._json(payload)
+                return
+            if u.path == "/api/studio/jobs":
+                self._json(jobs.list_jobs())
+                return
+            if u.path == "/api/studio/audit":
+                self._json(jobs.audit())
+                return
+            if u.path == "/api/studio/job":
+                q = parse_qs(u.query)
+                try:
+                    self._json(jobs.get((q.get("id") or [""])[0]))
+                except Refused as exc:
+                    self._send(json.dumps({"error": exc.reason}).encode(), "application/json", exc.status)
                 return
             if u.path.startswith("/api/studio/"):
                 q = parse_qs(u.query)
@@ -1053,7 +1068,32 @@ def _handler(state: dict):
 
 
         def do_POST(self):
-            if urlparse(self.path).path != "/api/studio/save":
+            path = urlparse(self.path).path
+            if path in ("/api/studio/job", "/api/studio/signoff"):
+                try:
+                    count = int(self.headers.get("Content-Length", "0"))
+                    if count <= 0 or count > 4096:
+                        raise Refused("invalid request size", 413)
+                    obj = json.loads(self.rfile.read(count))
+                    if not isinstance(obj, dict) or obj.get("token") != token:
+                        raise Refused("invalid workspace token", 403)
+                    if path == "/api/studio/job":
+                        if obj.get("file") not in _files_of(state):
+                            raise Refused("file is not indexed in this project", 404)
+                        result = jobs.submit(obj.get("kind"), obj["file"],
+                                             expr=obj.get("expr", ""),
+                                             engine=obj.get("engine", "explicit"),
+                                             depth=obj.get("depth", 12))
+                    else:
+                        result = jobs.signoff(obj.get("id", ""), obj.get("reviewer", ""),
+                                              obj.get("decision", ""))
+                    self._json(result)
+                except Refused as exc:
+                    self._send(json.dumps({"error": exc.reason}).encode(), "application/json", exc.status)
+                except (OSError, ValueError, TypeError) as exc:
+                    self._send(json.dumps({"error": str(exc)}).encode(), "application/json", 400)
+                return
+            if path != "/api/studio/save":
                 self._send(b'{"error":"not found"}', "application/json", 404)
                 return
             try:
