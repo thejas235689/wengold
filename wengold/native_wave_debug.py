@@ -11,7 +11,8 @@ import os
 from .wave_debug import diagnose, explain_with_local_ai
 
 
-def make_wave_debug(QtCore, QtGui, QtWidgets, project_root, on_crossprobe=None):
+def make_wave_debug(QtCore, QtGui, QtWidgets, project_root, on_crossprobe=None,
+                    on_select_time=None):
     page = QtWidgets.QWidget()
     page.setObjectName("advancedWaveDebug")
     layout = QtWidgets.QVBoxLayout(page)
@@ -143,6 +144,8 @@ def make_wave_debug(QtCore, QtGui, QtWidgets, project_root, on_crossprobe=None):
         findings_detail.setPlainText(json.dumps(finding, indent=2))
         if on_crossprobe and finding["signals"]:
             on_crossprobe(finding["signals"][0])
+        if on_select_time:
+            on_select_time(finding["sample_index"])
 
     def select_signal(table):
         row = table.currentRow()
