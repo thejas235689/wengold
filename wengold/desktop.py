@@ -225,6 +225,37 @@ body{background:linear-gradient(145deg,#fffef8 0%,#fff8d8 55%,#fffdf5 100%)}
 #status b{color:#443b21}
 ::-webkit-scrollbar-thumb{background:#d8c98c}
 
+
+/* Studio workspace: functional navigation, graph metrics and evidence distribution. */
+#workspace-nav{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:10px 18px;background:#fffdf5;border-bottom:1px solid #e9dfba}
+.workspace-tab{padding:8px 13px;border:1px solid #e6dbb1;border-radius:7px;background:#fff;color:#63562b;font-size:12px;font-weight:600}
+.workspace-tab:hover{background:#fff6d5}
+.workspace-tab.active{background:#ffdf4e;color:#322600;border-color:#d1ad24;box-shadow:0 2px 6px rgba(151,112,0,.09)}
+.workspace-tab:focus-visible,#run-command:focus-visible{outline:3px solid #9b7000;outline-offset:2px}
+#project-strip{display:flex;align-items:center;gap:20px;padding:9px 20px;font-size:10px;font-weight:650;letter-spacing:.05em;color:#796d4a;border-bottom:1px solid #eee6cd;background:#fff}
+#metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;padding:11px 17px;background:#fffdf7;border-bottom:1px solid #e8dfbb}
+.metric{border:1px solid #eee0b0;border-radius:9px;background:#fff;padding:9px 12px;display:flex;flex-direction:column;gap:3px;min-width:0}
+.metric span{font-size:10px;color:#6f674f;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.metric strong{font-size:20px;color:#372b07;line-height:1.2}
+#body{min-height:0}
+#body[data-view="rtl"]{grid-template-columns:minmax(220px,30%) minmax(0,1fr)}
+#body[data-view="rtl"]>.pane:nth-child(2){display:none}
+#body[data-view="verification"]{grid-template-columns:minmax(280px,1fr) minmax(270px,42%)}
+#body[data-view="verification"]>.pane:first-child{display:none}
+#body[data-view="analysis"]{grid-template-columns:minmax(260px,1fr) minmax(280px,42%)}
+#body[data-view="analysis"]>.pane:first-child{display:none}
+#body[data-view="agent"]{grid-template-columns:minmax(250px,30%) minmax(270px,1fr)}
+#body[data-view="agent"]>.pane:nth-child(2){display:none}
+#evidence-summary{padding:12px 15px;background:#fffdf6;border-top:1px solid #eee4c7}
+.evidence-label{font-size:10px;color:#766c4a;font-weight:750;letter-spacing:.06em;margin-bottom:8px}
+.evidence-bar{height:9px;display:flex;overflow:hidden;border-radius:8px;background:#f0ead8}
+.evidence-bar span.valid{background:#219b60}.evidence-bar span.invalid{background:#d6534d}.evidence-bar span.unknown{background:#e7ba28}
+.evidence-counts{font-size:10px;color:#665c42;margin-top:7px;display:flex;gap:10px;flex-wrap:wrap}
+#run-command{background:#ffdf4e;color:#392b00;border:1px solid #c9a51f;border-radius:7px;padding:7px 16px;font-weight:750}
+#run-command:hover{background:#f4ce2e}
+@media(max-width:850px){#metrics{grid-template-columns:repeat(2,minmax(0,1fr))}#workspace-nav{gap:5px;padding:7px} .workspace-tab{padding:6px 8px}#project-strip{gap:10px;flex-wrap:wrap}}
+@media(max-width:600px){#metrics{grid-template-columns:repeat(2,minmax(0,1fr));gap:5px;padding:7px}#body[data-view="overview"],#body[data-view="rtl"],#body[data-view="verification"],#body[data-view="analysis"],#body[data-view="agent"]{grid-template-columns:1fr}#body[data-view="overview"]>.pane:first-child,#body[data-view="overview"]>.pane:last-child{display:none}#body[data-view="rtl"]>.pane:last-child,#body[data-view="verification"]>.pane:last-child,#body[data-view="analysis"]>.pane:last-child,#body[data-view="agent"]>.pane:last-child{display:none}#body[data-view="agent"]>.pane:first-child{display:block}#project-strip #revision-label{display:none}}
+
 </style></head><body>
 
 <div id="frame">
@@ -238,11 +269,25 @@ body{background:linear-gradient(145deg,#fffef8 0%,#fff8d8 55%,#fffdf5 100%)}
   <span class="mode">on-prem</span>
 </div>
 
-<div id="body">
+<nav id="workspace-nav" aria-label="Workspace views">
+  <button type="button" class="workspace-tab active" data-view="overview" aria-pressed="true">Overview</button>
+  <button type="button" class="workspace-tab" data-view="rtl" aria-pressed="false">RTL Explorer</button>
+  <button type="button" class="workspace-tab" data-view="verification" aria-pressed="false">Verification</button>
+  <button type="button" class="workspace-tab" data-view="analysis" aria-pressed="false">Analysis</button>
+  <button type="button" class="workspace-tab" data-view="agent" aria-pressed="false">Agent CLI</button>
+</nav>
+<div id="project-strip"><span id="project-label">PROJECT: —</span><span id="revision-label">REVISION: CURRENT WORKSPACE</span><span id="model-label">MODEL: —</span></div>
+<div id="metrics" aria-label="Project summary">
+  <div class="metric"><span>RTL Blocks</span><strong id="metric-blocks">—</strong></div>
+  <div class="metric"><span>Graph Nodes</span><strong id="metric-nodes">—</strong></div>
+  <div class="metric"><span>Results Needing Review</span><strong id="metric-attention">—</strong></div>
+  <div class="metric"><span>Unresolved</span><strong id="metric-unresolved">—</strong></div>
+</div>
+<div id="body" data-view="overview">
   <div class="pane"><div class="panehead"><span>Design Explorer</span><span id="nf"></span></div>
     <div id="tree"></div></div>
   <div class="pane"><div class="panehead"><span>Verification Evidence</span><span id="nr"></span></div>
-    <div id="results"></div></div>
+    <div id="results"></div><div id="evidence-summary" aria-label="Evidence verdict distribution"></div></div>
   <div class="pane"><div class="panehead"><span>Evidence Inspector</span></div>
     <div id="detail"><div class="empty">select a result or a file</div></div></div>
 </div>
@@ -250,7 +295,7 @@ body{background:linear-gradient(145deg,#fffef8 0%,#fff8d8 55%,#fffdf5 100%)}
 <div id="cli">
   <div id="clihead"><span>Engineering Copilot · CLI</span><span style="color:var(--dim2)">type <b style="color:var(--fg)">help</b> for commands</span></div>
   <div id="out"><span class="dim">wengold desktop — the kernel is ready.</span></div>
-  <div id="inrow"><span id="caret">›</span><input id="in" autocomplete="off" spellcheck="false" placeholder="ask anything, or type help — e.g. what must I re-run?"></div>
+  <div id="inrow"><span id="caret">›</span><input id="in" autocomplete="off" spellcheck="false" placeholder="ask anything, or type help — e.g. what must I re-run?"><button id="run-command" type="button">Run</button></div>
 </div>
 <div id="status"><span id="s-msg">—</span></div>
 </div>
@@ -267,6 +312,13 @@ async function boot(){
     // the state is inlined by the server, so the first paint needs no request
     const S=window.__WENGOLD__;
     const s=S.summary;
+    $('project-label').textContent='PROJECT: '+(s.path.split('/').filter(Boolean).pop()||'design').toUpperCase();
+    $('model-label').textContent='MODEL: '+(s.model||'off');
+    $('metric-blocks').textContent=String(s.blocks);
+    $('metric-nodes').textContent=String(s.nodes);
+    $('metric-unresolved').textContent=String(s.unresolved);
+    const counts=S.verdicts.counts||{};
+    $('metric-attention').textContent=String((counts.INVALIDATED||0)+(counts.UNKNOWN||0));
     // the strip reads like a revision line: project — tool — rev — size · mode
     $('tname').textContent=s.path.split('/').filter(Boolean).pop()||'design';
     $('tdims').textContent=s.blocks+' blocks · '+s.nodes+' nodes · '+
@@ -322,6 +374,18 @@ function renderFile(d,f){
 
 function renderResults(r){
   $('nr').textContent=(r.results||[]).length+' results';
+  const counts={VALID:0,INVALIDATED:0,UNKNOWN:0};
+  for(const x of (r.results||[])) if(Object.prototype.hasOwnProperty.call(counts,x.verdict)) counts[x.verdict]++;
+  const total=(r.results||[]).length;
+  const pct=k=>total?100*counts[k]/total:0;
+  $('evidence-summary').innerHTML='<div class="evidence-label">EVIDENCE DISTRIBUTION</div>'+
+    '<div class="evidence-bar" role="img" aria-label="'+esc(counts.VALID+' valid, '+counts.INVALIDATED+' invalidated, '+counts.UNKNOWN+' unknown')+'">'+
+    '<span class="valid" style="width:'+pct('VALID')+'%"></span>'+
+    '<span class="unknown" style="width:'+pct('UNKNOWN')+'%"></span>'+
+    '<span class="invalid" style="width:'+pct('INVALIDATED')+'%"></span></div>'+
+    '<div class="evidence-counts"><span>'+counts.VALID+' valid</span><span>'+
+    counts.UNKNOWN+' unknown</span><span>'+counts.INVALIDATED+' invalidated</span></div>';
+
   const order={INVALIDATED:0,UNKNOWN:1,VALID:2};
   const rows=[...(r.results||[])].sort((a,b)=>(order[a.verdict]-order[b.verdict])||
     a.id.localeCompare(b.id));
@@ -410,6 +474,22 @@ async function runCmd(line){
 }
 inp.addEventListener('keydown',e=>{if(e.key==='Enter')runCmd(inp.value)});
 $('clihead').addEventListener('click',()=>inp.focus());
+
+function setWorkspace(view){
+  const modes=['overview','rtl','verification','analysis','agent'];
+  if(!modes.includes(view))return;
+  $('body').dataset.view=view;
+  document.querySelectorAll('.workspace-tab').forEach(btn=>{
+    const active=btn.dataset.view===view;
+    btn.classList.toggle('active',active);
+    btn.setAttribute('aria-pressed',String(active));
+  });
+  if(view==='analysis')runCmd('singularity');
+  if(view==='agent')inp.focus();
+}
+document.querySelectorAll('.workspace-tab').forEach(btn=>
+  btn.addEventListener('click',()=>setWorkspace(btn.dataset.view)));
+$('run-command').addEventListener('click',()=>runCmd(inp.value));
 
 boot();
 // ?ask=... deep-links a request, so a transcript can be shared or reproduced
