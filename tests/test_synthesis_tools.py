@@ -61,3 +61,19 @@ def test_synthesis_restricts_source_and_top(tmp_path):
         run_synthesis(tmp_path, "x.sv", "x; shell")
     with pytest.raises(Exception):
         run_synthesis(tmp_path, "../x.sv")
+
+
+@pytest.mark.skipif(__import__("shutil").which("yosys") is None,
+                    reason="Yosys executable not installed")
+def test_real_yosys_synthesizes_a_small_counter(tmp_path):
+    (tmp_path / "counter.v").write_text(
+        "module counter(input clk, rst_n, output reg [3:0] count);\n"
+        "always @(posedge clk or negedge rst_n)\n"
+        "if (!rst_n) count <= 0; else count <= count + 1;\n"
+        "endmodule\n")
+    result = run_synthesis(tmp_path, "counter.v", "counter")
+    assert result["ok"], result.get("log")
+    assert result["total_cells"] > 0
+    assert any(m["name"] == "counter" for m in result["modules"])
+    assert result["timing"].startswith("NOT RUN")
+    assert result["chip_area"].startswith("NOT AVAILABLE")
