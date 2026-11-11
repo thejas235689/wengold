@@ -14,6 +14,39 @@ what the tags are for.
 
 ---
 
+## [0.68.3] — 2026-11-11
+
+### A simulation could not find its own design file
+
+Installing the package and running `wengold vibe` on a spec failed with
+`inconclusive — the result names no existing design file`, even though the file had
+just been written next to the testbench.
+
+The regex backend registers an *instantiation* of `timer` (from `timer dut(...)`
+inside the testbench) with no path, and that second registration replaced the
+module node — which did have a path. `files_for` then found nothing, so every
+simulation through the regex backend settled as inconclusive.
+
+It only appears **without pyslang**, which is the default for anyone who installs
+the package and does not install the optional front-end. A node that came from a
+file now keeps its file; losing a path is never right.
+
+### `wengold tools --install` checks the room first
+
+A full disk surfaced as *"could not download … if this machine has no outbound
+HTTPS"*, which sent the user to check their network for a problem on their disk.
+It now measures free space before spending the bandwidth and names the real cause.
+
+### A test that could not run now says so
+
+GHDL's LLVM backend shells out to a C compiler and refuses to start without one.
+The VHDL test skipped only on "ghdl not installed", so on a machine with ghdl but
+no `cc` it failed and blamed the design. The skip condition now checks both.
+
+**1030 + 17 + 10 tests passing**, 9 skipped.
+
+---
+
 ## [0.68.2] — 2026-11-10
 
 ### `wengold tools` — the way out of "simulators aren't installed"
