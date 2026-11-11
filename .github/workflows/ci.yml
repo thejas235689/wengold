@@ -144,8 +144,7 @@ jobs:
           dpkg-deb -c dist/wengold_*_all.deb | grep -c '^' || true
 
       - name: Upload the Debian package
-        if: runner.os == 'Linux'
-        if: always()
+        if: always() && runner.os == 'Linux'
         uses: actions/upload-artifact@v4
         with:
           name: wengold-deb
@@ -161,9 +160,8 @@ jobs:
           if-no-files-found: warn
 
       - name: Upload the pytest log
-        if: runner.os == 'Linux'
         # so a failure can be read without guessing, including from outside CI
-        if: always()
+        if: always() && runner.os == 'Linux'
         uses: actions/upload-artifact@v4
         with:
           name: pytest-log
