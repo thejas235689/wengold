@@ -12,6 +12,7 @@ HTML = """
  <select id="ms-source" aria-label="RTL source for formal check"></select>
  <input id="ms-property" placeholder="Formal property e.g. count &lt;= 3" aria-label="Safety property">
  <button id="ms-formal">Run Formal</button>
+ <button id="ms-pipeline">Run Syntax → Formal Pipeline</button>
  <button id="ms-syntax">Syntax Diagnostics</button>
  <button id="ms-jobs">Refresh Jobs</button>
  <input id="ms-reviewer" placeholder="Reviewer identity" aria-label="Reviewer identity">
@@ -39,7 +40,7 @@ function sync(){
  panel.style.display=enabled?'flex':'none';
  out.style.display=enabled?'block':'none';
  for(const [id,condition] of [
- ['ms-formal',v==='formal'],['ms-source',v==='formal'],['ms-syntax',v==='editor'],['ms-jobs',v==='orchestrate'||v==='formal'],
+ ['ms-formal',v==='formal'],['ms-pipeline',v==='formal'],['ms-source',v==='formal'],['ms-syntax',v==='editor'],['ms-jobs',v==='orchestrate'||v==='formal'],
  ['ms-reviewer',v==='orchestrate'||v==='formal'],['ms-accept',v==='orchestrate'||v==='formal'],
  ['ms-reject',v==='orchestrate'||v==='formal'],['ms-property',v==='formal'],
  ['ms-signal',v==='wave'],['ms-probe',v==='wave']]){
@@ -63,6 +64,7 @@ async function launch(kind){
 }
 $('ms-syntax').addEventListener('click',()=>launch('syntax'));
 $('ms-formal').addEventListener('click',()=>launch('formal'));
+$('ms-pipeline').addEventListener('click',()=>launch('pipeline'));
 $('ms-jobs').addEventListener('click',async()=>{
  try{
   const d=await request('/api/studio/jobs'),a=await request('/api/studio/audit');
