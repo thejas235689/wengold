@@ -249,3 +249,35 @@ def test_graphical_schematic_controls_and_real_cells(native_window):
     panel.findChild(QtWidgets.QPushButton, "implSchematicZoomIn").click()
     assert canvas.transform().m11() > factor
     assert panel.ppaReport.toPlainText().startswith("Timing: NOT RUN")
+
+
+
+def test_dv_workflow_native_six_stages_and_draft_gates(native_window):
+    from PyQt6 import QtWidgets
+    root, app, window = native_window
+    spec = root / "spec"
+    spec.mkdir()
+    (spec / "requirements.md").write_text(
+        "REQ-1 reset clears state; REQ-2 enable causes increment")
+    window._reload()
+    panel = window.workspace.dvWorkflow
+    tabs = panel.workflowTabs
+    assert "DV Workflow" in [
+        window.workspace.tabText(i) for i in range(window.workspace.count())]
+    assert tabs.count() == 6
+    for name in ("dvIntake", "dvPlan", "dvUvm", "dvRegression",
+                 "dvDebug", "dvCoverage"):
+        btn = panel.findChild(QtWidgets.QPushButton, name + "Button")
+        evidence = panel.findChild(QtWidgets.QPlainTextEdit, name + "Evidence")
+        assert btn is not None and btn.isEnabled(), name
+        assert evidence is not None and evidence.isReadOnly(), name
+    for name in ("dvSpec", "dvRtl", "dvArtifactKind", "dvCoverageTarget",
+                 "dvRegressionFile", "dvDebugFile", "dvCoverageFile",
+                 "dvPlanSaveDraft", "dvUvmSaveDraft"):
+        assert panel.findChild(QtWidgets.QWidget, name), name
+    assert panel.findChild(QtWidgets.QComboBox, "dvSpec").findText(
+        "spec/requirements.md") >= 0
+    assert panel.findChild(QtWidgets.QComboBox, "dvRtl").findText(
+        "rtl/module.sv") >= 0
+    assert "NOT SIGNED OFF" in panel.findChild(
+        QtWidgets.QLabel, "dvPipelineStatus").text()
