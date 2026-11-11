@@ -8,6 +8,7 @@ from __future__ import annotations
 import os
 
 from .ai_prompts import PROFILES
+from .eda_flows import inspect_manifest, execute_manifest
 from .ai_workbench import (generate, list_models, tool_status, validate_rtl, satya_check,
                            satya_generate_uvm, rustdv_unit_check, test_connection)
 
@@ -73,6 +74,9 @@ def create_ai_tab(root, QtCore, QtGui, QtWidgets, parent=None):
     actions.addWidget(satya_btn)
     actions.addWidget(uvm_btn)
     actions.addWidget(rust_btn)
+    eda_btn = QtWidgets.QPushButton("Run reviewed EDA flow")
+    eda_btn.setObjectName("aiRunEdaFlow")
+    actions.addWidget(eda_btn)
     actions.addStretch(1)
     outer.addLayout(actions)
 
@@ -88,6 +92,16 @@ def create_ai_tab(root, QtCore, QtGui, QtWidgets, parent=None):
     validation.addWidget(QtWidgets.QLabel("Top"))
     validation.addWidget(top)
     outer.addLayout(validation)
+    eda_row = QtWidgets.QHBoxLayout()
+    manifest = QtWidgets.QLineEdit()
+    manifest.setObjectName("aiEdaManifest")
+    manifest.setPlaceholderText("Project-relative reviewed EDA recipe, e.g. flows/uvm.json")
+    inspect_btn = QtWidgets.QPushButton("Inspect EDA recipe")
+    inspect_btn.setObjectName("aiInspectEdaFlow")
+    eda_row.addWidget(QtWidgets.QLabel("EDA manifest"))
+    eda_row.addWidget(manifest, 1)
+    eda_row.addWidget(inspect_btn)
+    outer.addLayout(eda_row)
 
     preview = QtWidgets.QPlainTextEdit()
     preview.setObjectName("aiArtifactPreview")
@@ -131,6 +145,10 @@ def create_ai_tab(root, QtCore, QtGui, QtWidgets, parent=None):
                     result = satya_generate_uvm(*self.values)
                 elif self.op == "rustdv":
                     result = rustdv_unit_check(*self.values)
+                elif self.op == "eda_inspect":
+                    result = inspect_manifest(*self.values)
+                elif self.op == "eda_run":
+                    result = execute_manifest(*self.values)
                 else:
                     raise ValueError("unknown workbench operation")
                 self.finished.emit(result)
@@ -145,7 +163,7 @@ def create_ai_tab(root, QtCore, QtGui, QtWidgets, parent=None):
             status.setText("A local AI or tool check is still running")
             return
         state["busy"] = True
-        for btn in (discover, roundtrip, generate_btn, compile_btn, satya_btn, uvm_btn, rust_btn):
+        for btn in (discover, roundtrip, generate_btn, compile_btn, satya_btn, uvm_btn, rust_btn, eda_btn, inspect_btn):
             btn.setEnabled(False)
         status.setText("Running " + op + " (real local execution)…")
         thread = QtCore.QThread(page)
@@ -241,6 +259,21 @@ def create_ai_tab(root, QtCore, QtGui, QtWidgets, parent=None):
     satya_btn.clicked.connect(check_pss)
     uvm_btn.clicked.connect(lambda: perform("satya_uvm", (root, testbench.text().strip())))
     rust_btn.clicked.connect(lambda: perform("rustdv", (root, top.text().strip())))
+    inspect_btn.clicked.connect(lambda: perform("eda_inspect", (root, manifest.text().strip())))
+
+    def run_eda():
+        if not manifest.text().strip():
+            evidence.setPlainText("Select an existing, reviewed project-relative EDA manifest.")
+            return
+        answer = QtWidgets.QMessageBox.question(
+            page, "Execute project EDA recipe",
+            "This will execute the executable and arguments declared in the selected "
+            "project manifest. Only run reviewed, trusted manifests. Continue?")
+        if answer != QtWidgets.QMessageBox.StandardButton.Yes:
+            return
+        perform("eda_run", (root, manifest.text().strip()))
+
+    eda_btn.clicked.connect(run_eda)
     page.aiPreview = preview
     page.aiEvidence = evidence
     page.aiStatus = status
