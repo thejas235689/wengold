@@ -278,10 +278,14 @@ def make_studio_tabs(state, QtCore, QtGui, QtWidgets, parent=None):
     audit = QtWidgets.QPushButton("Audit ledger")
     reviewer = QtWidgets.QLineEdit()
     reviewer.setObjectName("reviewerIdentity")
-    reviewer.setPlaceholderText("Reviewer identity (not authenticated)")
+    reviewer.setPlaceholderText("Reviewer identity (self-asserted)")
+    review_credential = QtWidgets.QLineEdit()
+    review_credential.setObjectName("reviewCredential")
+    review_credential.setPlaceholderText("Local reviewer credential")
+    review_credential.setEchoMode(QtWidgets.QLineEdit.EchoMode.Password)
     accept = QtWidgets.QPushButton("Accept proof")
     reject = QtWidgets.QPushButton("Reject evidence")
-    toolbar(job_layout, refresh, audit, reviewer, accept, reject)
+    toolbar(job_layout, refresh, audit, reviewer, review_credential, accept, reject)
     job_table = QtWidgets.QTableWidget(0, 5)
     job_table.setObjectName("jobQueue")
     job_table.setHorizontalHeaderLabels(["Job ID", "Kind", "Source", "State", "Review"])
@@ -324,7 +328,8 @@ def make_studio_tabs(state, QtCore, QtGui, QtWidgets, parent=None):
             alert("Select a job first", True)
             return
         try:
-            result = jobs.signoff(jobs_by_row[selected]["id"], reviewer.text(), value)
+            result = jobs.signoff(jobs_by_row[selected]["id"], reviewer.text(), value,
+                                  credential=review_credential.text())
             alert(f"Recorded {value} at ledger seq {result['review']['ledger_seq']}")
             refresh_jobs()
         except Exception as exc:
