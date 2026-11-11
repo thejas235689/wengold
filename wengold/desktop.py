@@ -182,6 +182,49 @@ body{background:radial-gradient(ellipse at 16% 0%,#17315a 0%,#09111f 44%,#060b15
 @media(max-width:900px){#frame{inset:6px;border-radius:11px}#body{grid-template-columns:185px minmax(230px,1fr)}#body>.pane:nth-child(3){display:none}#titlebar{padding:0 12px;gap:7px}#titlebar #tdims{display:none}}
 @media(max-width:600px){#body{grid-template-columns:1fr}#body>.pane:first-child,#body>.pane:nth-child(3){display:none}#cli{height:220px}}
 
+
+/* WENGOLD Silicon Studio — sunshine white + yellow palette.
+   Applied after the existing desktop styling; UI behavior is unchanged. */
+:root{
+  --bg:#ffffff;--panel:#fffdf5;--panel2:#fff6d5;--line:#e8dfbb;
+  --line2:#f1e9cd;--fg:#232323;--dim:#5c5b53;--dim2:#777568;
+  --red:#b45309;--red-soft:rgba(250,204,21,.19);--red-line:#eab308;
+  --grey:#166534;--grey-soft:rgba(22,101,52,.09);--green:#15803d;--ink:#232323;
+}
+html,body{color:var(--fg)}
+body{background:linear-gradient(145deg,#fffef8 0%,#fff8d8 55%,#fffdf5 100%)}
+#frame{background:#fff;border-color:#e5dba9;box-shadow:0 18px 55px rgba(105,80,0,.12)}
+#titlebar{background:linear-gradient(100deg,#ffdf4e 0%,#ffe76e 57%,#fff8d6 100%);border-color:#e7cc47}
+#titlebar:before{border-color:#8f7200;background:#fff5c0;color:#6d5600}
+#titlebar #tname{color:#292308}
+#titlebar .dim,#titlebar .dash{color:#655a2c}
+#titlebar .mode{color:#5a4800;border-color:#d6b72e;background:#fff9df}
+.pane,.pane:nth-child(2){background:#fff}
+.panehead{background:#fff6cf;color:#655008;border-color:#e9dfb9}
+.row{color:#36332a}
+.row:hover,.r:hover{background:#fff6d5}
+.row.sel,.r.sel{background:#fff0a7;box-shadow:inset 3px 0 0 #d6a900}
+.row.dir{color:#76600b}
+.r{border-color:#f1e9ce}
+.v.VALID{color:#166534;background:#e9f8ed}
+.v.INVALIDATED{color:#a32925;background:#fee9e7}
+.v.UNKNOWN{color:#805700;background:#fff1bd}
+#detail .sub,.kv dt{color:#6d695b}
+.why{color:#494436;background:#fffbea;border-color:#ecdfa3;border-left-color:#eab308}
+.why b{color:#292308}
+#cli{background:#fffefa;border-color:#e8cb47}
+#clihead{background:#fff3bf;color:#685006;border-color:#e6d79b}
+#out{color:#2b2923}
+#out .cmd,#caret{color:#9a6700}
+#out .ok,.tick{color:#166534}
+#out .dim,.code,.dur{color:#6e6a5b}
+#inrow{background:#fffdf3;border-color:#eae0b8}
+#in{color:#292308}
+#in::placeholder{color:#827d6e}
+#status{background:#fff7d9;border-color:#e6dbaf;color:#655f50}
+#status b{color:#443b21}
+::-webkit-scrollbar-thumb{background:#d8c98c}
+
 </style></head><body>
 
 <div id="frame">
