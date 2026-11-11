@@ -150,3 +150,46 @@ def test_advanced_wave_debug_separates_rtl_and_testbench(native_window):
                  "waveAnalyze", "waveRtlSignals", "waveTbSignals",
                  "waveRootCauseCandidates", "waveEvidenceDetail", "waveExplainAi"):
         assert debug.findChild(QtWidgets.QWidget, name)
+
+
+def test_native_project_open_and_auto_discovery(native_window, tmp_path, monkeypatch):
+    from PyQt6 import QtWidgets
+    root, app, window = native_window
+    new_root = tmp_path / "external_project"
+    (new_root / "design").mkdir(parents=True)
+    (new_root / "dv").mkdir()
+    (new_root / "scripts").mkdir()
+    (new_root / "design" / "cpu.sv").write_text("module cpu; endmodule\n")
+    (new_root / "dv" / "cpu_tb.sv").write_text("module cpu_tb; endmodule\n")
+    (new_root / "scripts" / "regress.py").write_text("print(42)\n")
+    assert window.findChild(QtWidgets.QPushButton, "openProjectButton")
+    assert window.findChild(QtWidgets.QPushButton, "rescanFilesButton")
+    monkeypatch.setattr(QtWidgets.QFileDialog, "getExistingDirectory",
+                        lambda *_args, **_kwargs: str(new_root))
+    window.findChild(QtWidgets.QPushButton, "openProjectButton").click()
+    assert window.state["path"] == str(new_root)
+    assert window.state["project_inventory"]["counts"]["verification"] == 1
+    assert "Verification / UVM" in window.tree.topLevelItem(1).text(0)
+    assert window.workspace.findChild(QtWidgets.QComboBox, "rtlFilePicker").findText(
+        "scripts/regress.py") >= 0
+    window.workspace.loadSource("scripts/regress.py")
+    assert "print(42)" in window.workspace.sourceEditor.toPlainText()
+    (new_root / "dv" / "new_monitor.sv").write_text("class new_monitor; endclass\n")
+    window._watch_project()
+    assert "dv/new_monitor.sv" in window.state["file_paths"]
+    assert window.workspace.findChild(QtWidgets.QComboBox, "rtlFilePicker").findText(
+        "dv/new_monitor.sv") >= 0
+
+
+def test_native_buttons_have_working_routing(native_window):
+    from PyQt6 import QtWidgets
+    root, app, window = native_window
+    assert window.menuBar().actions()
+    widget = window.workspace
+    for button_name in ("openRtlButton", "saveRtlButton", "waveAnalyze",
+                        "aiConnect", "aiTestInference", "aiGenerate",
+                        "aiCheckRtl", "aiRunEdaFlow", "aiInspectEdaFlow"):
+        button = widget.findChild(QtWidgets.QPushButton, button_name)
+        assert button is not None and button.isEnabled(), button_name
+    window.findChild(QtWidgets.QPushButton, "rescanFilesButton").click()
+    assert "source files refreshed" in window.transcript.toPlainText()
