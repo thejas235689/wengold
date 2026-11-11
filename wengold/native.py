@@ -59,6 +59,28 @@ QSplitter::handle {{ background: {LINE}; }}
 """
 
 
+STYLESHEET = """/* Silicon Studio native Qt yellow and white UI */
+QMainWindow, QWidget { background:#FFFFFF; color:#292308; }
+QMenuBar { background:#FFDF4E; border-bottom:1px solid #DDBF40; }
+QMenuBar::item:selected { background:#FFF2AD; }
+QMenu { background:#FFFFFF; border:1px solid #E6D59C; }
+QFrame#strip { background:#FFE76B; border-bottom:1px solid #D8B832; }
+QLabel#project { font-size:16px; font-weight:750; color:#312700; }
+QLabel#revision { color:#66572D; font-size:11px; }
+QLabel#sectionTitle { color:#776210; font-size:11px; font-weight:650; }
+QTabWidget::pane { border:1px solid #E8DCAC; background:#FFFFFF; }
+QTabBar::tab { background:#FFF9E5; color:#655421; padding:9px 15px; border:1px solid #E5D9B1; border-bottom:0; }
+QTabBar::tab:selected { background:#FFDF4E; color:#342900; font-weight:bold; }
+QTreeWidget, QTableWidget, QTextEdit, QPlainTextEdit, QLineEdit, QComboBox {
+ background:#FFFFFF; color:#28261F; border:1px solid #E6D9B1; selection-background-color:#FFE58A; selection-color:#292308; }
+QHeaderView::section { background:#FFF5C8; color:#655117; border:0; padding:6px; border-bottom:1px solid #E5D49C; }
+QPushButton { background:#FFDF4E; color:#322700; border:1px solid #D2B02C; border-radius:5px; padding:7px 10px; font-weight:600; }
+QPushButton:hover { background:#FFE979; }
+QStatusBar { background:#FFF7DD; color:#68552C; }
+QSplitter::handle { background:#E8DCAD; }
+"""
+
+
 class NativeUnavailable(RuntimeError):
     """PyQt6 is not installed, so the native window cannot be built."""
 
@@ -179,12 +201,19 @@ def build_window(state: dict):
             vertical.addWidget(bottom)
             vertical.setSizes([520, 190])
 
+            # One native Linux window for the complete engineering workspace.
+            from .native_studio import make_studio_tabs
+            self.workspace = make_studio_tabs(state, QtCore, QtGui, QtWidgets, self)
+            self.workspace.insertTab(0, vertical, "Overview")
+            self.workspace.setCurrentIndex(0)
+
             central = QtWidgets.QWidget()
             cv = QtWidgets.QVBoxLayout(central)
             cv.setContentsMargins(0, 0, 0, 0)
             cv.setSpacing(0)
             cv.addWidget(strip)
-            cv.addWidget(vertical)
+            cv.addWidget(self.workspace)
+            cv.addWidget(self.workspace.statusLabel)
             self.setCentralWidget(central)
 
             self._menus()
