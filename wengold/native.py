@@ -148,6 +148,15 @@ def build_window(state: dict):
             self.projectRevisionLabel = revision
             lay.addLayout(left)
             lay.addStretch(1)
+            open_btn = QtWidgets.QPushButton("Open Project")
+            open_btn.setObjectName("openProjectButton")
+            open_btn.setToolTip("Open an existing RTL, verification and automation project (Ctrl+O)")
+            open_btn.clicked.connect(self._open_project)
+            lay.addWidget(open_btn)
+            reload_btn = QtWidgets.QPushButton("Rescan Files")
+            reload_btn.setObjectName("rescanFilesButton")
+            reload_btn.clicked.connect(self._reload)
+            lay.addWidget(reload_btn)
             self.coverage = QtWidgets.QLabel(
                 f"{state['design_units']}/{state['files']} files are design units"
                 + (f" · model {state['model']}"
@@ -231,7 +240,7 @@ def build_window(state: dict):
             self._populate()
             self._watchSignature = self.state.get("project_inventory", {}).get("signature") if self.state.get("project_inventory") else None
             self.sourceWatch = QtCore.QTimer(self)
-            self.sourceWatch.setInterval(5000)
+            self.sourceWatch.setInterval(10000)
             self.sourceWatch.timeout.connect(self._watch_project)
             self.sourceWatch.start()
             self._say("wengold " + _version() + " — type `help` for commands")
