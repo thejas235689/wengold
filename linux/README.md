@@ -1,5 +1,50 @@
 # Installing WENGOLD on Linux
 
+## Recommended: complete native Linux installation
+
+To install the real PyQt6 Silicon Studio, local source parser and GUI launcher
+in an **isolated virtual environment** without changing the system Python:
+
+```sh
+git pull origin main
+sh linux/install-desktop.sh
+~/.local/bin/wengold desktop --native /absolute/path/to/rtl
+```
+
+On Rocky Linux 9, Python 3.11 or later must be installed alongside the default
+system Python 3.9 (do not replace /usr/bin/python3):
+
+```sh
+sudo dnf install python3.11 python3.11-pip
+sh linux/install-desktop.sh --python python3.11
+```
+
+On Ubuntu / Debian, install Python 3.11+ and its venv package if unavailable.
+Native Qt also requires system EGL/GL libraries; for Ubuntu, if an import fails:
+
+```sh
+sudo apt install libegl1 libgl1 libopengl0 libxkbcommon-x11-0 libxcb-cursor0
+```
+
+The desktop installer places third-party dependencies under
+`~/.local/share/wengold-venv`, copies WENGOLD to `~/.local/share/wengold`,
+and writes `~/.local/bin/wengold` plus the desktop menu entry. Its launcher
+runs the **same** Python interpreter that owns PyQt6, avoiding mismatches
+between system Python and pip-installed packages. To install formal tools,
+use `sh linux/install-desktop.sh --formal`. This installer requires network
+access or packages available to pip; it fails clearly rather than claiming
+a GUI is installed without Qt. Remove it with `sh linux/uninstall.sh`.
+
+Use `sh linux/install.sh` only for the minimal CLI-only installation without
+automatically installing optional GUI dependencies.
+
+**Debian package:** The .deb launcher now executes WENGOLD CLI for subcommands
+and the application menu explicitly requests the native desktop. The package
+requires Python 3.11+ and recommends PyQt6. Linux distributions whose system
+Python is older should use `install-desktop.sh` rather than the .deb.
+
+---
+
 Three ways, depending on what you want.
 
 ## 1. Per-user install (no root)
