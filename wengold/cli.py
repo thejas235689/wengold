@@ -423,8 +423,8 @@ def cmd_doctor(args) -> int:
         p = preset(client.model)
         if p is not None:
             print(f"    preset             {p.hf} — {p.params}, {p.licence}")
-            print(f"    instruction-tuned  {'yes' if p.instruction_tuned else 'NO — '
-                   'draft_rtl and explain will refuse'}")
+            tuning = "yes" if p.instruction_tuned else "NO — draft_rtl and explain will refuse"
+            print(f"    instruction-tuned  {tuning}")
             if not p.instruction_tuned:
                 print(f"    serve with         {p.serve}")
         try:
