@@ -1,0 +1,155 @@
+#!/usr/bin/env python3
+"""OpenPiton+Ariane RISC-V integration readiness and bounded WENGOLD indexing.
+
+This checks the pinned RISC-V core submodule, platform peripherals/boot ROM,
+source indexing and desktop CIW state. No claim about executable manycore boot.
+"""
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+from pathlib import Path
+import re
+import subprocess
+import sys
+import tempfile
+import time
+
+EXPECTED_ARIANE = "4c01614f83cd9dd91d115aa190bd4fc6a284b59e"
+ARIANE_REL = Path("piton/design/chip/tile/ariane")
+PLATFORM = Path("piton/design/chipset/rv64_platform")
+DEVICES = Path("piton/verif/env/manycore/devices_ariane.xml")
+REQUIRED_PORTS = {"mem", "ariane_debug", "ariane_bootrom",
+                  "ariane_clint", "ariane_plic"}
+HDL_EXT = {".sv", ".v", ".svh", ".vh"}
+
+
+def _git(path, *args):
+    return subprocess.run(["git", "-C", str(path), *args], capture_output=True,
+                          text=True, check=False, timeout=15)
+
+
+def check(root: Path, *, require_submodule: bool = False) -> dict:
+    from wengold.desktop import build_state, _exec
+    from wengold.graph.builder import GraphBuilder
+    from wengold.graph.model import NodeKind
+    import xml.etree.ElementTree as ET
+
+    root = root.resolve()
+    if not (root / ".gitmodules").is_file() or not (root / PLATFORM).is_dir():
+        raise ValueError("not an OpenPiton checkout")
+    result = {"source": "PrincetonUniversity/openpiton",
+              "scope": "Ariane/CVA6 RISC-V integration readiness only",
+              "expected_submodule_sha": EXPECTED_ARIANE,
+              "checks": {}, "warnings": [],
+              "simulation": "not_run", "linux_boot": "not_run",
+              "coherence": "not_run", "signoff": "not_run"}
+    modules = (root / ".gitmodules").read_text()
+    result["checks"]["ariane_submodule_declared"] = (
+        "piton/design/chip/tile/ariane" in modules and
+        "pulp-platform/ariane" in modules)
+    if not result["checks"]["ariane_submodule_declared"]:
+        raise AssertionError("OpenPiton .gitmodules lacks expected Ariane declaration")
+    core = root / ARIANE_REL
+    git = _git(core, "rev-parse", "HEAD") if (core / ".git").exists() else None
+    sha = git.stdout.strip() if git and git.returncode == 0 else ""
+    result["ariane_submodule_sha"] = sha or None
+    result["checks"]["ariane_submodule_at_pinned_sha"] = sha == EXPECTED_ARIANE
+    if not sha:
+        result["warnings"].append("Ariane submodule not initialized")
+        if require_submodule:
+            raise AssertionError("Ariane submodule is not initialized")
+    elif sha != EXPECTED_ARIANE:
+        result["warnings"].append("Ariane checkout differs from OpenPiton pinned revision")
+        if require_submodule:
+            raise AssertionError("Ariane submodule SHA is not the expected revision")
+
+    f_list = root / PLATFORM / "Flist.rv64_platform"
+    if not f_list.is_file():
+        raise AssertionError("missing RV64 platform file list")
+    references = [line.strip() for line in f_list.read_text().splitlines()
+                  if line.strip() and not line.lstrip().startswith(("#", "//"))]
+    result["platform_sources"] = references
+    for entry in references:
+        p = (root / PLATFORM / entry).resolve()
+        if not p.is_relative_to((root / PLATFORM).resolve()) or not p.is_file():
+            raise AssertionError("RISC-V platform file list has missing source: " + entry)
+
+    xml = ET.parse(root / DEVICES)
+    names = {e.text for e in xml.findall(".//port/name") if e.text}
+    result["device_ports"] = sorted(names)
+    if not REQUIRED_PORTS.issubset(names):
+        raise AssertionError("missing RISC-V debug/bootrom/CLINT/PLIC platform devices")
+    result["checks"]["riscv_platform_map_present"] = True
+
+    with tempfile.TemporaryDirectory(prefix="wengold-ariane-") as tmp:
+        subset = Path(tmp) / "rv64_platform"
+        subset.mkdir()
+        for entry in references:
+            src = root / PLATFORM / entry
+            dest = subset / entry
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            dest.write_bytes(src.read_bytes())
+        # GraphBuilder is exactly what the desktop backend uses, and this source
+        # subset is intentionally small; no SPARC full-soc compilation is claimed.
+        state = build_state(str(subset))
+        if state["files"] != len(references):
+            raise AssertionError("desktop indexed wrong RV64 platform file count")
+        result["desktop"] = {k: state[k] for k in (
+            "files", "nodes", "edges", "blocks", "unresolved", "complete")}
+        result["desktop"]["source_paths"] = state["file_paths"]
+        commands = {}
+        for verb in ("summary", "files", "blocks", "help"):
+            response = _exec(state, verb)
+            if not response.get("ok"):
+                raise AssertionError("CIW failed to handle " + verb)
+            commands[verb] = True
+        result["checks"]["desktop_ciw_commands"] = commands
+
+    if sha:
+        rtl_files = sorted(p for p in core.rglob("*")
+                           if p.is_file() and p.suffix.lower() in HDL_EXT
+                           and ".git" not in p.parts)
+        result["ariane_hdl_count"] = len(rtl_files)
+        if len(rtl_files) < 10:
+            raise AssertionError("Ariane submodule has unexpectedly few HDL files")
+        # Include source provenance without concatenating enormous source sets.
+        result["sample_source_sha256"] = {
+            str(p.relative_to(root)): hashlib.sha256(p.read_bytes()).hexdigest()
+            for p in rtl_files[:10]
+        }
+        # Avoid reporting full elaboration. The core relies on macros, packages,
+        # generated assets and a simulator-specific project configuration.
+        result["checks"]["ariane_hdl_present"] = True
+    else:
+        result["checks"]["ariane_hdl_present"] = False
+
+    result["status"] = ("PASS_RISCV_READINESS" if sha == EXPECTED_ARIANE
+                        else "PARTIAL_SUBMODULE_NOT_PINNED")
+    return result
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--openpiton", type=Path, required=True)
+    parser.add_argument("--report", type=Path, default=Path("openpiton-riscv-evidence.json"))
+    parser.add_argument("--require-submodule", action="store_true")
+    opts = parser.parse_args(argv)
+    started = time.monotonic()
+    try:
+        result = check(opts.openpiton, require_submodule=opts.require_submodule)
+        code = 0 if result["status"] == "PASS_RISCV_READINESS" else 2
+    except Exception as exc:
+        result = {"status": "FAIL", "error": f"{type(exc).__name__}: {exc}"}
+        code = 1
+    result["duration_s"] = round(time.monotonic() - started, 3)
+    opts.report.parent.mkdir(parents=True, exist_ok=True)
+    opts.report.write_text(json.dumps(result, indent=2) + "\n")
+    print("OpenPiton RISC-V readiness:", result["status"])
+    print("Evidence:", opts.report)
+    return code
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
