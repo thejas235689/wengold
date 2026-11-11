@@ -115,3 +115,38 @@ def test_native_local_ai_panel_contains_discipline_and_validation_controls(nativ
         assert panel.findChild(QtWidgets.QWidget, name), name
     profiles = panel.findChild(QtWidgets.QComboBox, "aiDiscipline")
     assert profiles.count() == 15
+
+
+
+def test_advanced_wave_debug_separates_rtl_and_testbench(native_window):
+    from PyQt6 import QtWidgets
+    root, app, window = native_window
+    (root / "waves").mkdir(exist_ok=True)
+    (root / "waves" / "debug.vcd").write_text(
+        "$scope module tb $end\n"
+        "$var wire 1 ! req $end\n"
+        "$var wire 1 # ack $end\n"
+        "$scope module dut $end\n"
+        "$var wire 1 $ state $end\n"
+        "$upscope $end\n$upscope $end\n$enddefinitions $end\n"
+        "#0\n0!\n0#\n0$\n#5\n1!\n0#\nx$\n"
+        "#10\n1!\n0#\nx$\n#15\n1!\n0#\nx$\n"
+        "#20\n1!\n0#\nx$\n#25\n1!\n0#\nx$\n"
+        "#30\n1!\n0#\nx$\n#35\n1!\n0#\nx$\n")
+    tabs = window.workspace
+    tabs.refreshEvidence()
+    load = next(b for b in tabs.findChildren(QtWidgets.QPushButton)
+                if b.text() == "Load VCD")
+    tabs.findChild(QtWidgets.QComboBox, "waveFilePicker").setCurrentText("waves/debug.vcd")
+    load.click()
+    debug = tabs.waveDebug
+    assert "Wave Debug" in [tabs.tabText(i) for i in range(tabs.count())]
+    assert debug.rtlSignals.rowCount() == 1
+    assert debug.tbSignals.rowCount() == 2
+    assert debug.findingTable.rowCount() >= 2
+    assert "root cause NOT proven" in debug.summaryText
+    assert not debug.aiFindings.toPlainText()
+    for name in ("waveDutScopes", "waveTbScopes", "waveHandshakeWindow",
+                 "waveAnalyze", "waveRtlSignals", "waveTbSignals",
+                 "waveRootCauseCandidates", "waveEvidenceDetail", "waveExplainAi"):
+        assert debug.findChild(QtWidgets.QWidget, name)
