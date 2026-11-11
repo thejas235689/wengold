@@ -50,7 +50,7 @@ def make_studio_tabs(state, QtCore, QtGui, QtWidgets, parent=None):
     toolbar(edit_layout, edit_picker, open_btn, save_btn, syntax_btn)
     editor = QtWidgets.QPlainTextEdit()
     editor.setObjectName("rtlEditor")
-    editor.setPlaceholderText("Open an indexed .sv / .v / .vhd file")
+    editor.setPlaceholderText("Open discovered RTL, UVM, verification and automation source files")
     editor.setStyleSheet("font-family: monospace; font-size: 12px;")
     edit_layout.addWidget(editor)
     edit_detail = QtWidgets.QLabel("Changes must be saved and rechecked before reuse of evidence.")
@@ -462,6 +462,24 @@ def make_studio_tabs(state, QtCore, QtGui, QtWidgets, parent=None):
     status = QtWidgets.QLabel("Native Linux workspace ready")
     status.setObjectName("studioStatus")
     tabs.statusLabel = status
+    def refresh_project_sources(new_state):
+        """Update all project source pickers without discarding the editor."""
+        updated = list(new_state.get("file_paths", []))
+        files[:] = updated
+        for picker in (edit_picker, formal_picker, worker_source):
+            previous = picker.currentText()
+            picker.blockSignals(True)
+            picker.clear()
+            picker.addItems(updated)
+            if previous in updated:
+                picker.setCurrentText(previous)
+            picker.blockSignals(False)
+        refresh_evidence()
+        alert(f"Discovered {len(updated)} project files")
+
+    tabs.refreshProjectSources = refresh_project_sources
+    tabs.editorDirty = lambda: edit_state["dirty"]
+    tabs.editorFile = lambda: edit_state["file"]
     tabs.refreshEvidence = refresh_evidence
     tabs.refreshJobs = refresh_jobs
     tabs.loadSource = load_editor
