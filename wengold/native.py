@@ -291,9 +291,35 @@ def build_window(state: dict):
                 view.addAction(act)
 
             help_menu = bar.addMenu("&Help")
+            verify_ui = QtGui.QAction("UI & Tool Diagnostics", self)
+            verify_ui.setObjectName("uiDiagnosticsAction")
+            verify_ui.triggered.connect(self._show_diagnostics)
+            help_menu.addAction(verify_ui)
             about = QtGui.QAction("&About", self)
             about.triggered.connect(self._about)
             help_menu.addAction(about)
+
+        def _show_diagnostics(self):
+            import json
+            from .native_health import diagnostics
+            report = diagnostics(self, QtWidgets)
+            dialog = QtWidgets.QDialog(self)
+            dialog.setWindowTitle("WENGOLD — UI & Tool Diagnostics")
+            dialog.resize(780, 530)
+            layout = QtWidgets.QVBoxLayout(dialog)
+            message = QtWidgets.QLabel(
+                "Panel availability and actual tool discovery. Missing tools do not count as passed checks.")
+            message.setWordWrap(True)
+            layout.addWidget(message)
+            viewer = QtWidgets.QPlainTextEdit()
+            viewer.setObjectName("uiDiagnosticsReport")
+            viewer.setReadOnly(True)
+            viewer.setPlainText(json.dumps(report, indent=2))
+            layout.addWidget(viewer)
+            close = QtWidgets.QPushButton("Close")
+            close.clicked.connect(dialog.accept)
+            layout.addWidget(close)
+            dialog.exec()
 
         def _populate(self):
             """Present design, verification, automation and filelists independently."""
