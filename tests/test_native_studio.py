@@ -110,7 +110,8 @@ def test_native_local_ai_panel_contains_discipline_and_validation_controls(nativ
     for name in ("aiBackend", "aiEndpoint", "aiModel", "aiConnect",
                  "aiTestInference", "aiDiscipline", "aiTask", "aiGenerate",
                  "aiCheckRtl", "aiCheckSatya", "aiSatyaUvm", "aiRustDv",
-                 "aiArtifactPreview", "aiEvidence"):
+                 "aiArtifactPreview", "aiEvidence", "aiEdaManifest",
+                 "aiInspectEdaFlow", "aiRunEdaFlow"):
         assert panel.findChild(QtWidgets.QWidget, name), name
     profiles = panel.findChild(QtWidgets.QComboBox, "aiDiscipline")
     assert profiles.count() == 15
