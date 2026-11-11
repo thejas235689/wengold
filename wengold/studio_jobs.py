@@ -50,15 +50,15 @@ class StudioJobs:
 
     def submit(self, kind: str, rel: str, *, expr: str = "",
                engine: str = "explicit", depth: int = 12) -> dict:
-        if kind not in ("syntax", "formal"):
-            raise Refused("only syntax and formal jobs are supported", 400)
+        if kind not in ("syntax", "formal", "pipeline"):
+            raise Refused("only syntax, formal and pipeline jobs are supported", 400)
         if not isinstance(rel, str) or not rel:
             raise Refused("source path required", 400)
         if engine not in ("explicit", "z3"):
             raise Refused("unsupported proof engine", 400)
         if not isinstance(depth, int) or not 1 <= depth <= 20:
             raise Refused("proof depth must be 1..20", 400)
-        if kind == "formal" and (not isinstance(expr, str) or not 1 <= len(expr) <= 240):
+        if kind in ("formal", "pipeline") and (not isinstance(expr, str) or not 1 <= len(expr) <= 240):
             raise Refused("a bounded safety expression is required", 400)
         if not project_file(self.root, rel, SOURCE_SUFFIXES):
             raise Refused("source not found", 404)
@@ -82,9 +82,17 @@ class StudioJobs:
         with self._lock:
             self._jobs[job_id]["status"] = "running"
         try:
-            if self._jobs[job_id]["kind"] == "syntax":
-                result = syntax_diagnostics(snapshot["content"], snapshot["file"])
-            else:
+            kind = self._jobs[job_id]["kind"]
+            stages = []
+            if kind in ("syntax", "pipeline"):
+                diagnostics = syntax_diagnostics(snapshot["content"], snapshot["file"])
+                stages.append({"stage": "syntax", "status": diagnostics["status"]})
+                self._record("studio_job_stage", {"id": job_id, "stage": "syntax",
+                                                   "result": diagnostics})
+                if kind == "syntax":
+                    result = diagnostics
+            if kind in ("formal", "pipeline") and (kind == "formal" or
+                    diagnostics["status"] == "clean"):
                 from .formal import Property, prove
                 from .formal.rtl_model import UnsupportedConstruct
                 # Never auto-repair or mutate source during proof.
@@ -96,10 +104,24 @@ class StudioJobs:
                     result = {"engine": engine, "depth": depth,
                               "results": [r.as_dict() for r in outcome["results"]],
                               "repaired": False}
+                    stages.append({"stage": "formal", "status": "completed"})
+                    self._record("studio_job_stage", {"id": job_id, "stage": "formal",
+                                                       "result": result})
                 except (UnsupportedConstruct, ValueError, SyntaxError) as exc:
                     result = {"engine": engine, "depth": depth, "results": [{
                         "property": "studio_property", "status": "unknown",
                         "detail": str(exc)}]}
+                    stages.append({"stage": "formal", "status": "unknown"})
+            if kind == "pipeline":
+                if diagnostics["status"] != "clean":
+                    result = {"results": [{"status": "unknown", "property": "studio_property",
+                             "detail": "formal stage not executed: syntax not clean or unavailable"}],
+                              "syntax": diagnostics, "skipped_formal": True}
+                    stages.append({"stage": "formal", "status": "skipped"})
+                else:
+                    result["syntax"] = diagnostics
+            if stages:
+                result["stages"] = stages
             state = "completed"
         except Exception as exc:
             result = {"error": f"{type(exc).__name__}: {exc}"}
@@ -147,7 +169,7 @@ class StudioJobs:
         if not self._ledger.audit().ok:
             raise Refused("ledger audit failed", 409)
         if decision == "accept":
-            if job["kind"] != "formal" or not job["result"].get("results") or not all(
+            if job["kind"] not in ("formal", "pipeline") or not job["result"].get("results") or not all(
                 r.get("status") == "proof" for r in job["result"]["results"]
             ):
                 raise Refused("acceptance requires a current formal proof, not a bounded check", 409)
