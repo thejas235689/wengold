@@ -197,12 +197,12 @@ def save_draft(root: str | Path, artifact: dict, relative_output: str) -> dict:
             not path.is_relative_to(base) or
             path.suffix.lower() not in {".md", ".sv", ".txt"}):
         raise ValueError("output must be a project-relative Markdown, text or SV file")
-    if path.exists() or path.is_symlink():
-        raise FileExistsError("refusing to overwrite existing project file")
-    # Restrict auto-generated files to their own explicit review directory.
+    # Validate the destination namespace before touching existing project files.
     allowed = base / "wengold-drafts"
     if not path.is_relative_to(allowed):
         raise ValueError("AI outputs must be saved under wengold-drafts/")
+    if path.exists() or path.is_symlink():
+        raise FileExistsError("refusing to overwrite existing project file")
     allowed.mkdir(parents=True, exist_ok=True)
     path.parent.mkdir(parents=True, exist_ok=True)
     output = artifact["text"].encode("utf-8")
