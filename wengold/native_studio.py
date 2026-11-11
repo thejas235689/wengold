@@ -234,7 +234,15 @@ def make_studio_tabs(state, QtCore, QtGui, QtWidgets, parent=None):
         # Preserve waveform viewer ownership and its project-constrained RTL probe.
         probe_selected_signal(signal_name)
 
-    wave_debug = make_wave_debug(QtCore, QtGui, QtWidgets, root, crossprobe_debug_signal)
+    def focus_wave_sample(index):
+        if not isinstance(index, int) or index < 0:
+            return
+        canvas_x = wave_canvas.label_width + int(index * wave_canvas.slot_width * wave_canvas.zoom)
+        wave_scroll.horizontalScrollBar().setValue(max(0, canvas_x - 240))
+        tabs.setCurrentWidget(wave_page)
+
+    wave_debug = make_wave_debug(QtCore, QtGui, QtWidgets, root,
+                                 crossprobe_debug_signal, focus_wave_sample)
     tabs.addTab(wave_debug, "Wave Debug")
     tabs.waveDebug = wave_debug
 
