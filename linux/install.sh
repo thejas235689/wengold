@@ -50,8 +50,18 @@ LIB="$PREFIX/share/$APP"
 say()  { printf '  %s\n' "$*"; }
 fail() { printf '  error: %s\n' "$*" >&2; exit 1; }
 
-PY=$(command -v python3 || true)
-[ -n "$PY" ] || fail "python3 is required and was not found on PATH"
+# Explicit installed interpreter wins; otherwise select a suitable 3.11+.
+# Rocky 9 ships python3=3.9, but may have python3.11 installed alongside it.
+PY=""
+for candidate in "${WENGOLD_PYTHON:-}" python3.13 python3.12 python3.11 python3; do
+    [ -n "$candidate" ] || continue
+    command -v "$candidate" >/dev/null 2>&1 || continue
+    if "$candidate" -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 11) else 1)' 2>/dev/null; then
+        PY=$(command -v "$candidate")
+        break
+    fi
+done
+[ -n "$PY" ] || fail "Python 3.11+ is required. On Rocky 9: sudo dnf install python3.11 python3.11-pip"
 
 PYVER=$("$PY" -c 'import sys; print("%d.%d" % sys.version_info[:2])')
 say "python3 $PYVER at $PY"
@@ -110,7 +120,7 @@ if [ "$CHECK" = 1 ]; then
     say "PyQt6 (native window): $([ "$QT_OK" = 1 ] && echo present || echo MISSING)"
     say "prefix: $PREFIX"
     say "repo:   $REPO"
-    [ "$QT_OK" = 1 ] || say "install it with: $PY -m pip install --user PyQt6"
+    [ "$QT_OK" = 1 ] || say "For a complete native installation run: sh linux/install-desktop.sh"
     exit 0
 fi
 
