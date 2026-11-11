@@ -20,6 +20,7 @@ dependencies = ["numpy>=1.24"]
 # falls back to a browser window without it.
 native = ["PyQt6>=6.6,<7"]
 open = ["cocotb>=1.8", "cocotb-coverage>=1.2"]
+security = ["cryptography>=42"]  # signed reviewer attestations
 formal = ["z3-solver>=4.12"]   # optional symbolic backend
 slang = ["pyslang>=9"]         # optional real SystemVerilog front-end
 spec = ["PyYAML>=6.0"]          # YAML specs (JSON needs nothing extra)
