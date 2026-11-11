@@ -148,3 +148,31 @@ rather than silently opening a browser. The native window requires PyQt6.
 Dedicated workflow: .github/workflows/linux-desktop-smoke.yml
 This workflow runs on Ubuntu with a real offscreen Qt render, all focused
 native tests, source compilation, and launcher installation.
+
+
+## Command Interpreter Window (CIW)
+
+Silicon Studio's native Linux window includes a persistent, dockable Command
+Interpreter Window below the engineering workspaces. It remains available
+when switching RTL Editor, Waveforms, Formal, Agents, and Workers.
+
+- Supported WENGOLD commands run through the existing guarded interpreter.
+- Up/Down navigate in-session command history; Escape clears the input.
+- Type `tabs` for workspaces or `workspace Formal` to switch to Formal.
+- Type `clear` to clear output; Copy output sends the transcript to clipboard.
+- The View menu provides dock visibility and a Ctrl+backtick focus shortcut.
+- This is NOT an unrestricted Linux shell.
+
+Launch after updating:
+
+```sh
+git pull origin main
+python3 -m pip install -e '.[native,formal,slang,security]'
+wengold desktop --native /absolute/path/to/rtl-project
+```
+
+Validate with offscreen Qt:
+
+```sh
+QT_QPA_PLATFORM=offscreen python3 -m pytest -q tests/test_native_app.py tests/test_native_studio.py
+```
