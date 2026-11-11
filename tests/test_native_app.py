@@ -142,3 +142,58 @@ def test_the_window_can_be_rendered_offscreen(project):
     pix = win.grab()
     assert pix.width() > 0 and pix.height() > 0
     win.close()
+
+
+
+def test_command_interpreter_is_docked_and_kept_across_workspaces(project):
+    from PyQt6 import QtCore
+    app, win = make_window(project)
+    assert win.ciwDock.objectName() == "commandInterpreterDock"
+    assert win.dockWidgetArea(win.ciwDock) == QtCore.Qt.DockWidgetArea.BottomDockWidgetArea
+    win.show()
+    app.processEvents()
+    assert win.ciwDock.isVisible()
+    win.workspace.setCurrentIndex(2)
+    app.processEvents()
+    assert win.ciwDock.isVisible()
+    win.close()
+
+
+def test_ciw_run_history_and_workspace_commands(project):
+    from PyQt6 import QtCore, QtGui, QtWidgets
+    app, win = make_window(project)
+    run = win.ciwDock.findChild(QtWidgets.QPushButton, "ciwRunButton")
+    assert run is not None
+    win.input.setText("summary")
+    run.click()
+    assert "blocks" in win.transcript.toPlainText()
+    assert win.ciwHistory[-1] == "summary"
+    win.input.setText("tabs")
+    run.click()
+    assert "Waveforms" in win.transcript.toPlainText()
+    win.input.setText("workspace Formal")
+    run.click()
+    assert win.workspace.tabText(win.workspace.currentIndex()) == "Formal"
+    win.input.setText("rm -rf /")
+    run.click()
+    assert "unknown command" in win.transcript.toPlainText()
+    win.input.setText("")
+    app.sendEvent(win.input, QtGui.QKeyEvent(
+        QtCore.QEvent.Type.KeyPress, QtCore.Qt.Key.Key_Up,
+        QtCore.Qt.KeyboardModifier.NoModifier))
+    assert win.input.text() == "rm -rf /"
+    win.close()
+
+
+def test_ciw_clear_and_copy_controls(project):
+    from PyQt6 import QtWidgets
+    app, win = make_window(project)
+    copy = win.ciwDock.findChild(QtWidgets.QPushButton, "ciwCopyButton")
+    clear = win.ciwDock.findChild(QtWidgets.QPushButton, "ciwClearButton")
+    assert copy is not None and clear is not None
+    win._say("sample output")
+    copy.click()
+    assert "sample output" in QtWidgets.QApplication.clipboard().text()
+    clear.click()
+    assert win.transcript.toPlainText() == ""
+    win.close()
