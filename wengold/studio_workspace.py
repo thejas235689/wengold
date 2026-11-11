@@ -88,12 +88,12 @@ def waveform(root: str | Path, rel: str) -> dict:
         raise Refused("VCD exceeds 8 MB viewer limit", 413)
     result = from_vcd(path)
     result["source"] = rel
-    # Cap payload size without inventing any samples.
-    result["signals"] = result["signals"][:48]
+    # Cap payload size without inventing any samples. Full-resolution source remains on disk.
+    result["signals"] = result["signals"][:256]
     for sig in result["signals"]:
-        sig["values"] = sig["values"][:600]
-    result["times"] = result.get("times", [])[:600]
-    result["cycles"] = min(result["cycles"], 600)
+        sig["values"] = sig["values"][:1200]
+    result["times"] = result.get("times", [])[:1200]
+    result["cycles"] = min(result["cycles"], 1200)
     return result
 
 
