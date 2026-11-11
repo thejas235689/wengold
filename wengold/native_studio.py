@@ -373,6 +373,68 @@ def make_studio_tabs(state, QtCore, QtGui, QtWidgets, parent=None):
     agent_plan.clicked.connect(show_plan)
     tabs.addTab(agent_page, "Agents")
 
+    # Durable queue: multiple external worker processes can claim transactionally.
+    from .studio_durable import DurableQueue
+    durable = DurableQueue(root)
+    worker_page, worker_layout = column()
+    worker_help = QtWidgets.QLabel(
+        "Persistent SQLite queue — run workers in separate Linux terminals:\n"
+        f"python3 -m wengold.studio_durable {root} --worker\n"
+        "Workers share one SQLite database on the same filesystem. "
+        "Review and tapeout signoff remain separate.")
+    worker_help.setWordWrap(True)
+    worker_layout.addWidget(worker_help)
+    worker_kind = QtWidgets.QComboBox()
+    worker_kind.addItems(["syntax", "pipeline", "formal"])
+    worker_source = QtWidgets.QComboBox()
+    worker_source.addItems(files)
+    worker_expr = QtWidgets.QLineEdit()
+    worker_expr.setPlaceholderText("Formal safety expression")
+    worker_submit = QtWidgets.QPushButton("Queue durable job")
+    worker_refresh = QtWidgets.QPushButton("Refresh durable queue")
+    toolbar(worker_layout, worker_kind, worker_source, worker_expr,
+            worker_submit, worker_refresh)
+    worker_table = QtWidgets.QTableWidget(0, 6)
+    worker_table.setObjectName("durableWorkerQueue")
+    worker_table.setHorizontalHeaderLabels(["ID", "Kind", "Source", "State", "Attempt", "Worker"])
+    worker_table.horizontalHeader().setStretchLastSection(True)
+    worker_layout.addWidget(worker_table)
+    worker_detail = QtWidgets.QPlainTextEdit()
+    worker_detail.setObjectName("durableWorkerEvidence")
+    worker_detail.setReadOnly(True)
+    worker_layout.addWidget(worker_detail)
+
+    def refresh_durable():
+        import json
+        try:
+            rows = durable.list_jobs()
+            worker_table.setRowCount(len(rows))
+            for n, job in enumerate(rows):
+                values = (job["id"][:12], job["kind"], job["path"], job["status"],
+                          str(job["attempt"]), str(job["owner"] or "—"))
+                for col, val in enumerate(values):
+                    worker_table.setItem(n, col, QtWidgets.QTableWidgetItem(val))
+            worker_detail.setPlainText(json.dumps(rows, indent=2))
+            alert(f"{len(rows)} persistent job(s)")
+        except Exception as exc:
+            alert(f"Durable queue read failed: {exc}", True)
+
+    def submit_durable():
+        try:
+            d = durable.submit(worker_kind.currentText(), worker_source.currentText(),
+                               expr=worker_expr.text())
+            alert(f"Queued durable job {d['id'][:12]}")
+            refresh_durable()
+        except Exception as exc:
+            alert(f"Durable submission refused: {exc}", True)
+
+    worker_submit.clicked.connect(submit_durable)
+    worker_refresh.clicked.connect(refresh_durable)
+    tabs.addTab(worker_page, "Workers")
+    tabs.durableQueue = durable
+    tabs.durableWorkerTable = worker_table
+
+
     status = QtWidgets.QLabel("Native Linux workspace ready")
     status.setObjectName("studioStatus")
     tabs.statusLabel = status
