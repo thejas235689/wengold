@@ -98,3 +98,19 @@ def test_native_waveform_canvas_draws_real_vcd_and_selects_signal(native_window)
     window.show()
     app.processEvents()
     assert tab.waveCanvas.grab().width() > 0
+
+
+
+def test_native_local_ai_panel_contains_discipline_and_validation_controls(native_window):
+    from PyQt6 import QtWidgets
+    root, app, window = native_window
+    tabs = window.workspace
+    assert "Local AI" in [tabs.tabText(i) for i in range(tabs.count())]
+    panel = tabs.aiPage
+    for name in ("aiBackend", "aiEndpoint", "aiModel", "aiConnect",
+                 "aiTestInference", "aiDiscipline", "aiTask", "aiGenerate",
+                 "aiCheckRtl", "aiCheckSatya", "aiSatyaUvm", "aiRustDv",
+                 "aiArtifactPreview", "aiEvidence"):
+        assert panel.findChild(QtWidgets.QWidget, name), name
+    profiles = panel.findChild(QtWidgets.QComboBox, "aiDiscipline")
+    assert profiles.count() == 15
