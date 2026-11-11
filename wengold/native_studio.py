@@ -283,9 +283,12 @@ def make_studio_tabs(state, QtCore, QtGui, QtWidgets, parent=None):
     review_credential.setObjectName("reviewCredential")
     review_credential.setPlaceholderText("Local reviewer credential")
     review_credential.setEchoMode(QtWidgets.QLineEdit.EchoMode.Password)
+    review_signature = QtWidgets.QLineEdit()
+    review_signature.setObjectName("reviewSignature")
+    review_signature.setPlaceholderText("Ed25519 signature (base64) when trust registry is enabled")
     accept = QtWidgets.QPushButton("Accept proof")
     reject = QtWidgets.QPushButton("Reject evidence")
-    toolbar(job_layout, refresh, audit, reviewer, review_credential, accept, reject)
+    toolbar(job_layout, refresh, audit, reviewer, review_credential, review_signature, accept, reject)
     job_table = QtWidgets.QTableWidget(0, 5)
     job_table.setObjectName("jobQueue")
     job_table.setHorizontalHeaderLabels(["Job ID", "Kind", "Source", "State", "Review"])
@@ -329,7 +332,7 @@ def make_studio_tabs(state, QtCore, QtGui, QtWidgets, parent=None):
             return
         try:
             result = jobs.signoff(jobs_by_row[selected]["id"], reviewer.text(), value,
-                                  credential=review_credential.text())
+                                  credential=review_credential.text(), signature=review_signature.text())
             alert(f"Recorded {value} at ledger seq {result['review']['ledger_seq']}")
             refresh_jobs()
         except Exception as exc:
