@@ -108,9 +108,12 @@ def diagnose(wave: dict, *, dut_roots: tuple[str, ...] = (),
             continue
         root = ".".join(parts[:-1])
         stem = parts[-1][:-len(suffix)]
-        expected = next((root + "." + stem + ext if root else stem + ext)
-                        for ext in ("_expected", "_exp", "_reference", "_ref")
-                        if (root + "." + stem + ext if root else stem + ext) in values), None)
+        expected = None
+        for ext in ("_expected", "_exp", "_reference", "_ref"):
+            candidate = (root + "." if root else "") + stem + ext
+            if candidate in values:
+                expected = candidate
+                break
         if expected is None:
             continue
         exp_values = values[expected]
