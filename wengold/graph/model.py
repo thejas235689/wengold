@@ -110,9 +110,18 @@ class DesignGraph:
         self._des_cache.clear()
         existing = self.nodes.get(node.id)
         if existing is not None:
+            # A node that came from a file keeps its file. The regex backend
+            # registers an instantiation of `timer` (from `timer dut(...)` inside a
+            # testbench) with no path, and that second registration replaced the
+            # module node — so `files_for` could not find the design file and every
+            # simulation through the regex backend settled as "inconclusive: the
+            # result names no existing design file". Losing a path is never right:
+            # the module still lives somewhere.
+            keep_path = existing.path or node.path
             # Never upgrade an unresolved node back to resolved by accident.
-            if not node.resolved or not existing.resolved:
-                node = Node(node.id, node.kind, node.path, node.content_hash,
+            if not node.resolved or not existing.resolved or keep_path != node.path:
+                node = Node(node.id, node.kind, keep_path,
+                            existing.content_hash or node.content_hash,
                             resolved=existing.resolved and node.resolved,
                             meta={**existing.meta, **node.meta})
         self.nodes[node.id] = node
