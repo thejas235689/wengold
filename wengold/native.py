@@ -331,7 +331,7 @@ def build_window(state: dict):
                 for col, value in enumerate((b, str(out), str(inn))):
                     cell = QtWidgets.QTableWidgetItem(value)
                     if col == 0:
-                        cell.setData(0, QtCore.Qt.ItemDataRole.UserRole, b)
+                        cell.setData(QtCore.Qt.ItemDataRole.UserRole, b)
                     self.table.setItem(i, col, cell)
             self.detail.setHtml(self._overview_html())
 
