@@ -464,6 +464,8 @@ def make_studio_tabs(state, QtCore, QtGui, QtWidgets, parent=None):
     tabs.statusLabel = status
     def refresh_project_sources(new_state):
         """Update all project source pickers without discarding the editor."""
+        nonlocal state
+        state = new_state
         updated = list(new_state.get("file_paths", []))
         files[:] = updated
         for picker in (edit_picker, formal_picker, worker_source):
