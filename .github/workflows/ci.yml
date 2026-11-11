@@ -254,7 +254,7 @@ jobs:
           # port 0 would bind a random port, so pin one and read the URL the
           # server prints. A server that starts but does not answer is not
           # working, and `|| true` here would hide exactly that.
-          "$HOME/.local/bin/wengold" ide examples/soc_top --serve \
+          PYTHONUNBUFFERED=1 "$HOME/.local/bin/wengold" ide examples/soc_top --serve \
               --port 8731 --no-browser > "$RUNNER_TEMP/ide.log" 2>&1 &
           pid=$!
           for i in $(seq 1 30); do
@@ -262,11 +262,11 @@ jobs:
             sleep 1
           done
           cat "$RUNNER_TEMP/ide.log"
-          kill "$pid" 2>/dev/null || true
           grep -q "127.0.0.1:8731" "$RUNNER_TEMP/ide.log" \
             || { echo "::error::the IDE server did not print its URL"; exit 1; }
           curl -sf --max-time 5 http://127.0.0.1:8731/ >/dev/null \
-            || { echo "::error::the IDE page did not serve"; exit 1; }
+            || { echo "::error::the IDE page did not serve"; kill "$pid" || true; exit 1; }
+          kill "$pid" 2>/dev/null || true
           echo "the IDE served a page from the installed copy"
       - name: Uninstall removes exactly what it wrote
         run: |
