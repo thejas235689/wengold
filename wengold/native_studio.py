@@ -435,6 +435,12 @@ def make_studio_tabs(state, QtCore, QtGui, QtWidgets, parent=None):
     tabs.durableWorkerTable = worker_table
 
 
+    # Local LLM and semiconductor discipline prompt workbench.
+    from .native_ai import create_ai_tab
+    ai_page = create_ai_tab(root, QtCore, QtGui, QtWidgets, tabs)
+    tabs.addTab(ai_page, "Local AI")
+    tabs.aiPage = ai_page
+
     status = QtWidgets.QLabel("Native Linux workspace ready")
     status.setObjectName("studioStatus")
     tabs.statusLabel = status
