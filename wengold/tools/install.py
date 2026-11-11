@@ -153,6 +153,22 @@ def install_suite(dest: Path | None = None, version: str = OSS_SUITE_VERSION,
     progress(f"  downloading {url}")
     dest.parent.mkdir(parents=True, exist_ok=True)
 
+    # Check the room before spending the bandwidth. A full disk surfaced as
+    # "could not download ... if this machine has no outbound HTTPS", which sent
+    # the user to check their network for a problem that was on their disk.
+    need = 2 * 1024 ** 3                       # the archive plus room to unpack
+    try:
+        free = shutil.disk_usage(dest.parent).free
+    except OSError:
+        free = None
+    if free is not None and free < need:
+        raise RuntimeError(
+            f"not enough disk space: {free // 1024 ** 3} GB free at "
+            f"{dest.parent}, about {need // 1024 ** 3} GB needed for the archive "
+            f"and its unpacked contents. Point WENGOLD_TOOLS_DIR at a larger "
+            f"filesystem, or install iverilog and yosys from your package "
+            f"manager instead.")
+
     with tempfile.TemporaryDirectory(dir=str(dest.parent)) as tmp:
         archive = Path(tmp) / f"suite.{ext}"
         try:
@@ -160,6 +176,11 @@ def install_suite(dest: Path | None = None, version: str = OSS_SUITE_VERSION,
                     open(archive, "wb") as f:
                 shutil.copyfileobj(r, f)
         except Exception as e:                                   # noqa: BLE001
+            if isinstance(e, OSError) and getattr(e, "errno", None) == 28:
+                raise RuntimeError(
+                    f"ran out of disk space while downloading to {archive}. "
+                    f"Point WENGOLD_TOOLS_DIR at a larger filesystem, or install "
+                    f"iverilog and yosys from your package manager.") from e
             raise RuntimeError(
                 f"could not download the toolchain: {e}. The URL is {url} — if "
                 f"this machine has no outbound HTTPS, install iverilog and yosys "
