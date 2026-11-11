@@ -463,6 +463,10 @@ def make_studio_tabs(state, QtCore, QtGui, QtWidgets, parent=None):
     ai_page = create_ai_tab(root, QtCore, QtGui, QtWidgets, tabs)
     tabs.addTab(ai_page, "Local AI")
     tabs.aiPage = ai_page
+    from .native_dv_pipeline import make_dv_pipeline_tab
+    dv_page = make_dv_pipeline_tab(root, files, QtCore, QtGui, QtWidgets)
+    tabs.insertTab(1, dv_page, "DV Workflow")
+    tabs.dvWorkflow = dv_page
 
     status = QtWidgets.QLabel("Native Linux workspace ready")
     status.setObjectName("studioStatus")
@@ -474,6 +478,7 @@ def make_studio_tabs(state, QtCore, QtGui, QtWidgets, parent=None):
         updated = list(new_state.get("file_paths", []))
         files[:] = updated
         implementation.refreshSources(updated)
+        dv_page.refreshSources(updated)
         for picker in (edit_picker, formal_picker, worker_source):
             previous = picker.currentText()
             picker.blockSignals(True)
