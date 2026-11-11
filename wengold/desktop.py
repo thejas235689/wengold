@@ -995,6 +995,33 @@ def _handler(state: dict):
                                "output": f"{type(exc).__name__}: {exc}"}
                 self._json(payload)
                 return
+            if u.path.startswith("/api/studio/"):
+                q = parse_qs(u.query)
+                rel = (q.get("file") or [""])[0]
+                try:
+                    root = state["path"]
+                    if u.path == "/api/studio/files":
+                        payload = list_evidence(root)
+                    elif u.path == "/api/studio/source":
+                        if rel not in _files_of(state):
+                            raise Refused("not an indexed HDL source", 404)
+                        payload = studio_source(root, rel)
+                    elif u.path == "/api/studio/wave":
+                        if rel not in list_evidence(root)["waveforms"]:
+                            raise Refused("VCD not in evidence index", 404)
+                        payload = studio_waveform(root, rel)
+                    elif u.path == "/api/studio/formal":
+                        if rel not in list_evidence(root)["formal_reports"]:
+                            raise Refused("report not in evidence index", 404)
+                        payload = formal_report(root, rel)
+                    else:
+                        raise Refused("unknown studio endpoint", 404)
+                    self._json(payload)
+                except Refused as exc:
+                    self._send(json.dumps({"error": exc.reason}).encode(), "application/json", exc.status)
+                except (OSError, ValueError) as exc:
+                    self._send(json.dumps({"error": str(exc)}).encode(), "application/json", 400)
+                return
             if u.path == "/api/tree":
                 self._json({"files": _files_of(state)})
                 return
@@ -1023,6 +1050,30 @@ def _handler(state: dict):
                 self._json(cache["s"])
                 return
             self._send(b'{"error":"not found"}', "application/json", 404)
+
+
+        def do_POST(self):
+            if urlparse(self.path).path != "/api/studio/save":
+                self._send(b'{"error":"not found"}', "application/json", 404)
+                return
+            try:
+                count = int(self.headers.get("Content-Length", "0"))
+                if count <= 0 or count > MAX_BODY + 65536:
+                    raise Refused("invalid request size", 413)
+                obj = json.loads(self.rfile.read(count))
+                if not isinstance(obj, dict) or obj.get("token") != token:
+                    raise Refused("invalid workspace token", 403)
+                if obj.get("file") not in _files_of(state):
+                    raise Refused("not an indexed HDL source", 404)
+                result = save_source(state["path"], obj["file"],
+                                     obj.get("content"), obj.get("expected_sha256"))
+                if result["changed"]:
+                    cache.clear()
+                self._json(result)
+            except Refused as exc:
+                self._send(json.dumps({"error": exc.reason}).encode(), "application/json", exc.status)
+            except (ValueError, OSError, TypeError) as exc:
+                self._send(json.dumps({"error": str(exc)}).encode(), "application/json", 400)
 
     return H
 
