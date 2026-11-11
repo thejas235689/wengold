@@ -549,6 +549,19 @@ def main(path: str = ".", screenshot: str | None = None) -> int:
     from .desktop import build_state
 
     app = QtWidgets.QApplication.instance() or QtWidgets.QApplication(sys.argv)
+    # A Linux application-menu entry has no meaningful project working directory.
+    # Do not silently index the user's entire HOME when launched without a path.
+    if path == "." and not screenshot:
+        selected = QtWidgets.QFileDialog.getExistingDirectory(
+            None, "Choose WENGOLD Design + Verification Project",
+            str(Path.home()))
+        if not selected:
+            return 0
+        path = selected
+    # Opening an HDL file from the file manager should use its parent project
+    # rather than passing a non-directory to project-local jobs and evidence.
+    if Path(path).is_file():
+        path = str(Path(path).resolve().parent)
     try:
         state = build_state(path)
     except Exception as exc:
