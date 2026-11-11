@@ -555,7 +555,7 @@ def build_state(path: str) -> dict:
             [str(Path(f).resolve().relative_to(Path(path).resolve()))
              if Path(f).resolve().is_relative_to(Path(path).resolve()) else f
              for f in files] +
-            ([v for category in ("design", "verification", "automation", "filelists")
+            ([v for category in ("design", "verification", "automation", "filelists", "specifications")
               for v in inventory[category]] if inventory else []))),
     }
 
