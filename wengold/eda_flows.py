@@ -17,6 +17,7 @@ import subprocess
 import time
 
 FLOWS = {
+    "simulation": "Self-checking SystemVerilog simulator regression",
     "uvm": "SystemVerilog UVM simulator regression",
     "rustdv_sim": "RustDV simulator-backed regression",
     "pss": "Portable Stimulus generation/verification",
