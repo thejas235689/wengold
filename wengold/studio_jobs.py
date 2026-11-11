@@ -166,3 +166,33 @@ class StudioJobs:
 
     def shutdown(self):
         self._pool.shutdown(wait=False, cancel_futures=True)
+
+
+def crossprobe(root: str | Path, indexed_files: list[str], signal: str) -> dict:
+    """Find precise whole-token signal references in indexed RTL source lines.
+
+    A lexical cross-probe, not a resolved hierarchy/symbol table. No guess about
+    which declaration a waveform signal refers to is made.
+    """
+    import re
+    if not isinstance(signal, str) or not 1 <= len(signal) <= 256:
+        raise Refused("signal must be 1..256 characters", 400)
+    leaf = signal.rsplit(".", 1)[-1]
+    if not re.fullmatch(r"[a-zA-Z_][a-zA-Z_0-9$]*", leaf):
+        raise Refused("signal is not a valid HDL identifier", 400)
+    pattern = re.compile(r"(?<![A-Za-z0-9_$])" + re.escape(leaf) + r"(?![A-Za-z0-9_$])")
+    results = []
+    for rel in indexed_files[:200]:
+        try:
+            doc = source(root, rel)
+        except (Refused, OSError):
+            continue
+        for number, line in enumerate(doc["content"].splitlines(), 1):
+            if pattern.search(line):
+                results.append({"file": rel, "line": number, "text": line[:240]})
+                if len(results) >= 100:
+                    break
+        if len(results) >= 100:
+            break
+    return {"signal": signal, "leaf": leaf, "matches": results,
+            "resolution": "lexical only; hierarchy and symbol ownership not proved"}
