@@ -149,12 +149,45 @@ color:var(--dim2);overflow:hidden}
 ::-webkit-scrollbar{width:9px;height:9px}
 ::-webkit-scrollbar-thumb{background:#D4D4D8;border-radius:5px}
 ::-webkit-scrollbar-track{background:transparent}
+
+/* Silicon Studio: original high-contrast semiconductor engineering workspace. */
+:root{--bg:#0a1020;--panel:#101b2e;--panel2:#16243a;--line:#273753;--line2:#1d2d47;--fg:#e8f0ff;--dim:#9daecc;--dim2:#7386a7;--red:#ff738a;--red-soft:rgba(255,115,138,.12);--red-line:rgba(255,115,138,.4);--grey:#51d8bd;--grey-soft:rgba(81,216,189,.12);--green:#51d8bd;--ink:#e8f0ff}
+body{background:radial-gradient(ellipse at 16% 0%,#17315a 0%,#09111f 44%,#060b15 100%);color:var(--fg);font:13px/1.5 Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif}
+#frame{inset:18px;background:var(--bg);border:1px solid #2b4165;border-radius:18px;box-shadow:0 30px 90px rgba(0,0,0,.42)}
+#titlebar{height:66px;min-height:66px;padding:0 24px;gap:12px;background:linear-gradient(100deg,#12223b,#0d182b 60%,#102441);border-bottom:1px solid #2c4468}
+#titlebar:before{content:"◈";display:grid;place-items:center;width:33px;height:33px;border:1px solid #4487ab;border-radius:10px;background:#143454;color:#77ddff;font-size:22px}
+#titlebar #tname{font-size:15px;font-weight:750;color:#fff}
+#titlebar .mode{color:#82ead4;border:1px solid #276d68;background:#103335;border-radius:100px;padding:5px 12px;font-weight:650}
+#titlebar .dim,#titlebar .dash{color:#93a9c8}
+#body{grid-template-columns:minmax(210px,22%) minmax(280px,1fr) minmax(270px,31%)}
+.pane{background:#0c1627;border-color:var(--line)}.pane:nth-child(2){background:#0d192b}
+.panehead{padding:13px 16px;font-size:11px;font-weight:800;letter-spacing:.11em;text-transform:uppercase;color:#99b7db;background:#122039;border-bottom:1px solid var(--line)}
+.row{border-radius:7px;margin:3px 7px;padding:7px 10px;color:#c6d6ec}
+.row:hover,.r:hover{background:#1a2c48}
+.row.sel,.r.sel{background:rgba(64,160,255,.13);box-shadow:inset 3px 0 0 #64b9ff}
+.row.dir{color:#84bfe9;font-weight:700}
+.r{padding:10px 14px;border-color:#20324c}
+.v{border-radius:100px;padding:3px 8px;font-weight:750}
+.v.VALID{color:#56e5c5;background:#0c3739}.v.INVALIDATED{color:#ff8197;background:#3a1b30}.v.UNKNOWN{color:#f4c977;background:#40351e}
+#detail{padding:22px}#detail h3{font-size:17px;letter-spacing:-.02em}#detail .sub{color:#8fa6c7}
+.kv{grid-template-columns:100px minmax(0,1fr);gap:9px 12px}.kv dt{color:#8ca5c6}
+.why{background:#111f35;border:1px solid #2b4361;border-left:3px solid #67bafc;border-radius:10px;padding:14px;line-height:1.65}
+#cli{height:255px;border-top:1px solid #335780;background:#0a1424}
+#clihead{padding:10px 17px;background:#102139;color:#94c5ed;font-weight:750}
+#out{padding:13px 18px;font:12px/1.65 ui-monospace,SFMono-Regular,Consolas,monospace}
+#out .cmd,#caret{color:#7ccfff}#out .ok,.tick{color:#62e3c6}
+#inrow{padding:12px 18px;background:#0f2036;border-color:#2b4565}#in{color:#eaf4ff;font-size:13px}#in::placeholder{color:#7d96b6}
+#status{height:32px;background:#0c1a2c;border-color:#233a57;padding:0 18px}
+::-webkit-scrollbar-thumb{background:#334969}
+@media(max-width:900px){#frame{inset:6px;border-radius:11px}#body{grid-template-columns:185px minmax(230px,1fr)}#body>.pane:nth-child(3){display:none}#titlebar{padding:0 12px;gap:7px}#titlebar #tdims{display:none}}
+@media(max-width:600px){#body{grid-template-columns:1fr}#body>.pane:first-child,#body>.pane:nth-child(3){display:none}#cli{height:220px}}
+
 </style></head><body>
 
 <div id="frame">
 <div id="titlebar">
   <span id="tname">…</span><span class="dash">—</span>
-  <span class="dim">wengold</span><span class="dash">—</span>
+  <span class="dim">SILICON STUDIO</span><span class="dash">—</span>
   <span class="dim" id="trev">r0</span><span class="dash">—</span>
   <span id="tdims">…</span>
   <span id="tspacer"></span>
@@ -163,16 +196,16 @@ color:var(--dim2);overflow:hidden}
 </div>
 
 <div id="body">
-  <div class="pane"><div class="panehead"><span>Explorer</span><span id="nf"></span></div>
+  <div class="pane"><div class="panehead"><span>Design Explorer</span><span id="nf"></span></div>
     <div id="tree"></div></div>
-  <div class="pane"><div class="panehead"><span>Results</span><span id="nr"></span></div>
+  <div class="pane"><div class="panehead"><span>Verification Evidence</span><span id="nr"></span></div>
     <div id="results"></div></div>
-  <div class="pane"><div class="panehead"><span>Detail</span></div>
+  <div class="pane"><div class="panehead"><span>Evidence Inspector</span></div>
     <div id="detail"><div class="empty">select a result or a file</div></div></div>
 </div>
 
 <div id="cli">
-  <div id="clihead"><span>CLI</span><span style="color:var(--dim2)">type <b style="color:var(--fg)">help</b> for commands</span></div>
+  <div id="clihead"><span>Engineering Copilot · CLI</span><span style="color:var(--dim2)">type <b style="color:var(--fg)">help</b> for commands</span></div>
   <div id="out"><span class="dim">wengold desktop — the kernel is ready.</span></div>
   <div id="inrow"><span id="caret">›</span><input id="in" autocomplete="off" spellcheck="false" placeholder="ask anything, or type help — e.g. what must I re-run?"></div>
 </div>
