@@ -74,8 +74,7 @@ jobs:
           # directly cannot crash the runner.
           QT_QPA_PLATFORM: offscreen
         run: |
-          python -m pytest -q -p no:cacheprovider tests --tb=short -rf \
-            2>&1 | tee /tmp/pytest.log
+          python -m pytest -q -p no:cacheprovider tests --tb=short -rf
 
       - name: Give GHDL a C compiler
         if: runner.os == 'Linux'
@@ -125,6 +124,7 @@ jobs:
           "
 
       - name: Install and uninstall the Linux app
+        if: runner.os == 'Linux'
         # The installer is a shell script, so nothing above exercises it. This runs
         # it for real into a throwaway HOME and then removes it again.
         run: |
@@ -137,12 +137,14 @@ jobs:
           test ! -e "$HOME/.local/bin/wengold"
 
       - name: Build the Debian package
+        if: runner.os == 'Linux'
         run: |
           sh linux/build-deb.sh
           dpkg-deb --info dist/wengold_*_all.deb | head -12
           dpkg-deb -c dist/wengold_*_all.deb | grep -c '^' || true
 
       - name: Upload the Debian package
+        if: runner.os == 'Linux'
         if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -159,6 +161,7 @@ jobs:
           if-no-files-found: warn
 
       - name: Upload the pytest log
+        if: runner.os == 'Linux'
         # so a failure can be read without guessing, including from outside CI
         if: always()
         uses: actions/upload-artifact@v4
