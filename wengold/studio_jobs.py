@@ -204,6 +204,7 @@ class StudioJobs:
             raise Refused("only completed, current evidence can be reviewed", 409)
         if not self._ledger.audit().ok:
             raise Refused("ledger audit failed", 409)
+        key_fingerprint = None
         if decision == "accept":
             # A locally configured shared credential gates acceptance; reviewer
             # names are still self-asserted and this is NOT tapeout authentication.
