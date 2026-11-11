@@ -42,13 +42,13 @@ cat > "$STAGE/usr/bin/$APP" <<'LAUNCHER'
 #!/bin/sh
 # WENGOLD — installed by the wengold Debian package
 export PYTHONPATH="/usr/share/wengold${PYTHONPATH:+:$PYTHONPATH}"
-exec python3 -m wengold.native "$@"
+exec python3 -m wengold.cli "$@"
 LAUNCHER
 chmod 0755 "$STAGE/usr/bin/$APP"
 
 cp "$HERE/wengold.svg" "$STAGE/usr/share/icons/hicolor/scalable/apps/$APP.svg"
 
-sed -e "s|@BIN@|/usr/bin/$APP|g" \
+sed -e "s|@BIN@|/usr/bin/$APP desktop --native|g" \
     -e "s|@ICON@|$APP|g" \
     "$HERE/wengold.desktop.in" > "$STAGE/usr/share/applications/$APP.desktop"
 chmod 0644 "$STAGE/usr/share/applications/$APP.desktop"
@@ -62,8 +62,8 @@ Section: devel
 Priority: optional
 Architecture: all
 Installed-Size: $INSTALLED_KB
-Depends: python3 (>= 3.10)
-Recommends: python3-pyqt6 | python3-pyqt5
+Depends: python3 (>= 3.11)
+Recommends: python3-pyqt6
 Maintainer: Thejas KG <thejaswalterobrain@gmail.com>
 Homepage: https://github.com/thejas235689/wengold
 Description: Validity kernel for silicon verification
@@ -74,8 +74,8 @@ Description: Validity kernel for silicon verification
  The graph, the validity kernel and the ledger are open, dual-licensed
  MIT or Apache-2.0.
  .
- The native window needs PyQt6; without it the desktop command falls back to a
- browser window rather than failing to start.
+ The native window needs PyQt6. The desktop menu entry explicitly requests
+ native mode; install python3-pyqt6 to use the desktop GUI.
 CONTROL
 
 cat > "$STAGE/DEBIAN/postinst" <<'POSTINST'
