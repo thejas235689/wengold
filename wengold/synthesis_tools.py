@@ -16,7 +16,7 @@ import subprocess
 import tempfile
 
 
-def run_synthesis(root: str | Path, rel: str, top: str = "") -> dict:
+def run_synthesis(root: str | Path, rel: str, top: str = "", liberty: str = "") -> dict:
     from .studio_workspace import project_file
     if top and not re.fullmatch(r"[A-Za-z_][A-Za-z_0-9$]*", top):
         raise ValueError("invalid top module")
@@ -27,13 +27,26 @@ def run_synthesis(root: str | Path, rel: str, top: str = "") -> dict:
     if not yosys:
         return {"ok": False, "status": "unavailable", "message":
                 "Yosys is not installed. Install yosys or configure a reviewed EDA flow."}
+    lib_path = None
+    if liberty:
+        lib_path = project_file(root, liberty, {".lib"})
+        if lib_path.stat().st_size > 24_000_000:
+            raise ValueError("Liberty exceeds 24 MiB mapping limit")
     source = path.read_bytes()
     with tempfile.TemporaryDirectory(prefix="wengold-yosys-") as temp:
         work = Path(temp)
         (work / "design.v").write_bytes(source)
         steps = ["read_verilog -sv design.v"]
         steps.append("hierarchy -check -top " + top if top else "hierarchy -auto-top")
-        steps += ["proc", "opt", "techmap", "opt", "check", "write_json netlist.json"]
+        steps += ["proc", "opt", "techmap", "opt"]
+        if lib_path:
+            (work / "cells.lib").write_bytes(lib_path.read_bytes())
+            steps += ["read_liberty -lib cells.lib", "dfflibmap -liberty cells.lib",
+                      "abc -liberty cells.lib", "clean", "check",
+                      "stat -liberty cells.lib"]
+        else:
+            steps += ["check"]
+        steps.append("write_json netlist.json")
         (work / "run.ys").write_text("\n".join(steps) + "\n")
         try:
             result = subprocess.run([yosys, "-Q", "-T", "-s", "run.ys"],
@@ -50,6 +63,16 @@ def run_synthesis(root: str | Path, rel: str, top: str = "") -> dict:
         if (work / "netlist.json").stat().st_size > 12_000_000:
             return {"ok": False, "status": "oversize", "log": "Netlist JSON exceeded 12 MiB"}
         netlist = json.loads((work / "netlist.json").read_text())
+        from .schematic_graph import build_schematic
+        schematic = build_schematic(netlist, preferred_top=top)
+        # Parse area only when the actual Yosys mapping report includes it.
+        area = None
+        if lib_path:
+            candidates = re.findall(
+                r"Chip area for module[^\n]*?:\s*([0-9]+(?:\.[0-9]+)?)",
+                log, flags=re.I)
+            if candidates:
+                area = float(candidates[-1])
         modules = netlist.get("modules") or {}
         structure = []
         totals = Counter()
@@ -71,10 +94,19 @@ def run_synthesis(root: str | Path, rel: str, top: str = "") -> dict:
             "total_wire_names": sum(x["wires"] for x in structure),
             "cell_types": dict(totals),
             "modules": structure,
+            "schematic_graph": schematic,
+            "mapping": "liberty" if lib_path else "generic",
+            "liberty_sha256": hashlib.sha256(lib_path.read_bytes()).hexdigest() if lib_path else None,
+            "mapped_cell_area": area,
             "log": log,
             "timing": "NOT RUN — requires mapped Liberty/SDC/STA",
-            "chip_area": "NOT AVAILABLE — generic cells are not a mapped physical area",
+            "chip_area": (
+                f"Yosys liberty-mapped cell area: {area} (Liberty area units)"
+                if area is not None else
+                "NOT AVAILABLE — mapped library report missing or no Liberty supplied"),
             "power": "NOT RUN — requires library, activity, and power analysis",
-            "schematic": "Netlist-derived hierarchy; full placed/routed schematic not available",
-            "qualification": "Generic Yosys RTL synthesis only — NOT PPA signoff",
+            "schematic": "Netlist-derived cell connectivity; not placed/routed",
+            "qualification": (
+                "Liberty-mapped synthesis estimate only — NOT placed/routed signoff"
+                if lib_path else "Generic Yosys RTL synthesis only — NOT PPA signoff"),
         }
