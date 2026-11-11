@@ -237,7 +237,7 @@ def test_the_app_is_one_panel_not_a_page():
     assert "border-radius:10px" in HTML
     assert "position:absolute;inset:14px" in HTML
     # the strip carries project — tool — revision — size, the way a build line does
-    for part in ('id="tname"', 'id="trev"', "wengold</span>", 'id="tdims"'):
+    for part in ('id="tname"', 'id="trev"', "SILICON STUDIO</span>", 'id="tdims"'):
         assert part in HTML, f"title strip missing {part}"
 
 
