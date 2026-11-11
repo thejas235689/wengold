@@ -8,6 +8,8 @@ on:
       - 'wengold/native_studio.py'
       - 'wengold/native_waveplot.py'
       - 'wengold/studio_jobs.py'
+      - 'wengold/studio_durable.py'
+      - 'wengold/studio_attest.py'
       - 'wengold/studio_workspace.py'
       - 'wengold/studio_ui.py'
       - 'wengold/studio_milestone_ui.py'
@@ -37,13 +39,14 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install -e '.[native,formal,slang,dev]'
+          python -m pip install 'cryptography>=42'
           python -c 'import PyQt6.QtWidgets; import pyslang; import z3'
       - name: Compile native desktop sources
         run: |
-          python -m compileall -q wengold/native.py wengold/native_studio.py wengold/native_waveplot.py wengold/studio_jobs.py
+          python -m compileall -q wengold/native.py wengold/native_studio.py wengold/native_waveplot.py wengold/studio_jobs.py wengold/studio_durable.py wengold/studio_attest.py
       - name: Test native app and evidence pipeline
         run: |
-          python -m pytest -q tests/test_native_studio.py tests/test_native_app.py tests/test_studio_milestone.py tests/test_studio_workspace.py tests/test_wave.py
+          python -m pytest -q tests/test_native_studio.py tests/test_native_app.py tests/test_studio_milestone.py tests/test_studio_workspace.py tests/test_studio_durable.py tests/test_wave.py
       - name: Render full Linux desktop
         run: |
           python -m wengold.native examples --screenshot linux-studio.png
