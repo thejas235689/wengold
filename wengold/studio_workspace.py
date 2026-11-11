@@ -42,7 +42,7 @@ def source(root: str | Path, rel: str) -> dict:
 
 
 def save_source(root: str | Path, rel: str, content: str, expected_sha256: str) -> dict:
-    path = project_file(root, rel, SOURCE_SUFFIXES)
+    path = project_file(root, rel, EDITOR_SUFFIXES)
     if not isinstance(content, str) or not isinstance(expected_sha256, str):
         raise Refused("content and expected_sha256 are required")
     raw = content.encode("utf-8")
