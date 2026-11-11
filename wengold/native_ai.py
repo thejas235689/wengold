@@ -119,7 +119,10 @@ def create_ai_tab(root, QtCore, QtGui, QtWidgets, parent=None):
                 elif self.op == "roundtrip":
                     result = test_connection(*self.values)
                 elif self.op == "generate":
-                    result = generate(*self.values)
+                    result = generate(*self.values[:5])
+                    if self.values[0] == "RTL Design":
+                        result["validation"] = validate_rtl(
+                            result["text"], self.values[5], self.values[6], self.values[7])
                 elif self.op == "validate":
                     result = validate_rtl(*self.values)
                 elif self.op == "satya":
@@ -166,9 +169,16 @@ def create_ai_tab(root, QtCore, QtGui, QtWidgets, parent=None):
             elif op == "generate":
                 state["draft"] = result
                 preview.setPlainText(result["text"])
+                import json
                 evidence.setPlainText(
-                    "DRAFT ONLY | " + result["model"] + " | sha256 " +
-                    result["sha256"] + "\nNo tool checks have run.")
+                    "AI-GENERATED DRAFT | " + result["model"] + " | sha256 " +
+                    result["sha256"] + "\n" +
+                    json.dumps(result.get("validation"), indent=2))
+                if isinstance(result.get("validation"), dict):
+                    if result["validation"]["status"] == "simulation_completed":
+                        status.setText("Simulation completed; testbench quality and signoff not proven")
+                    elif result["validation"]["status"] == "failed":
+                        status.setText("Generated RTL FAILED an independent check")
             else:
                 evidence.setPlainText(json.dumps(result, indent=2))
             status.setText(op + " completed; consult actual evidence and limits")
@@ -204,7 +214,8 @@ def create_ai_tab(root, QtCore, QtGui, QtWidgets, parent=None):
         "roundtrip", (backend.currentText(), endpoint.text().strip(), model.currentText().strip())))
     generate_btn.clicked.connect(lambda: perform(
         "generate", (mode.currentText(), task.toPlainText(), backend.currentText(),
-                     endpoint.text().strip(), model.currentText().strip())))
+                     endpoint.text().strip(), model.currentText().strip(),
+                     root, testbench.text().strip(), top.text().strip())))
 
     def check_rtl():
         if mode.currentText() != "RTL Design":
