@@ -124,7 +124,8 @@ def validate_rtl(code: str, root: str | Path, testbench: str = "",
 
 def tool_status() -> dict:
     return {tool: bool(shutil.which(tool)) for tool in
-            ("iverilog", "vvp", "verilator", "satya", "cargo")}
+            ("iverilog", "vvp", "verilator", "satya", "cargo",
+             "vcs", "xrun", "vsim", "ngspice", "klayout")}
 
 
 def satya_check(root: str | Path, model_rel: str) -> dict:
@@ -189,3 +190,34 @@ def test_connection(backend: str, endpoint: str, model: str) -> dict:
                           system="Follow the user's short instruction.")
     return {"ok": bool(response.strip()), "status": "responding",
             "model": model, "backend": backend, "sample": response[:120]}
+
+
+
+def rustdv_simulate(project_root: str | Path, rel: str = "",
+                    simulator: str = "icarus") -> dict:
+    """Invoke rustdv's documented VPI simulation script in an existing checkout.
+
+    This is a script-reported regression status, not independent DUT signoff.
+    The engineer must have RustDV and its simulator installed locally.
+    """
+    base = Path(project_root).resolve()
+    target = (base / rel).resolve()
+    if Path(rel).is_absolute() or not target.is_relative_to(base):
+        raise ValueError("RustDV checkout must be project-relative")
+    script = (target / "sim" / "run_rustdv.sh").resolve()
+    if not script.is_relative_to(target) or not script.is_file():
+        raise ValueError("RustDV sim/run_rustdv.sh not found in checkout")
+    if simulator not in ("icarus", "verilator"):
+        raise ValueError("supported simulators: icarus or verilator")
+    if not shutil.which("bash"):
+        return {"status": "unavailable", "ok": False, "output": "bash unavailable"}
+    args = ["bash", str(script)]
+    if simulator == "verilator":
+        args.extend(["release", "verilator"])
+    result = run_tool(args, cwd=str(target), timeout=180)
+    # The upstream README describes this exact regression marker.
+    marker = "REGRESSION: PASS" in result["output"]
+    status = "script_reported_pass" if result["ok"] and marker else "regression_failed_or_unconfirmed"
+    return {"status": status, "ok": result["ok"] and marker,
+            "simulator": simulator, "scope": "RustDV simulator script output, not independent signoff",
+            **result}
