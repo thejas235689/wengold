@@ -6,6 +6,7 @@ on:
     branches: [main]
     paths:
       - 'tools/check-openpiton.py'
+      - 'tools/check-openpiton-riscv.py'
       - 'wengold/graph/**'
       - 'wengold/desktop.py'
       - 'wengold/native.py'
@@ -55,6 +56,18 @@ jobs:
             --openpiton ../openpiton \
             --report ../openpiton-wengold-evidence.json
           python -c "import json; d=json.load(open('../openpiton-wengold-evidence.json')); assert d['status']=='PASS_SUBSYSTEM_SMOKE'"
+      - name: Initialize exact Ariane/CVA6 submodule
+        working-directory: openpiton
+        run: |
+          git submodule update --init piton/design/chip/tile/ariane
+          git -C piton/design/chip/tile/ariane rev-parse HEAD
+      - name: Inspect RISC-V platform and Ariane pinned source with WENGOLD
+        working-directory: wengold
+        run: |
+          python tools/check-openpiton-riscv.py \
+            --openpiton ../openpiton --require-submodule \
+            --report ../openpiton-riscv-evidence.json
+          python -c "import json; d=json.load(open('../openpiton-riscv-evidence.json')); assert d['status']=='PASS_RISCV_READINESS'"
       - name: Render native WENGOLD Linux desktop on actual OpenPiton RTL
         working-directory: wengold
         run: |
@@ -68,5 +81,6 @@ jobs:
           name: openpiton-wengold-bridge-evidence
           path: |
             openpiton-wengold-evidence.json
+            openpiton-riscv-evidence.json
             openpiton-linux-studio.png
           if-no-files-found: warn
