@@ -1099,7 +1099,7 @@ def _handler(state: dict):
                                              depth=obj.get("depth", 12))
                     else:
                         result = jobs.signoff(obj.get("id", ""), obj.get("reviewer", ""),
-                                              obj.get("decision", ""))
+                                              obj.get("decision", ""), credential=obj.get("credential", ""))
                     self._json(result)
                 except Refused as exc:
                     self._send(json.dumps({"error": exc.reason}).encode(), "application/json", exc.status)
