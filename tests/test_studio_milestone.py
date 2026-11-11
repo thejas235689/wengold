@@ -153,3 +153,30 @@ def test_unfinished_job_restores_as_interrupted(tmp_path):
         assert jobs.audit()["ok"]
     finally:
         jobs.shutdown()
+
+
+
+def test_proof_acceptance_requires_configured_credential(tmp_path, monkeypatch):
+    import hashlib
+    (tmp_path / "unit.sv").write_text("module unit; endmodule\n")
+    jobs = StudioJobs(tmp_path)
+    try:
+        digest = hashlib.sha256((tmp_path / "unit.sv").read_bytes()).hexdigest()
+        # Policy-only test: a simulated completed proof record is NOT solver evidence.
+        jobs._jobs["policy-test"] = {
+            "id": "policy-test", "kind": "formal", "file": "unit.sv",
+            "status": "completed", "result": {"results": [{"status": "proof"}]},
+            "source_sha256": digest, "result_sha256": "hash-for-policy-test"}
+        monkeypatch.delenv("WENGOLD_REVIEW_KEY_SHA256", raising=False)
+        with pytest.raises(Refused):
+            jobs.signoff("policy-test", "Engineer", "accept")
+        monkeypatch.setenv("WENGOLD_REVIEW_KEY_SHA256",
+                           hashlib.sha256(b"correct credential").hexdigest())
+        with pytest.raises(Refused):
+            jobs.signoff("policy-test", "Engineer", "accept", credential="incorrect")
+        reviewed = jobs.signoff("policy-test", "Engineer", "accept",
+                                credential="correct credential")
+        assert reviewed["review"]["decision"] == "accept"
+        assert jobs.audit()["ok"]
+    finally:
+        jobs.shutdown()
