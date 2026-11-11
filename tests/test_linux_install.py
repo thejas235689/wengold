@@ -90,7 +90,7 @@ def test_the_launcher_does_not_point_at_the_checkout(fake_home):
     run("install.sh", env={"HOME": str(fake_home)})
     body = (fake_home / ".local" / "bin" / "wengold").read_text()
     assert str(ROOT) not in body, "the launcher still refers to the repository"
-    assert "wengold.native" in body
+    assert "wengold.cli" in body, "launcher should route CLI and desktop subcommand"
 
 
 def test_the_desktop_entry_uses_an_absolute_exec(fake_home):
