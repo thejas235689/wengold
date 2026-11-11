@@ -143,8 +143,8 @@ def make_studio_tabs(state, QtCore, QtGui, QtWidgets, parent=None):
             inventory = list_evidence(root)
             wave_picker.clear()
             wave_picker.addItems(inventory["waveforms"])
-            formal_picker.clear()
-            formal_picker.addItems(inventory["formal_reports"])
+            formal_picker_reports.clear()
+            formal_picker_reports.addItems(inventory["formal_reports"])
             alert("Evidence files refreshed")
         except Exception as exc:
             alert(f"Evidence discovery failed: {exc}", True)
