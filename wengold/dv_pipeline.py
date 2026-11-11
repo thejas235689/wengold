@@ -211,3 +211,38 @@ def save_draft(root: str | Path, artifact: dict, relative_output: str) -> dict:
     return {"status": "saved_unverified_draft", "path": relative_output,
             "sha256": _hash(output),
             "warning": "Review, compile and run independent verification before using"}
+
+
+
+def coverage_closure_draft(root: str | Path, coverage_rel: str,
+                           spec_rel: str, rtl_rel: str, backend: str,
+                           endpoint: str, model: str) -> dict:
+    """Suggest directed tests for measured gaps; do not change reported coverage."""
+    coverage = coverage_report(root, coverage_rel)
+    source = intake(root, spec_rel, rtl_rel)
+    if not coverage["uncovered"]:
+        return {
+            "status": "no_observed_uncovered_bins",
+            "text": "No uncovered eligible bins in the imported report. "
+                    "Requirements and cross-coverage review remain necessary.",
+            "coverage_sha256": coverage["report_sha256"]}
+    request = (
+        "Prepare a DRAFT, actionable coverage closure plan for these actually "
+        "uncovered bins. For each bin, name likely missing stimulus and "
+        "scoreboard or assertion checks, but do not guess coverage gains. "
+        "Do not propose excluding bins as an easy shortcut. "
+        "State any missing behavior in the specification.\n"
+        "Uncovered bins: " + json.dumps(coverage["uncovered"]) +
+        "\nSpecification:\n" + source["spec_excerpt"][:9000] +
+        "\nRTL:\n" + source["rtl_excerpt"][:9000])
+    client = model_client(backend, endpoint, model)
+    response = client.ask(request, system=SYSTEM)
+    if not response.strip():
+        raise RuntimeError("local LLM returned empty closure plan")
+    return {
+        "status": "draft_coverage_closure_plan", "text": response,
+        "coverage_sha256": coverage["report_sha256"],
+        "spec_sha256": source["spec_sha256"],
+        "rtl_sha256": source["rtl_sha256"],
+        "uncovered": coverage["uncovered"], "model": model,
+        "warning": "Coverage is unchanged until independent tests re-run and real measurements improve"}
