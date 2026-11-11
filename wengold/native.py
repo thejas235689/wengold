@@ -196,15 +196,10 @@ def build_window(state: dict):
             bv.addWidget(self.transcript)
             bv.addWidget(self.input)
 
-            vertical = QtWidgets.QSplitter(QtCore.Qt.Orientation.Vertical)
-            vertical.addWidget(top)
-            vertical.addWidget(bottom)
-            vertical.setSizes([520, 190])
-
-            # One native Linux window for the complete engineering workspace.
+            # Main engineering views stay above the persistent CIW dock.
             from .native_studio import make_studio_tabs
             self.workspace = make_studio_tabs(state, QtCore, QtGui, QtWidgets, self)
-            self.workspace.insertTab(0, vertical, "Overview")
+            self.workspace.insertTab(0, top, "Overview")
             self.workspace.setCurrentIndex(0)
 
             central = QtWidgets.QWidget()
@@ -215,6 +210,9 @@ def build_window(state: dict):
             cv.addWidget(self.workspace)
             cv.addWidget(self.workspace.statusLabel)
             self.setCentralWidget(central)
+
+            from .native_ciw import install_ciw
+            install_ciw(self, bottom, QtCore, QtGui, QtWidgets)
 
             self._menus()
             self.statusBar().showMessage(
@@ -245,6 +243,12 @@ def build_window(state: dict):
             file_menu.addAction(quit_)
 
             view = bar.addMenu("&View")
+            view.addAction(self.ciwDock.toggleViewAction())
+            focus_ciw = QtGui.QAction("Focus Command Interpreter", self)
+            focus_ciw.setShortcut("Ctrl+`")
+            focus_ciw.triggered.connect(self.ciwFocus)
+            view.addAction(focus_ciw)
+            view.addSeparator()
             for name, focus in (("Files", self.tree), ("Blocks", self.table),
                                 ("CLI", self.input)):
                 act = QtGui.QAction(name, self)
