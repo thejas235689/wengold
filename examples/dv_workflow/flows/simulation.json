@@ -1,0 +1,17 @@
+{
+  "kind": "simulation",
+  "argv": [
+    "python3",
+    "scripts/run_regression.py"
+  ],
+  "inputs": [
+    "rtl/counter4.sv",
+    "tb/counter4_tb.sv",
+    "scripts/run_regression.py"
+  ],
+  "artifacts": [
+    "results/regression.log",
+    "results/coverage.json"
+  ],
+  "timeout_seconds": 60
+}
