@@ -208,3 +208,21 @@ def test_implementation_ui_real_evidence_controls(native_window):
         "rtl/module.sv") >= 0
     assert "NOT RUN" in panel.ppaReport.toPlainText()
     assert "NOT AVAILABLE" in panel.ppaReport.toPlainText()
+
+
+def test_ui_diagnostics_reports_actual_missing_tools(native_window, monkeypatch):
+    from PyQt6 import QtWidgets
+    from wengold.native_health import diagnostics
+    from wengold import native_health
+    root, app, window = native_window
+    monkeypatch.setattr(native_health.shutil, "which", lambda name: None)
+    report = diagnostics(window, QtWidgets)
+    assert report["project_exists"]
+    assert report["ui"]["project"]["controls_present"]
+    assert report["ui"]["synthesis"]["controls_present"]
+    assert report["ui"]["local_ai"]["controls_present"]
+    assert report["installed_tools"]["yosys"] is None
+    assert report["installed_tools"]["iverilog"] is None
+    menu_actions = [a.text() for menu in window.menuBar().actions()
+                    for a in menu.menu().actions() if menu.menu()]
+    assert "UI & Tool Diagnostics" in menu_actions
