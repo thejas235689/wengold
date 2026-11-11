@@ -21,10 +21,13 @@ FLOWS = {
     "rustdv_sim": "RustDV simulator-backed regression",
     "pss": "Portable Stimulus generation/verification",
     "dft": "DFT or ATPG execution",
+    "sta": "Static timing analysis with real constraints and libraries",
+    "power": "Library and activity-based dynamic/leakage power analysis",
     "upf": "Power-aware RTL/UPF simulation",
     "physical_drc": "Foundry DRC",
     "physical_lvs": "Foundry LVS",
     "physical_pex": "Parasitic extraction",
+    "physical_place_route": "Physical place and route implementation",
     "analog": "SPICE / AMS simulation",
     "layout": "Layout verification",
 }
