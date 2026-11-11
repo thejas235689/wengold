@@ -151,7 +151,7 @@ say "icon -> $ICONS/$APP.svg"
 # the classic way a .desktop entry silently stops working.
 # The menu entry starts the window, not the CLI — that is the one place the GUI is
 # the right entry point.
-sed -e "s|@BIN@|$BIN/$APP desktop|g" \
+sed -e "s|@BIN@|$BIN/$APP desktop --native|g" \
     -e "s|@ICON@|$APP|g" \
     "$HERE/wengold.desktop.in" > "$APPS/$APP.desktop"
 chmod 0644 "$APPS/$APP.desktop"
@@ -189,7 +189,7 @@ say "verified: $APP $VER — launcher answers --version"
 if [ "$QT_OK" = 0 ]; then
     printf '\n  PyQt6 is not installed, so the native window cannot start.\n'
     printf '  Install it with:\n\n      %s -m pip install --user PyQt6\n\n' "$PY"
-    printf '  Until then `%s desktop` falls back to a browser window.\n' "$APP"
+    printf '  The application-menu launcher requires PyQt6; install it to open Silicon Studio.\n'
 else
     printf '\n  Installed. Launch it from your application menu, or run:\n\n'
     printf '      %s\n\n' "$BIN/$APP"
