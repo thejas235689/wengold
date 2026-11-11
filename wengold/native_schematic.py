@@ -67,9 +67,10 @@ def make_schematic_canvas(QtCore, QtGui, QtWidgets):
             scene.addPath(path, edge_pen)
         for cell in cells:
             x, y = positions[cell["id"]]
-            shape = scene.addRoundedRect(
-                x, y, 188, 58, 7, 7,
-                QtGui.QPen(QtGui.QColor("#B09C58"), 1.5),
+            rounded = QtGui.QPainterPath()
+            rounded.addRoundedRect(QtCore.QRectF(x, y, 188, 58), 7, 7)
+            shape = scene.addPath(
+                rounded, QtGui.QPen(QtGui.QColor("#B09C58"), 1.5),
                 QtGui.QBrush(QtGui.QColor("#FFF0AD")))
             shape.setToolTip(cell["id"] + "\n" + cell["type"])
             typ = scene.addText(cell["type"][:29])
