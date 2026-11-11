@@ -95,3 +95,18 @@ def test_satya_and_rustdv_adapters_refuse_unsafe_paths(tmp_path):
         rustdv_unit_check(tmp_path, "../rustdv")
     with pytest.raises(ValueError):
         rustdv_unit_check(tmp_path, "nonexistent")
+
+
+
+def test_real_inference_path_is_required_for_connection(monkeypatch):
+    from wengold import ai_workbench
+    class Model:
+        def ask(self, prompt, system=""):
+            assert "ready" in prompt
+            return "ready"
+    monkeypatch.setattr(ai_workbench, "list_models", lambda *_: ["qwen:7b"])
+    monkeypatch.setattr(ai_workbench, "model_client", lambda *_args, **_kwargs: Model())
+    connected = ai_workbench.test_connection("ollama", "http://127.0.0.1:11434", "qwen:7b")
+    assert connected["ok"] and connected["status"] == "responding"
+    missing = ai_workbench.test_connection("ollama", "http://127.0.0.1:11434", "absent")
+    assert not missing["ok"] and missing["status"] == "model_missing"
