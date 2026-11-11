@@ -63,3 +63,12 @@ def test_scan_detects_external_updates(tmp_path):
     (tmp_path / "tb").mkdir()
     (tmp_path / "tb" / "b_tb.sv").write_text("module b_tb; endmodule")
     assert discover(tmp_path)["counts"]["verification"] == 1
+
+
+def test_hdl_indexer_skips_generated_build_and_venv(tmp_path):
+    from wengold.cli import _collect
+    for folder in ("build", ".venv", ".git", "rtl"):
+        (tmp_path / folder).mkdir()
+        (tmp_path / folder / "core.sv").write_text("module core; endmodule")
+    files = _collect(str(tmp_path))
+    assert list(files) == ["rtl/core.sv"]
