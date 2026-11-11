@@ -84,7 +84,16 @@ def make_dv_pipeline_tab(root, files, QtCore, QtGui, QtWidgets):
                 [key])
             v.addWidget(item)
             controls[key + "_file"] = item
+        if key == "dvRegression":
+            cases = QtWidgets.QPushButton("Generate testcase matrix (AI draft)")
+            cases.setObjectName("dvGenerateTestcases")
+            v.addWidget(cases)
+            controls["testcases_button"] = cases
         if key == "dvCoverage":
+            closure = QtWidgets.QPushButton("Draft coverage closure plan with Local AI")
+            closure.setObjectName("dvCoverageClosure")
+            v.addWidget(closure)
+            controls["coverage_closure_button"] = closure
             target = QtWidgets.QDoubleSpinBox()
             target.setObjectName("dvCoverageTarget")
             target.setRange(0.01, 100)
@@ -131,6 +140,7 @@ def make_dv_pipeline_tab(root, files, QtCore, QtGui, QtWidgets):
                     "regression": dv_pipeline.run_regression,
                     "debug": dv_pipeline.triage,
                     "coverage": dv_pipeline.coverage_report,
+                    "coverage_closure": dv_pipeline.coverage_closure_draft,
                 }
                 self.succeeded.emit(functions[self.op](*self.values))
             except Exception as exc:
@@ -241,6 +251,8 @@ def make_dv_pipeline_tab(root, files, QtCore, QtGui, QtWidgets):
         controls[key + "_save"].clicked.connect(
             lambda _checked=False, k=key: save_generated(k))
 
+    controls["testcases_button"].clicked.connect(
+        lambda: handle("dvRegression", "generate", generation_args("testcases")))
     controls["dvRegression"]["button"].clicked.connect(run_regression)
     controls["dvDebug"]["button"].clicked.connect(
         lambda: handle("dvDebug", "debug",
@@ -251,6 +263,12 @@ def make_dv_pipeline_tab(root, files, QtCore, QtGui, QtWidgets):
         lambda: handle("dvCoverage", "coverage",
                        (root, controls["dvCoverage_file"].text().strip(),
                         controls["target"].value())))
+    controls["coverage_closure_button"].clicked.connect(
+        lambda: handle("dvCoverage", "coverage_closure",
+                       (root, controls["dvCoverage_file"].text().strip(),
+                        spec.currentText().strip(), rtl.currentText().strip(),
+                        backend.currentText(), endpoint.text().strip(),
+                        model.text().strip())))
 
     def refresh_files(newfiles):
         for widget, endings in (
