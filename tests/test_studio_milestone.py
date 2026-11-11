@@ -113,3 +113,43 @@ def test_pipeline_gates_formal_when_syntax_unavailable_or_invalid(tmp_path, monk
             jobs.signoff(result["id"], "DV reviewer", "accept")
     finally:
         jobs.shutdown()
+
+
+
+def test_completed_jobs_survive_restart_without_untrusted_rerun(tmp_path):
+    (tmp_path / "unit.sv").write_text("module unit; endmodule\n")
+    first = StudioJobs(tmp_path)
+    try:
+        finished = poll(first, first.submit("syntax", "unit.sv")["id"])
+        assert finished["status"] == "completed"
+        job_id = finished["id"]
+    finally:
+        first.shutdown()
+
+    restored = StudioJobs(tmp_path)
+    try:
+        recovered = restored.get(job_id)
+        assert recovered["status"] == "completed"
+        assert recovered["source_sha256"] == finished["source_sha256"]
+        assert recovered["result_sha256"] == finished["result_sha256"]
+        assert restored.audit()["ok"]
+    finally:
+        restored.shutdown()
+
+
+def test_unfinished_job_restores_as_interrupted(tmp_path):
+    (tmp_path / "unit.sv").write_text("module unit; endmodule\n")
+    from wengold.ledger.store import Ledger
+    from hashlib import sha256
+    digest = sha256((tmp_path / "unit.sv").read_bytes()).hexdigest()
+    Ledger(tmp_path / ".wengold-studio-ledger.jsonl").append("studio_job_queued", {
+        "id": "orphaned", "kind": "formal", "file": "unit.sv",
+        "source_sha256": digest, "expr": "x == 1", "engine": "explicit", "depth": 12
+    })
+    jobs = StudioJobs(tmp_path)
+    try:
+        assert jobs.get("orphaned")["status"] == "interrupted"
+        assert jobs.get("orphaned")["result"] is None
+        assert jobs.audit()["ok"]
+    finally:
+        jobs.shutdown()
