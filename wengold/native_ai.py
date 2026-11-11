@@ -9,7 +9,7 @@ import os
 
 from .ai_prompts import PROFILES
 from .ai_workbench import (generate, list_models, tool_status, validate_rtl, satya_check,
-                           satya_generate_uvm, rustdv_unit_check)
+                           satya_generate_uvm, rustdv_unit_check, test_connection)
 
 
 def create_ai_tab(root, QtCore, QtGui, QtWidgets, parent=None):
@@ -32,6 +32,8 @@ def create_ai_tab(root, QtCore, QtGui, QtWidgets, parent=None):
     model.addItem(env_model)
     discover = QtWidgets.QPushButton("Connect / Models")
     discover.setObjectName("aiConnect")
+    roundtrip = QtWidgets.QPushButton("Test Inference")
+    roundtrip.setObjectName("aiTestInference")
     row.addWidget(QtWidgets.QLabel("Backend"))
     row.addWidget(backend)
     row.addWidget(QtWidgets.QLabel("Local server"))
@@ -39,6 +41,7 @@ def create_ai_tab(root, QtCore, QtGui, QtWidgets, parent=None):
     row.addWidget(QtWidgets.QLabel("Model"))
     row.addWidget(model, 2)
     row.addWidget(discover)
+    row.addWidget(roundtrip)
     outer.addLayout(row)
 
     mode = QtWidgets.QComboBox()
@@ -113,6 +116,8 @@ def create_ai_tab(root, QtCore, QtGui, QtWidgets, parent=None):
             try:
                 if self.op == "connect":
                     result = {"models": list_models(*self.values)}
+                elif self.op == "roundtrip":
+                    result = test_connection(*self.values)
                 elif self.op == "generate":
                     result = generate(*self.values)
                 elif self.op == "validate":
@@ -137,7 +142,7 @@ def create_ai_tab(root, QtCore, QtGui, QtWidgets, parent=None):
             status.setText("A local AI or tool check is still running")
             return
         state["busy"] = True
-        for btn in (discover, generate_btn, compile_btn, satya_btn, uvm_btn, rust_btn):
+        for btn in (discover, roundtrip, generate_btn, compile_btn, satya_btn, uvm_btn, rust_btn):
             btn.setEnabled(False)
         status.setText("Running " + op + " (real local execution)…")
         thread = QtCore.QThread(page)
@@ -195,6 +200,8 @@ def create_ai_tab(root, QtCore, QtGui, QtWidgets, parent=None):
     backend.currentTextChanged.connect(choose_backend)
     discover.clicked.connect(lambda: perform("connect", (backend.currentText(),
                                                          endpoint.text().strip())))
+    roundtrip.clicked.connect(lambda: perform(
+        "roundtrip", (backend.currentText(), endpoint.text().strip(), model.currentText().strip())))
     generate_btn.clicked.connect(lambda: perform(
         "generate", (mode.currentText(), task.toPlainText(), backend.currentText(),
                      endpoint.text().strip(), model.currentText().strip())))
