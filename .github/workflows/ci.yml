@@ -51,7 +51,7 @@ jobs:
           # Pinned to the versions the suite was measured against. An unpinned
           # pyslang is a moving API, and a green local run plus a red CI run is
           # the least useful signal a project can produce.
-          pip install "pytest>=8,<9" "z3-solver>=4.13,<6" "numpy>=1.26,<3"
+          pip install "pytest>=8,<9" "z3-solver>=4.13,<6" "numpy>=1.26,<3" "PyYAML>=6,<7"
           pip install "pyslang==12.1.0" || echo "::warning::pyslang unavailable on ${{ matrix.os }}; front-end tests will skip"
           # the native desktop app; optional at runtime, so the suite skips its
           # tests if this ever fails, but installed here so CI covers it
