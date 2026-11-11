@@ -28,6 +28,14 @@ do
     if [ -e "$p" ]; then rm -f "$p"; printf '  removed %s\n' "$p"; removed=$((removed+1)); fi
 done
 
+# The isolated desktop installer owns this dedicated environment.
+VENV="$PREFIX/share/wengold-venv"
+if [ -d "$VENV" ]; then
+    rm -rf "$VENV"
+    printf '  removed %s\n' "$VENV"
+    removed=$((removed+1))
+fi
+
 LIB="$PREFIX/share/$APP"
 if [ -d "$LIB" ]; then rm -rf "$LIB"; printf '  removed %s\n' "$LIB"; removed=$((removed+1)); fi
 
