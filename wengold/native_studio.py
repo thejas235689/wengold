@@ -180,6 +180,7 @@ def make_studio_tabs(state, QtCore, QtGui, QtWidgets, parent=None):
             data = waveform(root, wave_picker.currentText())
             active_wave["data"] = data
             wave_canvas.set_data(data)
+            wave_debug.loadWave(data)
             wave_table.setRowCount(len(data["signals"]))
             for index, signal in enumerate(data["signals"]):
                 samples = signal["values"]
@@ -227,6 +228,15 @@ def make_studio_tabs(state, QtCore, QtGui, QtWidgets, parent=None):
     wave_open.clicked.connect(load_wave)
     wave_refresh.clicked.connect(refresh_evidence)
     tabs.addTab(wave_page, "Waveforms")
+    from .native_wave_debug import make_wave_debug
+
+    def crossprobe_debug_signal(signal_name):
+        # Preserve waveform viewer ownership and its project-constrained RTL probe.
+        probe_selected_signal(signal_name)
+
+    wave_debug = make_wave_debug(QtCore, QtGui, QtWidgets, root, crossprobe_debug_signal)
+    tabs.addTab(wave_debug, "Wave Debug")
+    tabs.waveDebug = wave_debug
 
     # Formal execution: source selection and bounded safety property.
     formal_page, formal_layout = column()
