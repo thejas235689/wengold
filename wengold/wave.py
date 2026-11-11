@@ -161,7 +161,10 @@ def parse_vcd(text: str, limit: int = 4000) -> dict:
                      None)
     signals = []
     for ident, (name, width) in ids.items():
-        values = [value_at(ident, t) for t, _ in history]
+        # Each history entry already contains the cumulative signal state.
+        # The old value_at() rescanned history for every sample (quadratic in
+        # sample count), freezing larger VCD debugging sessions.
+        values = [snapshot.get(ident) for _t, snapshot in history]
         signals.append({"name": name, "width": width, "values": values})
     signals.sort(key=lambda s: (s["name"] != clock, s["name"]))
     return {"source": "vcd", "clock": clock, "fail_at": None,
