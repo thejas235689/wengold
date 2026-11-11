@@ -18,6 +18,8 @@ import os
 import stat
 from pathlib import Path
 
+import shutil
+
 import pytest
 
 from wengold.agent.runners import ToolRunner, Toolchain
@@ -163,10 +165,14 @@ def test_a_real_analysis_error_is_a_fail(tmp_path):
 
 # ---- against the real GHDL, when it can run -----------------------------
 REAL = Toolchain()
-can_run = REAL.has("ghdl")
+# GHDL's LLVM backend shells out to a C compiler and refuses to start without one
+# ("installation problem: cc not found"). The tool being present is not the same as
+# the tool being able to run, so the skip condition checks both — a skip that says
+# why is honest; a failure that blames the design is not.
+can_run = REAL.has("ghdl") and bool(shutil.which("cc") or shutil.which("gcc"))
 
 
-@pytest.mark.skipif(not can_run, reason="ghdl not installed")
+@pytest.mark.skipif(not can_run, reason="ghdl present but no C compiler for it")
 def test_real_ghdl_analyses_a_package_and_a_user_of_it(tmp_path):
     """The exact shape that failed: a package in a named library, then a user."""
     pkg = ("package p is\n  constant W : integer := 8;\nend package;\n"
