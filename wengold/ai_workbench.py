@@ -177,3 +177,15 @@ def rustdv_unit_check(project_root: str | Path, rel: str = "") -> dict:
                       cwd=str(target), timeout=120)
     return {"status": "unit_tests_pass" if result["ok"] else "unit_tests_failed",
             "scope": "Rust unit tests only; no RTL simulator launched", **result}
+
+
+def test_connection(backend: str, endpoint: str, model: str) -> dict:
+    """Actually round-trip a short instruction through the selected local LLM."""
+    info = list_models(backend, endpoint)
+    if model not in info:
+        return {"ok": False, "status": "model_missing", "models": info}
+    client = model_client(backend, endpoint, model, timeout=45.0)
+    response = client.ask("Reply with a single word: ready",
+                          system="Follow the user's short instruction.")
+    return {"ok": bool(response.strip()), "status": "responding",
+            "model": model, "backend": backend, "sample": response[:120]}
