@@ -144,6 +144,8 @@ def build_window(state: dict):
             revision.setObjectName("revision")
             left.addWidget(project)
             left.addWidget(revision)
+            self.projectNameLabel = project
+            self.projectRevisionLabel = revision
             lay.addLayout(left)
             lay.addStretch(1)
             self.coverage = QtWidgets.QLabel(
@@ -227,6 +229,11 @@ def build_window(state: dict):
                 f"{state['files']} files · {state['blocks']} blocks · "
                 f"{state['nodes']} nodes · {state['unresolved']} unresolved")
             self._populate()
+            self._watchSignature = self.state.get("project_inventory", {}).get("signature") if self.state.get("project_inventory") else None
+            self.sourceWatch = QtCore.QTimer(self)
+            self.sourceWatch.setInterval(5000)
+            self.sourceWatch.timeout.connect(self._watch_project)
+            self.sourceWatch.start()
             self._say("wengold " + _version() + " — type `help` for commands")
 
         # -- helpers -------------------------------------------------------
@@ -240,6 +247,11 @@ def build_window(state: dict):
         def _menus(self):
             bar = self.menuBar()
             file_menu = bar.addMenu("&File")
+            open_project = QtGui.QAction("Open Project Folder…", self)
+            open_project.setObjectName("openProjectAction")
+            open_project.setShortcut("Ctrl+O")
+            open_project.triggered.connect(self._open_project)
+            file_menu.addAction(open_project)
             reload_ = QtGui.QAction("&Reload", self)
             reload_.setShortcut("Ctrl+R")
             reload_.triggered.connect(self._reload)
@@ -247,6 +259,12 @@ def build_window(state: dict):
             quit_.setShortcut("Ctrl+Q")
             quit_.triggered.connect(self.close)
             file_menu.addAction(reload_)
+            auto_refresh = QtGui.QAction("Auto-discover project files", self)
+            auto_refresh.setObjectName("autoDiscoveryAction")
+            auto_refresh.setCheckable(True)
+            auto_refresh.setChecked(True)
+            auto_refresh.toggled.connect(lambda enabled: self.sourceWatch.start() if enabled else self.sourceWatch.stop())
+            file_menu.addAction(auto_refresh)
             file_menu.addSeparator()
             file_menu.addAction(quit_)
 
@@ -269,21 +287,42 @@ def build_window(state: dict):
             help_menu.addAction(about)
 
         def _populate(self):
+            """Present design, verification, automation and filelists independently."""
             self.tree.clear()
-            for rel in self.state.get("file_paths", []):
-                item = QtWidgets.QTreeWidgetItem([rel])
-                item.setData(0, QtCore.Qt.ItemDataRole.UserRole, rel)
-                self.tree.addTopLevelItem(item)
+            inventory = self.state.get("project_inventory") or {}
+            categories = (
+                ("design", "Design RTL"),
+                ("verification", "Verification / UVM"),
+                ("automation", "Automation / Scripts"),
+                ("filelists", "Filelists / Build"),
+            )
+            grouped = set()
+            for key, title in categories:
+                paths = inventory.get(key, [])
+                group = QtWidgets.QTreeWidgetItem([f"{title} ({len(paths)})"])
+                group.setData(0, QtCore.Qt.ItemDataRole.UserRole, None)
+                self.tree.addTopLevelItem(group)
+                for rel in paths:
+                    child = QtWidgets.QTreeWidgetItem([rel])
+                    child.setData(0, QtCore.Qt.ItemDataRole.UserRole, rel)
+                    group.addChild(child)
+                    grouped.add(rel)
+                group.setExpanded(True)
+            if not inventory:
+                for rel in self.state.get("file_paths", []):
+                    item = QtWidgets.QTreeWidgetItem([rel])
+                    item.setData(0, QtCore.Qt.ItemDataRole.UserRole, rel)
+                    self.tree.addTopLevelItem(item)
             self.table.setRowCount(0)
             g = self.state["graph"]
             for i, b in enumerate(self.state["block_names"]):
                 self.table.insertRow(i)
                 out = len(g.rtl_ancestors(b)) if hasattr(g, "rtl_ancestors") else 0
                 inn = len(g.rtl_descendants(b)) if hasattr(g, "rtl_descendants") else 0
-                for col, text in enumerate((b, str(out), str(inn))):
-                    cell = QtWidgets.QTableWidgetItem(text)
+                for col, value in enumerate((b, str(out), str(inn))):
+                    cell = QtWidgets.QTableWidgetItem(value)
                     if col == 0:
-                        cell.setData(QtCore.Qt.ItemDataRole.UserRole, b)
+                        cell.setData(0, QtCore.Qt.ItemDataRole.UserRole, b)
                     self.table.setItem(i, col, cell)
             self.detail.setHtml(self._overview_html())
 
@@ -305,6 +344,8 @@ def build_window(state: dict):
             if not items:
                 return
             rel = items[0].data(0, QtCore.Qt.ItemDataRole.UserRole)
+            if not rel:
+                return
             d = _file_detail(self.state, rel)
             blocks = d.get("blocks", [])
             rows = "".join(
@@ -386,18 +427,88 @@ def build_window(state: dict):
         def _say(self, text: str):
             self.transcript.append(text)
 
-        def _reload(self):
+        def _open_project(self):
+            folder = QtWidgets.QFileDialog.getExistingDirectory(
+                self, "Open RTL and verification project", self.state["path"])
+            if not folder:
+                return
+            if self.workspace.editorDirty():
+                decision = QtWidgets.QMessageBox.question(
+                    self, "Unsaved edits", "Discard unsaved edits and open another project?")
+                if decision != QtWidgets.QMessageBox.StandardButton.Yes:
+                    return
             from .desktop import build_state
             try:
-                self.state = build_state(self.state["path"])
+                selected = build_state(folder)
+            except Exception as exc:
+                QtWidgets.QMessageBox.warning(self, "Project load failed", str(exc))
+                return
+            # Project-dependent workers and file paths must not be kept alive
+            # after switching to another root. Recreate the workspace.
+            previous_index = self.workspace.currentIndex()
+            old = self.workspace
+            old.jobs.shutdown()
+            from .native_studio import make_studio_tabs
+            new = make_studio_tabs(selected, QtCore, QtGui, QtWidgets, self)
+            overview = old.widget(0)
+            old.removeTab(0)
+            new.insertTab(0, overview, "Overview")
+            new.setCurrentIndex(min(previous_index, new.count() - 1))
+            central_layout = self.centralWidget().layout()
+            central_layout.replaceWidget(old, new)
+            central_layout.replaceWidget(old.statusLabel, new.statusLabel)
+            self.workspace = new
+            old.deleteLater()
+            self.state = selected
+            self._watchSignature = (selected.get("project_inventory") or {}).get("signature")
+            self._refresh_project_header()
+            self._populate()
+            self._say(f"  opened project {folder}")
+
+        def _refresh_project_header(self):
+            self.setWindowTitle(f"WENGOLD — {self.state['path']}")
+            self.projectNameLabel.setText(Path(self.state["path"]).name)
+            self.projectRevisionLabel.setText(self._revision())
+            self.coverage.setText(
+                f"{self.state['design_units']}/{self.state['files']} files are design units")
+            self.statusBar().showMessage(
+                f"{self.state['files']} HDL files · "
+                f"{len(self.state.get('verification_paths', []))} verification · "
+                f"{len(self.state.get('automation_paths', []))} automation")
+
+        def _watch_project(self):
+            """Detect added/removed/modified files without discarding open edits."""
+            from .project_scan import discover
+            try:
+                changed = discover(self.state["path"])
+            except (ValueError, OSError):
+                return
+            if changed["signature"] == self._watchSignature:
+                return
+            if self.workspace.editorDirty():
+                self.workspace.statusLabel.setText(
+                    "Project files changed externally; save/discard edits before Reload")
+                return
+            self._reload()
+
+        def _reload(self):
+            from .desktop import build_state
+            if self.workspace.editorDirty():
+                answer = QtWidgets.QMessageBox.question(
+                    self, "Unsaved edits", "Discard unsaved edits and re-index the project?")
+                if answer != QtWidgets.QMessageBox.StandardButton.Yes:
+                    return
+            try:
+                updated = build_state(self.state["path"])
             except Exception as exc:
                 self._say(f"  reload failed: {exc}")
                 return
+            self.state = updated
+            self._watchSignature = (updated.get("project_inventory") or {}).get("signature")
+            self.workspace.refreshProjectSources(updated)
+            self._refresh_project_header()
             self._populate()
-            self.statusBar().showMessage(
-                f"{self.state['files']} files · {self.state['blocks']} blocks · "
-                f"{self.state['unresolved']} unresolved")
-            self._say("  reloaded")
+            self._say("  source files refreshed")
 
         def closeEvent(self, event):
             # Keep local worker ownership scoped to this native window.
