@@ -144,3 +144,22 @@ def test_specification_file_is_auto_discovered(project):
     assert "spec/requirements.md" in inventory["specifications"]
     state = build_state(str(project))
     assert "spec/requirements.md" in state["file_paths"]
+
+
+
+def test_ai_closure_plan_references_actual_uncovered_bins(project, monkeypatch):
+    (project / "coverage.json").write_text(json.dumps({
+        "bins": [{"name": "reset", "hits": 4},
+                 {"name": "overflow", "hits": 0}]}))
+    class Local:
+        def ask(self, prompt, system=""):
+            assert "overflow" in prompt
+            assert "REQ-02" in prompt
+            return "DRAFT: add overflow directed test"
+    monkeypatch.setattr(dv_pipeline, "model_client", lambda *_: Local())
+    closure = dv_pipeline.coverage_closure_draft(
+        project, "coverage.json", "spec/requirements.md",
+        "rtl/counter.sv", "ollama", "http://127.0.0.1:11434", "local-model")
+    assert closure["status"] == "draft_coverage_closure_plan"
+    assert closure["uncovered"] == ["overflow"]
+    assert "unchanged" in closure["warning"]
