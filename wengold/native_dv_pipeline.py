@@ -95,6 +95,11 @@ def make_dv_pipeline_tab(root, files, QtCore, QtGui, QtWidgets):
         btn = QtWidgets.QPushButton(action)
         btn.setObjectName(key + "Button")
         v.addWidget(btn)
+        if key in ("dvPlan", "dvUvm"):
+            save = QtWidgets.QPushButton("Save AI draft to wengold-drafts/")
+            save.setObjectName(key + "SaveDraft")
+            v.addWidget(save)
+            controls[key + "_save"] = save
         report = QtWidgets.QPlainTextEdit()
         report.setReadOnly(True)
         report.setObjectName(key + "Evidence")
@@ -210,6 +215,31 @@ def make_dv_pipeline_tab(root, files, QtCore, QtGui, QtWidgets):
             "Only run source and commands that you trust. Continue?")
         if accepted == QtWidgets.QMessageBox.StandardButton.Yes:
             handle("dvRegression", "regression", (root, name))
+
+    def save_generated(key):
+        item = state["results"].get(key)
+        if not item or item.get("status") != "draft_not_verified":
+            controls[key]["evidence"].appendPlainText("No AI draft available to export.")
+            return
+        kind = item["kind"]
+        default = "wengold-drafts/" + kind + (
+            ".sv" if kind in ("uvm", "sva") else ".md")
+        name, ok = QtWidgets.QInputDialog.getText(
+            page, "Export unverified draft",
+            "Project-relative output; existing files will not be replaced:", text=default)
+        if not ok:
+            return
+        try:
+            saved = dv_pipeline.save_draft(root, item, name.strip())
+            controls[key]["evidence"].appendPlainText(
+                "\n" + json.dumps(saved, indent=2))
+        except Exception as exc:
+            controls[key]["evidence"].appendPlainText(
+                "\nSave refused: " + str(exc))
+
+    for key in ("dvPlan", "dvUvm"):
+        controls[key + "_save"].clicked.connect(
+            lambda _checked=False, k=key: save_generated(k))
 
     controls["dvRegression"]["button"].clicked.connect(run_regression)
     controls["dvDebug"]["button"].clicked.connect(
