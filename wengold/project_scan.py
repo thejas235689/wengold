@@ -13,6 +13,8 @@ RTL_EXT = {".sv", ".svh", ".v", ".vh", ".vhd", ".vhdl"}
 AUTOMATION_EXT = {".py", ".tcl", ".do", ".mk", ".sh", ".yaml", ".yml", ".json"}
 VERIFICATION_EXT = RTL_EXT | {".pss", ".psf"}
 FILELIST_EXT = {".f", ".flist"}
+SPEC_EXT = {".md", ".txt", ".rst", ".pdf"}
+SPEC_HINTS = {"spec", "specs", "specification", "specifications", "requirements", "docs"}
 SKIP_DIRS = {".git", ".hg", ".svn", ".venv", "venv", "__pycache__", "node_modules",
              "target", "build", "dist", ".tox", ".pytest_cache", ".mypy_cache"}
 VERIFY_HINTS = {"tb", "testbench", "testbench_uvm", "tests", "test", "verification",
@@ -27,6 +29,9 @@ def category(rel: str) -> str | None:
     ext = path.suffix.lower()
     parents = {v.lower() for v in path.parts[:-1]}
     name = path.name.lower()
+    if ext in SPEC_EXT and (parents & SPEC_HINTS or
+                            name.startswith(("spec", "requirements", "prd"))):
+        return "specifications"
     if ext in FILELIST_EXT or name.startswith("flist."):
         return "filelists"
     if ext in {".pss", ".psf"}:
@@ -51,7 +56,7 @@ def discover(root: str | Path, *, max_files: int = MAX_FILES) -> dict:
         raise ValueError("project path must be an existing directory")
     if not 1 <= max_files <= MAX_FILES:
         raise ValueError("max_files outside supported limit")
-    categories = {name: [] for name in ("design", "verification", "automation", "filelists")}
+    categories = {name: [] for name in ("design", "verification", "automation", "filelists", "specifications")}
     signature = []
     skipped = 0
     for directory, dirs, names in os.walk(base, followlinks=False):
