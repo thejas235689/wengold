@@ -12,6 +12,8 @@ from pathlib import Path
 from .ide_server import Refused, SOURCE_SUFFIXES, MAX_BODY
 from .wave import from_vcd
 
+EDITOR_SUFFIXES = SOURCE_SUFFIXES | {".py", ".tcl", ".do", ".f", ".flist", ".pss", ".psf", ".yaml", ".yml", ".mk", ".sh"}
+
 MAX_VCD_BYTES = 8 * 1024 * 1024
 MAX_REPORT_BYTES = 2 * 1024 * 1024
 
@@ -31,7 +33,7 @@ def project_file(root: str | Path, rel: str, suffixes: set[str]) -> Path:
 
 
 def source(root: str | Path, rel: str) -> dict:
-    path = project_file(root, rel, SOURCE_SUFFIXES)
+    path = project_file(root, rel, EDITOR_SUFFIXES)
     if path.stat().st_size > MAX_BODY:
         raise Refused("source file exceeds editor limit", 413)
     data = path.read_bytes()
