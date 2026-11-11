@@ -103,3 +103,35 @@ def verify_anchor(ledger_file: str | Path, anchor_file: str | Path) -> dict:
     ok = digest == anchor["last_hash"]
     return {"ok": ok, "anchored_count": count,
             "current_count": len(records), "reason": "anchored prefix verified" if ok else "anchored history altered"}
+
+
+def main():
+    import argparse
+    p = argparse.ArgumentParser(description="WENGOLD cryptographic signoff and external ledger anchors")
+    sub = p.add_subparsers(dest="cmd", required=True)
+    sign = sub.add_parser("sign")
+    sign.add_argument("--job", required=True, help="JSON job evidence from Jobs view")
+    sign.add_argument("--reviewer", required=True)
+    sign.add_argument("--decision", choices=["accept", "reject"], required=True)
+    sign.add_argument("--private-key", required=True)
+    anchor = sub.add_parser("anchor")
+    anchor.add_argument("--ledger", required=True)
+    anchor.add_argument("--external-dir", required=True)
+    verify = sub.add_parser("verify")
+    verify.add_argument("--ledger", required=True)
+    verify.add_argument("--anchor", required=True)
+    args = p.parse_args()
+    if args.cmd == "sign":
+        job = json.loads(Path(args.job).read_text())
+        print(sign_claim(job, args.reviewer, args.decision, args.private_key))
+    elif args.cmd == "anchor":
+        print(json.dumps(export_anchor(args.ledger, args.external_dir), indent=2))
+    elif args.cmd == "verify":
+        result = verify_anchor(args.ledger, args.anchor)
+        print(json.dumps(result, indent=2))
+        if not result["ok"]:
+            raise SystemExit(1)
+
+
+if __name__ == "__main__":
+    main()
