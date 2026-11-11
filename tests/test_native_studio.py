@@ -73,3 +73,28 @@ def test_native_window_renders_offscreen(native_window):
     app.processEvents()
     assert window.grab().width() > 0
     assert window.workspace.count() >= 6
+
+
+
+def test_native_waveform_canvas_draws_real_vcd_and_selects_signal(native_window):
+    from PyQt6.QtWidgets import QPushButton
+    root, app, window = native_window
+    (root / "waves").mkdir(exist_ok=True)
+    (root / "waves" / "sample.vcd").write_text(
+        "$scope module tb $end\n$var wire 1 ! clk $end\n"
+        "$var wire 1 # unknown $end\n"
+        "$upscope $end\n$enddefinitions $end\n"
+        "#0\n0!\nx#\n#10\n1!\n1#\n")
+    tab = window.workspace
+    tab.refreshEvidence()
+    buttons = tab.findChildren(QPushButton)
+    load = next(x for x in buttons if x.text() == "Load VCD")
+    load.click()
+    assert tab.waveCanvas.data["cycles"] == 2
+    assert tab.waveCanvas.data["signals"]
+    assert tab.waveTable.rowCount() == 2
+    tab.waveCanvas.set_zoom(2)
+    assert tab.waveCanvas.zoom == 2
+    window.show()
+    app.processEvents()
+    assert tab.waveCanvas.grab().width() > 0
