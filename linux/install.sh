@@ -137,21 +137,52 @@ cp -R "$REPO/$APP" "$LIB/$APP"
 say "package -> $LIB/$APP"
 
 # ---- the launcher --------------------------------------------------------
-mkdir -p "$BIN"
-cat > "$BIN/$APP" <<LAUNCHER
+# Ensure a broken previous install produces an actionable error rather than a
+# cryptic 'line 141: cannot create ...' from a shell redirection.
+if ! mkdir -p "$BIN"; then
+    fail "cannot create launcher directory $BIN; check directory ownership and permissions"
+fi
+if [ -d "$BIN/$APP" ]; then
+    fail "$BIN/$APP is a DIRECTORY, not an executable; move or remove that directory before installing"
+fi
+if [ -e "$BIN/$APP" ] && [ ! -f "$BIN/$APP" ]; then
+    fail "$BIN/$APP exists but is not a regular file; move it before installing"
+fi
+if [ ! -w "$BIN" ]; then
+    fail "cannot write to $BIN; check permissions or choose --prefix under your HOME"
+fi
+if [ -e "$BIN/$APP" ] && [ ! -w "$BIN/$APP" ]; then
+    fail "existing $BIN/$APP is not writable; fix ownership or use a different --prefix"
+fi
+LAUNCH_TMP="$BIN/.wengold-launcher.$$"
+trap 'rm -f "$LAUNCH_TMP"' EXIT HUP INT TERM
+# Use a quoted heredoc: backticks, $@ and shell expansions in launcher
+# documentation cannot execute during installation. Substitute only two
+# approved literal placeholders, safely escaped as sed replacements.
+if ! cat > "$LAUNCH_TMP" <<'LAUNCHER'
 #!/bin/sh
-# WENGOLD launcher — written by linux/install.sh
-#
-# This runs the CLI, not the GUI. It used to exec $APP.native, which meant an
-# installed copy answered every subcommand by opening a window: \`wengold --version\`
-# and \`wengold cdc file.sv\` both tried to start Qt. \`wengold desktop\` is the way
-# into the GUI, and the .desktop entry below calls it directly.
-export PYTHONPATH="$LIB\${PYTHONPATH:+:\$PYTHONPATH}"
-exec "$PY" -m $APP.cli "\$@"
+# WENGOLD installed command-line launcher. GUI: wengold desktop --native
+export PYTHONPATH="@LIB@${PYTHONPATH:+:$PYTHONPATH}"
+exec "@PY@" -m wengold.cli "$@"
 LAUNCHER
-chmod 0755 "$BIN/$APP"
+then
+    fail "cannot write temporary launcher in $BIN (filesystem full or permissions)"
+fi
+# Python handles path substitution without sed's special-character hazards.
+if ! "$PY" - "$LAUNCH_TMP" "$LIB" "$PY" <<'PYEDIT'
+import pathlib, sys
+path = pathlib.Path(sys.argv[1])
+content = path.read_text()
+content = content.replace('@LIB@', sys.argv[2]).replace('@PY@', sys.argv[3])
+path.write_text(content)
+PYEDIT
+then
+    fail "cannot prepare launcher; inspect $BIN permissions"
+fi
+chmod 0755 "$LAUNCH_TMP" || fail "cannot make launcher executable at $BIN"
+mv -f "$LAUNCH_TMP" "$BIN/$APP" || fail "cannot replace $BIN/$APP; check permissions and ownership"
+trap - EXIT HUP INT TERM
 say "launcher -> $BIN/$APP"
-
 # ---- icon and desktop entry ---------------------------------------------
 mkdir -p "$APPS" "$ICONS"
 cp "$HERE/wengold.svg" "$ICONS/$APP.svg"
