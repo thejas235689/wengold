@@ -110,3 +110,42 @@ def test_real_inference_path_is_required_for_connection(monkeypatch):
     assert connected["ok"] and connected["status"] == "responding"
     missing = ai_workbench.test_connection("ollama", "http://127.0.0.1:11434", "absent")
     assert not missing["ok"] and missing["status"] == "model_missing"
+
+
+
+def test_rustdv_simulator_requires_real_script_and_pass_marker(tmp_path, monkeypatch):
+    from wengold import ai_workbench
+    checkout = tmp_path / "rustdv"
+    (checkout / "sim").mkdir(parents=True)
+    (checkout / "sim" / "run_rustdv.sh").write_text("#!/bin/sh\nexit 0\n")
+    monkeypatch.setattr(ai_workbench.shutil, "which",
+                        lambda name: "/bin/bash" if name == "bash" else None)
+    monkeypatch.setattr(ai_workbench, "run_tool",
+                        lambda *_args, **_kwargs: {
+                            "ok": True, "exit_code": 0, "output": "0 mismatches"
+                        })
+    inconclusive = ai_workbench.rustdv_simulate(tmp_path, "rustdv")
+    assert not inconclusive["ok"]
+    assert inconclusive["status"] == "regression_failed_or_unconfirmed"
+    monkeypatch.setattr(ai_workbench, "run_tool",
+                        lambda *_args, **_kwargs: {
+                            "ok": True, "exit_code": 0,
+                            "output": "REGRESSION: PASS"
+                        })
+    positive = ai_workbench.rustdv_simulate(tmp_path, "rustdv")
+    assert positive["status"] == "script_reported_pass"
+    assert positive["ok"]
+    with pytest.raises(ValueError):
+        ai_workbench.rustdv_simulate(tmp_path, "../../outside")
+
+
+def test_real_model_smoke_requires_configuration(monkeypatch, tmp_path):
+    import importlib.util
+    from pathlib import Path
+    script = Path(__file__).resolve().parents[1] / "tools" / "verify-local-ai-stack.py"
+    spec = importlib.util.spec_from_file_location("smoke_llm_stack", script)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    monkeypatch.delenv("WENGOLD_LLM_MODEL", raising=False)
+    assert module.main(["--project", str(tmp_path),
+                        "--output", str(tmp_path / "evidence.json")]) == 2
