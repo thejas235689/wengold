@@ -499,6 +499,7 @@ if(_ask){inp.value=_ask;setTimeout(()=>runCmd(_ask),120);}
 """
 
 from .studio_ui import STYLE as _STUDIO_STYLE, HTML as _STUDIO_HTML, JS as _STUDIO_JS
+from .studio_milestone_ui import CSS as _MS_CSS, HTML as _MS_HTML, JS as _MS_JS
 HTML = HTML.replace("</style></head>", _STUDIO_STYLE + "</style></head>")
 HTML = HTML.replace('<button type="button" class="workspace-tab" data-view="agent" aria-pressed="false">Agent CLI</button>',
     '<button type="button" class="workspace-tab" data-view="agent" aria-pressed="false">Agent CLI</button>'
@@ -509,6 +510,9 @@ HTML = HTML.replace('<button type="button" class="workspace-tab" data-view="agen
 HTML = HTML.replace('<div id="cli">', _STUDIO_HTML + '<div id="cli">')
 HTML = HTML.replace("\nboot();\n", "\n" + _STUDIO_JS + "\nboot();\n")
 HTML = HTML.replace('/*__STATE__*/', '/*__STATE__*/\nwindow.__WENGOLD_STUDIO_TOKEN__ = __STUDIO_TOKEN__;')
+HTML = HTML.replace("</style></head>", _MS_CSS + "</style></head>")
+HTML = HTML.replace('<section id="studio" aria-label="Engineering workspaces">', '<section id="studio" aria-label="Engineering workspaces">' + _MS_HTML)
+HTML = HTML.replace("\nboot();\n", "\n" + _MS_JS + "\nboot();\n")
 
 
 def build_state(path: str) -> dict:
@@ -996,6 +1000,15 @@ def _handler(state: dict):
                     payload = {"ok": False,
                                "output": f"{type(exc).__name__}: {exc}"}
                 self._json(payload)
+                return
+            if u.path == "/api/studio/probe":
+                from .studio_jobs import crossprobe
+                q = parse_qs(u.query)
+                try:
+                    self._json(crossprobe(state["path"], _files_of(state),
+                                          (q.get("signal") or [""])[0]))
+                except Refused as exc:
+                    self._send(json.dumps({"error": exc.reason}).encode(), "application/json", exc.status)
                 return
             if u.path == "/api/studio/jobs":
                 self._json(jobs.list_jobs())
