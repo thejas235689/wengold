@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 from .synthesis_tools import run_synthesis
+from .eda_flows import execute_manifest, inspect_manifest
 
 
 def make_implementation_tab(root, files, QtCore, QtGui, QtWidgets):
@@ -21,6 +22,9 @@ def make_implementation_tab(root, files, QtCore, QtGui, QtWidgets):
     top = QtWidgets.QLineEdit()
     top.setObjectName("implTop")
     top.setPlaceholderText("Module top (empty = auto-detect)")
+    liberty = QtWidgets.QLineEdit()
+    liberty.setObjectName("implLiberty")
+    liberty.setPlaceholderText("Optional project-relative cells.lib")
     synth = QtWidgets.QPushButton("Run Yosys Synthesis")
     synth.setObjectName("implRunSynthesis")
     toolbar.addWidget(QtWidgets.QLabel("RTL source"))
@@ -29,6 +33,10 @@ def make_implementation_tab(root, files, QtCore, QtGui, QtWidgets):
     toolbar.addWidget(top, 1)
     toolbar.addWidget(synth)
     outer.addLayout(toolbar)
+    librow = QtWidgets.QHBoxLayout()
+    librow.addWidget(QtWidgets.QLabel("Liberty for technology mapping"))
+    librow.addWidget(liberty)
+    outer.addLayout(librow)
 
     panes = QtWidgets.QSplitter(QtCore.Qt.Orientation.Horizontal)
     left = QtWidgets.QWidget()
@@ -49,11 +57,28 @@ def make_implementation_tab(root, files, QtCore, QtGui, QtWidgets):
     hierarchy.setObjectName("implHierarchy")
     hierarchy.setHeaderLabels(["Module / Cell type", "Count"])
     c.addWidget(hierarchy)
+    from .native_schematic import make_schematic_canvas
+    schematic = make_schematic_canvas(QtCore, QtGui, QtWidgets)
+    schematic_tabs = QtWidgets.QTabWidget()
+    schematic_tabs.setObjectName("implSchematicTabs")
+    schematic_tabs.addTab(schematic, "Gate schematic")
     netlist = QtWidgets.QPlainTextEdit()
     netlist.setObjectName("implNetlistDetails")
     netlist.setReadOnly(True)
     netlist.setPlaceholderText("Real generated module/cell breakdown appears here.")
-    c.addWidget(netlist)
+    schematic_tabs.addTab(netlist, "Netlist details")
+    c.addWidget(schematic_tabs, 2)
+    zoom_controls = QtWidgets.QHBoxLayout()
+    zin = QtWidgets.QPushButton("Zoom +")
+    zout = QtWidgets.QPushButton("Zoom -")
+    zin.setObjectName("implSchematicZoomIn")
+    zout.setObjectName("implSchematicZoomOut")
+    zin.clicked.connect(lambda: schematic.zoomSchematic(1.25))
+    zout.clicked.connect(lambda: schematic.zoomSchematic(0.8))
+    zoom_controls.addWidget(zin)
+    zoom_controls.addWidget(zout)
+    zoom_controls.addStretch()
+    c.addLayout(zoom_controls)
 
     right = QtWidgets.QWidget()
     r = QtWidgets.QVBoxLayout(right)
@@ -67,6 +92,22 @@ def make_implementation_tab(root, files, QtCore, QtGui, QtWidgets):
         "Power: NOT RUN. Requires activity and library power models.\n"
         "Generic cell counts will be shown after real synthesis.")
     r.addWidget(ppa)
+    r.addWidget(QtWidgets.QLabel("STA / power / physical — reviewed tool recipe"))
+    manifest = QtWidgets.QLineEdit()
+    manifest.setObjectName("implEdaManifest")
+    manifest.setPlaceholderText("flows/sta.json, flows/power.json or flows/drc.json")
+    r.addWidget(manifest)
+    inspect = QtWidgets.QPushButton("Inspect tool recipe")
+    inspect.setObjectName("implInspectFlow")
+    run_eda = QtWidgets.QPushButton("Run reviewed EDA flow")
+    run_eda.setObjectName("implRunFlow")
+    r.addWidget(inspect)
+    r.addWidget(run_eda)
+    flow_evidence = QtWidgets.QPlainTextEdit()
+    flow_evidence.setObjectName("implEdaEvidence")
+    flow_evidence.setReadOnly(True)
+    flow_evidence.setMaximumHeight(190)
+    r.addWidget(flow_evidence)
     for widget in (left, center, right):
         panes.addWidget(widget)
     panes.setSizes([330, 470, 320])
@@ -86,7 +127,14 @@ def make_implementation_tab(root, files, QtCore, QtGui, QtWidgets):
         @QtCore.pyqtSlot()
         def run(self):
             try:
-                self.completed.emit(run_synthesis(*self.args))
+                if self.args[0] == "synthesis":
+                    self.completed.emit(run_synthesis(*self.args[1:]))
+                elif self.args[0] == "inspect":
+                    self.completed.emit(inspect_manifest(*self.args[1:]))
+                elif self.args[0] == "eda":
+                    self.completed.emit(execute_manifest(*self.args[1:]))
+                else:
+                    raise ValueError("unknown workbench operation")
             except Exception as exc:
                 self.failed.emit(f"{type(exc).__name__}: {exc}")
 
@@ -117,12 +165,14 @@ def make_implementation_tab(root, files, QtCore, QtGui, QtWidgets):
                 item.addChild(QtWidgets.QTreeWidgetItem([cell_type, str(number)]))
             item.setExpanded(True)
         netlist.setPlainText(json.dumps(result["modules"], indent=2))
+        schematic.showSchematic(result.get("schematic_graph") or {})
         ppa.setPlainText(
             f"Modules: {result['module_count']}\n"
             f"Generic cells: {result['total_cells']}\n"
             f"Named wires: {result['total_wire_names']}\n\n"
             f"Timing: {result['timing']}\n"
             f"Physical area: {result['chip_area']}\n"
+            f"Mapping: {result.get('mapping', 'generic')}\n"
             f"Power: {result['power']}\n\n"
             f"RTL SHA256: {result['source_sha256']}\n"
             f"Netlist SHA256: {result['netlist_sha256']}\n"
@@ -139,7 +189,7 @@ def make_implementation_tab(root, files, QtCore, QtGui, QtWidgets):
         synth.setEnabled(False)
         status.setText("Running Yosys on the selected local RTL source…")
         thread = QtCore.QThread(page)
-        worker = Worker((root, rel, top.text().strip()))
+        worker = Worker(("synthesis", root, rel, top.text().strip(), liberty.text().strip()))
         state["thread"], state["worker"] = thread, worker
         worker.moveToThread(thread)
 
@@ -158,9 +208,55 @@ def make_implementation_tab(root, files, QtCore, QtGui, QtWidgets):
         thread.start()
 
     synth.clicked.connect(launch)
+    def eda_action(operation):
+        if state["busy"]:
+            return
+        name = manifest.text().strip()
+        if not name:
+            flow_evidence.setPlainText("Choose an existing project-relative reviewed flow manifest.")
+            return
+        if operation == "eda":
+            confirmation = QtWidgets.QMessageBox.question(
+                page, "Run approved EDA tool",
+                "This executes the command in the selected project recipe. "
+                "Only run manifests you have independently reviewed. Continue?")
+            if confirmation != QtWidgets.QMessageBox.StandardButton.Yes:
+                return
+        state["busy"] = True
+        inspect.setEnabled(False)
+        run_eda.setEnabled(False)
+        flow_evidence.setPlainText("Inspecting or running selected real EDA flow…")
+        thread = QtCore.QThread(page)
+        worker = Worker((operation, root, name))
+        worker.moveToThread(thread)
+        state["thread"], state["worker"] = thread, worker
+        def success(value):
+            flow_evidence.setPlainText(json.dumps(value, indent=2))
+            state["busy"] = False
+            inspect.setEnabled(True)
+            run_eda.setEnabled(True)
+            thread.quit()
+        def failure(error):
+            flow_evidence.setPlainText("EDA flow failed: " + error)
+            state["busy"] = False
+            inspect.setEnabled(True)
+            run_eda.setEnabled(True)
+            thread.quit()
+        worker.completed.connect(success)
+        worker.failed.connect(failure)
+        thread.started.connect(worker.run)
+        thread.finished.connect(worker.deleteLater)
+        thread.finished.connect(thread.deleteLater)
+        thread.start()
+
+    inspect.clicked.connect(lambda: eda_action("inspect"))
+    run_eda.clicked.connect(lambda: eda_action("eda"))
     page.refreshSources = refresh_files
     page.synthLog = synth_log
     page.hierarchy = hierarchy
     page.ppaReport = ppa
     page.synthButton = synth
+    page.schematicCanvas = schematic
+    page.mappedLiberty = liberty
+    page.flowEvidence = flow_evidence
     return page
