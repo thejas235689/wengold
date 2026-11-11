@@ -44,6 +44,42 @@ class StudioJobs:
         self._lock = threading.RLock()
         self._jobs: dict[str, dict] = {}
         self._ledger = Ledger(self.root / ".wengold-studio-ledger.jsonl")
+        self._restore_history()
+
+    def _restore_history(self):
+        """Recover recorded job outcomes without automatically restarting work.
+
+        Jobs that were queued/running at a previous shutdown are INTERRUPTED;
+        engineers must explicitly submit a new run against a fresh RTL snapshot.
+        """
+        if not self._ledger.audit().ok:
+            raise Refused("existing evidence ledger fails hash-chain audit", 409)
+        recovered = {}
+        for entry in self._ledger:
+            data = entry.get("payload", {})
+            kind = entry.get("kind")
+            jid = data.get("id") or data.get("job_id")
+            if not isinstance(jid, str):
+                continue
+            if kind == "studio_job_queued":
+                recovered[jid] = {
+                    "id": jid, "kind": data.get("kind"), "file": data.get("file"),
+                    "status": "interrupted", "source_sha256": data.get("source_sha256"),
+                    "result": None, "ledger_seq": entry.get("seq"),
+                }
+            elif kind == "studio_job_finished" and jid in recovered:
+                recovered[jid].update(
+                    status=data.get("status", "failed"), result=data.get("result"),
+                    stale=data.get("stale", True),
+                    result_sha256=data.get("result_sha256"),
+                    ledger_seq=entry.get("seq"))
+            elif kind == "studio_signoff_decision" and jid in recovered:
+                recovered[jid]["review"] = {
+                    "decision": data.get("decision"),
+                    "reviewer": data.get("reviewer"),
+                    "ledger_seq": entry.get("seq")}
+        self._jobs = dict(list(recovered.items())[-128:])
+
 
     def _record(self, kind: str, payload: dict) -> dict:
         return self._ledger.append(kind, payload)
