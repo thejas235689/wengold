@@ -48,8 +48,8 @@ def test_native_rtl_open_and_guarded_save(native_window):
     tab.loadSource("rtl/module.sv")
     assert "module module_a" in tab.sourceEditor.toPlainText()
     tab.sourceEditor.insertPlainText("\n// native editor change")
-    save = tab.findChild(type(tab.sourceEditor).parentWidget if False else __import__(
-        "PyQt6").QtWidgets.QPushButton, "saveRtlButton")
+    from PyQt6.QtWidgets import QPushButton
+    save = tab.findChild(QPushButton, "saveRtlButton")
     assert save is not None
     save.click()
     assert "native editor change" in (root / "rtl" / "module.sv").read_text()
