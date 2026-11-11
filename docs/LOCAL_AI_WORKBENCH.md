@@ -13,7 +13,7 @@ wengold doctor --llm
 wengold desktop --native ./rtl
 ```
 
-In the **Local AI** tab select `ollama`, `http://127.0.0.1:11434`, press **Connect / Models**, select the model, select an engineering discipline and enter a task. **Generate Draft** uses real model inference on a worker thread and displays its response as **DRAFT — NOT VERIFIED**. Errors and missing servers are reported explicitly. No silent cloud fallback is offered.
+In the **Local AI** tab select `ollama`, `http://127.0.0.1:11434`, press **Connect / Models**, select the model and press **Test Inference** to require a real generation round-trip, then select an engineering discipline and enter a task. **Generate Draft** uses real model inference on a worker thread and displays its response as **DRAFT — NOT VERIFIED**. Errors and missing servers are reported explicitly. No silent cloud fallback is offered. For the **RTL Design** profile, generation automatically runs the available Icarus syntax check, then an optional project-local testbench if configured. The result and its tool output are displayed beside the draft; failures do not disappear.
 
 ## Engineering prompt profiles
 
