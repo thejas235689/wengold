@@ -218,6 +218,6 @@ def rustdv_simulate(project_root: str | Path, rel: str = "",
     # The upstream README describes this exact regression marker.
     marker = "REGRESSION: PASS" in result["output"]
     status = "script_reported_pass" if result["ok"] and marker else "regression_failed_or_unconfirmed"
-    return {"status": status, "ok": result["ok"] and marker,
-            "simulator": simulator, "scope": "RustDV simulator script output, not independent signoff",
-            **result}
+    return {**result, "status": status, "ok": result["ok"] and marker,
+            "simulator": simulator,
+            "scope": "RustDV simulator script output, not independent signoff"}
