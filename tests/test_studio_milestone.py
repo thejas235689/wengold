@@ -91,3 +91,25 @@ def test_reject_invalid_job_configuration(tmp_path):
             jobs.submit("formal", "unit.sv", expr="")
     finally:
         jobs.shutdown()
+
+
+
+def test_pipeline_gates_formal_when_syntax_unavailable_or_invalid(tmp_path, monkeypatch):
+    from wengold import studio_jobs
+    (tmp_path / "bad.sv").write_text("module bad; endmodule\n")
+    monkeypatch.setattr(studio_jobs, "syntax_diagnostics", lambda *_: {
+        "status": "errors", "tool": "pyslang",
+        "diagnostics": [{"message": "parse error"}]
+    })
+    jobs = StudioJobs(tmp_path)
+    try:
+        result = poll(jobs, jobs.submit("pipeline", "bad.sv", expr="x == 1")["id"])
+        assert result["status"] == "completed"
+        assert result["result"]["skipped_formal"] is True
+        assert result["result"]["results"][0]["status"] == "unknown"
+        assert result["result"]["stages"][-1]["status"] == "skipped"
+        assert jobs.audit()["ok"]
+        with pytest.raises(Refused):
+            jobs.signoff(result["id"], "DV reviewer", "accept")
+    finally:
+        jobs.shutdown()
