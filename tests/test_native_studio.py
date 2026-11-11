@@ -193,3 +193,18 @@ def test_native_buttons_have_working_routing(native_window):
         assert button is not None and button.isEnabled(), button_name
     window.findChild(QtWidgets.QPushButton, "rescanFilesButton").click()
     assert "source files refreshed" in window.transcript.toPlainText()
+
+
+def test_implementation_ui_real_evidence_controls(native_window):
+    from PyQt6 import QtWidgets
+    root, app, window = native_window
+    tabs = window.workspace
+    assert "Synthesis / PPA" in [tabs.tabText(i) for i in range(tabs.count())]
+    panel = tabs.implementation
+    for key in ("implSource", "implTop", "implRunSynthesis",
+                "implSynthesisLog", "implHierarchy", "implPpaEvidence"):
+        assert panel.findChild(QtWidgets.QWidget, key), key
+    assert panel.findChild(QtWidgets.QComboBox, "implSource").findText(
+        "rtl/module.sv") >= 0
+    assert "NOT RUN" in panel.ppaReport.toPlainText()
+    assert "NOT AVAILABLE" in panel.ppaReport.toPlainText()
