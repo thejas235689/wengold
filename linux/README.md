@@ -121,3 +121,30 @@ Run the Qt tests with:
 ```sh
 QT_QPA_PLATFORM=offscreen python3 -m pytest -q tests/test_native_studio.py tests/test_native_app.py
 ```
+
+
+## Linux Studio hardening and dedicated smoke validation
+
+Native Waveforms now includes a zoomable Qt timeline. It renders actual VCD timestamps,
+high/low/unknown scalar values, and bus sample values; click a waveform row for a
+lexical RTL cross-probe. This is not a full timing-accurate mixed-signal debugger.
+
+Studio job history is restored from the project-local hash-chained evidence
+ledger after restart. Previously unfinished jobs appear as interrupted,
+and are not silently rerun. New work uses a single serialized local worker,
+not distributed scheduling.
+
+Accept Proof requires an optional reviewer credential configured in the launch
+environment. Calculate its SHA-256 digest securely, then set
+WENGOLD_REVIEW_KEY_SHA256 before launching the Linux Qt app.
+Reject Evidence remains available without a credential. This shared secret
+is a local approval gate, not user identity verification or authenticated tapeout
+signoff; the entered reviewer name is still self-asserted. Keep the password
+private and never commit its digest to the repository.
+
+Desktop launchers installed via linux/install.sh force native Qt mode,
+rather than silently opening a browser. The native window requires PyQt6.
+
+Dedicated workflow: .github/workflows/linux-desktop-smoke.yml
+This workflow runs on Ubuntu with a real offscreen Qt render, all focused
+native tests, source compilation, and launcher installation.
