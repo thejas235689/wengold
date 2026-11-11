@@ -63,6 +63,20 @@ jobs:
         run: |
           python -m wengold.native examples --screenshot linux-studio.png
           python -c "from pathlib import Path; p=Path('linux-studio.png'); assert p.is_file() and p.stat().st_size>10000, 'screenshot missing or empty'"
+      - name: Validate installer launcher collision and paths with spaces
+        run: |
+          sh -n linux/install.sh
+          mkdir -p "$RUNNER_TEMP/wengold collision/bin/wengold"
+          if sh linux/install.sh --prefix "$RUNNER_TEMP/wengold collision" > "$RUNNER_TEMP/collision.log" 2>&1; then
+            echo 'Directory collision should be rejected'
+            exit 1
+          fi
+          grep -q 'is a DIRECTORY' "$RUNNER_TEMP/collision.log"
+          rmdir "$RUNNER_TEMP/wengold collision/bin/wengold"
+          sh linux/install.sh --prefix "$RUNNER_TEMP/wengold collision"
+          "$RUNNER_TEMP/wengold collision/bin/wengold" --version
+          grep -q 'desktop --native' "$RUNNER_TEMP/wengold collision/share/applications/wengold.desktop"
+          sh linux/uninstall.sh --prefix "$RUNNER_TEMP/wengold collision"
       - name: Verify per-user Linux installation
         run: |
           mkdir -p "$RUNNER_TEMP/wengold-home"
