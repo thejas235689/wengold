@@ -14,6 +14,7 @@ on:
       - 'tests/test_native_studio.py'
       - 'tests/test_studio_milestone.py'
       - 'linux/**'
+      - 'pyproject.toml'
       - '.github/workflows/linux-desktop-smoke.yml'
   workflow_dispatch:
 
