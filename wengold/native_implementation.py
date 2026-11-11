@@ -37,6 +37,13 @@ def make_implementation_tab(root, files, QtCore, QtGui, QtWidgets):
     librow.addWidget(QtWidgets.QLabel("Liberty for technology mapping"))
     librow.addWidget(liberty)
     outer.addLayout(librow)
+    sdc_row = QtWidgets.QHBoxLayout()
+    sdc = QtWidgets.QLineEdit()
+    sdc.setObjectName("implSdc")
+    sdc.setPlaceholderText("Optional project-relative timing constraints .sdc")
+    sdc_row.addWidget(QtWidgets.QLabel("OpenSTA constraints"))
+    sdc_row.addWidget(sdc)
+    outer.addLayout(sdc_row)
 
     panes = QtWidgets.QSplitter(QtCore.Qt.Orientation.Horizontal)
     left = QtWidgets.QWidget()
@@ -166,6 +173,7 @@ def make_implementation_tab(root, files, QtCore, QtGui, QtWidgets):
             item.setExpanded(True)
         netlist.setPlainText(json.dumps(result["modules"], indent=2))
         schematic.showSchematic(result.get("schematic_graph") or {})
+        sta_report = result.get("sta_evidence") or {}
         ppa.setPlainText(
             f"Modules: {result['module_count']}\n"
             f"Generic cells: {result['total_cells']}\n"
@@ -177,6 +185,10 @@ def make_implementation_tab(root, files, QtCore, QtGui, QtWidgets):
             f"RTL SHA256: {result['source_sha256']}\n"
             f"Netlist SHA256: {result['netlist_sha256']}\n"
             f"{result['qualification']}")
+        if sta_report.get("log"):
+            flow_evidence.setPlainText(
+                "ACTUAL OpenSTA output (review setup/violations):\n"
+                + sta_report["log"])
 
     def launch():
         if state["busy"]:
@@ -189,7 +201,8 @@ def make_implementation_tab(root, files, QtCore, QtGui, QtWidgets):
         synth.setEnabled(False)
         status.setText("Running Yosys on the selected local RTL source…")
         thread = QtCore.QThread(page)
-        worker = Worker(("synthesis", root, rel, top.text().strip(), liberty.text().strip()))
+        worker = Worker(("synthesis", root, rel, top.text().strip(),
+                         liberty.text().strip(), sdc.text().strip()))
         state["thread"], state["worker"] = thread, worker
         worker.moveToThread(thread)
 
@@ -258,5 +271,6 @@ def make_implementation_tab(root, files, QtCore, QtGui, QtWidgets):
     page.synthButton = synth
     page.schematicCanvas = schematic
     page.mappedLiberty = liberty
+    page.timingConstraints = sdc
     page.flowEvidence = flow_evidence
     return page
