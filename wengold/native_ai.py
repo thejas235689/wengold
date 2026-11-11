@@ -10,7 +10,7 @@ import os
 from .ai_prompts import PROFILES
 from .eda_flows import inspect_manifest, execute_manifest
 from .ai_workbench import (generate, list_models, tool_status, validate_rtl, satya_check,
-                           satya_generate_uvm, rustdv_unit_check, test_connection)
+                           satya_generate_uvm, rustdv_unit_check, rustdv_simulate, test_connection)
 
 
 def create_ai_tab(root, QtCore, QtGui, QtWidgets, parent=None):
@@ -69,11 +69,14 @@ def create_ai_tab(root, QtCore, QtGui, QtWidgets, parent=None):
     uvm_btn.setObjectName("aiSatyaUvm")
     rust_btn = QtWidgets.QPushButton("RustDV Unit Tests")
     rust_btn.setObjectName("aiRustDv")
+    rustsim_btn = QtWidgets.QPushButton("Run RustDV VPI")
+    rustsim_btn.setObjectName("aiRustDvSimulator")
     actions.addWidget(generate_btn)
     actions.addWidget(compile_btn)
     actions.addWidget(satya_btn)
     actions.addWidget(uvm_btn)
     actions.addWidget(rust_btn)
+    actions.addWidget(rustsim_btn)
     eda_btn = QtWidgets.QPushButton("Run reviewed EDA flow")
     eda_btn.setObjectName("aiRunEdaFlow")
     actions.addWidget(eda_btn)
@@ -145,6 +148,8 @@ def create_ai_tab(root, QtCore, QtGui, QtWidgets, parent=None):
                     result = satya_generate_uvm(*self.values)
                 elif self.op == "rustdv":
                     result = rustdv_unit_check(*self.values)
+                elif self.op == "rustdv_sim":
+                    result = rustdv_simulate(*self.values)
                 elif self.op == "eda_inspect":
                     result = inspect_manifest(*self.values)
                 elif self.op == "eda_run":
@@ -163,7 +168,7 @@ def create_ai_tab(root, QtCore, QtGui, QtWidgets, parent=None):
             status.setText("A local AI or tool check is still running")
             return
         state["busy"] = True
-        for btn in (discover, roundtrip, generate_btn, compile_btn, satya_btn, uvm_btn, rust_btn, eda_btn, inspect_btn):
+        for btn in (discover, roundtrip, generate_btn, compile_btn, satya_btn, uvm_btn, rust_btn, rustsim_btn, eda_btn, inspect_btn):
             btn.setEnabled(False)
         status.setText("Running " + op + " (real local execution)…")
         thread = QtCore.QThread(page)
@@ -259,6 +264,8 @@ def create_ai_tab(root, QtCore, QtGui, QtWidgets, parent=None):
     satya_btn.clicked.connect(check_pss)
     uvm_btn.clicked.connect(lambda: perform("satya_uvm", (root, testbench.text().strip())))
     rust_btn.clicked.connect(lambda: perform("rustdv", (root, top.text().strip())))
+    rustsim_btn.clicked.connect(lambda: perform("rustdv_sim",
+                                               (root, top.text().strip(), "icarus")))
     inspect_btn.clicked.connect(lambda: perform("eda_inspect", (root, manifest.text().strip())))
 
     def run_eda():
