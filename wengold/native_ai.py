@@ -181,7 +181,8 @@ def create_ai_tab(root, QtCore, QtGui, QtWidgets, parent=None):
                         status.setText("Generated RTL FAILED an independent check")
             else:
                 evidence.setPlainText(json.dumps(result, indent=2))
-            status.setText(op + " completed; consult actual evidence and limits")
+            if op != "generate" or not isinstance(result.get("validation"), dict) or result["validation"]["status"] not in ("simulation_completed", "failed"):
+                status.setText(op + " completed; consult actual evidence and limits")
             finish()
 
         def error(message):
@@ -191,7 +192,7 @@ def create_ai_tab(root, QtCore, QtGui, QtWidgets, parent=None):
 
         def finish():
             state["busy"] = False
-            for btn in (discover, generate_btn, compile_btn, satya_btn):
+            for btn in (discover, roundtrip, generate_btn, compile_btn, satya_btn, uvm_btn, rust_btn):
                 btn.setEnabled(True)
             thread.quit()
 
