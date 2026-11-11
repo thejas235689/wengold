@@ -131,6 +131,29 @@ def make_studio_tabs(state, QtCore, QtGui, QtWidgets, parent=None):
     wave_table.horizontalHeader().setStretchLastSection(True)
     wave_table.setEditTriggers(QtWidgets.QAbstractItemView.EditTrigger.NoEditTriggers)
     wave_layout.addWidget(wave_table)
+    from .native_waveplot import build_wave_canvas
+    wave_canvas = build_wave_canvas(QtCore, QtGui, QtWidgets)
+    wave_scroll = QtWidgets.QScrollArea()
+    wave_scroll.setObjectName("waveformTimeline")
+    wave_scroll.setWidgetResizable(False)
+    wave_scroll.setWidget(wave_canvas)
+    wave_layout.insertWidget(wave_layout.count() - 1, wave_scroll, 2)
+    zoom_row = QtWidgets.QHBoxLayout()
+    zoom_label = QtWidgets.QLabel("Zoom 1.0×")
+    zoom_in = QtWidgets.QPushButton("Zoom +")
+    zoom_out = QtWidgets.QPushButton("Zoom −")
+    zoom_row.addWidget(zoom_label)
+    zoom_row.addWidget(zoom_out)
+    zoom_row.addWidget(zoom_in)
+    zoom_row.addStretch(1)
+    wave_layout.insertLayout(wave_layout.count() - 1, zoom_row)
+    zoom_in.clicked.connect(lambda: update_zoom(wave_canvas.zoom * 1.5))
+    zoom_out.clicked.connect(lambda: update_zoom(wave_canvas.zoom / 1.5))
+
+    def update_zoom(value):
+        wave_canvas.set_zoom(value)
+        zoom_label.setText(f"Zoom {wave_canvas.zoom:.1f}×")
+
     probe = QtWidgets.QPlainTextEdit()
     probe.setObjectName("rtlCrossProbe")
     probe.setReadOnly(True)
@@ -156,6 +179,7 @@ def make_studio_tabs(state, QtCore, QtGui, QtWidgets, parent=None):
         try:
             data = waveform(root, wave_picker.currentText())
             active_wave["data"] = data
+            wave_canvas.set_data(data)
             wave_table.setRowCount(len(data["signals"]))
             for index, signal in enumerate(data["signals"]):
                 samples = signal["values"]
@@ -189,6 +213,17 @@ def make_studio_tabs(state, QtCore, QtGui, QtWidgets, parent=None):
             probe.setPlainText(str(exc))
 
     wave_table.cellClicked.connect(select_signal)
+    def probe_selected_signal(signal_name):
+        data = active_wave["data"]
+        if not data:
+            return
+        for index, signal in enumerate(data["signals"]):
+            if signal["name"] == signal_name:
+                select_signal(index, 0)
+                wave_table.selectRow(index)
+                break
+
+    wave_canvas.signalSelected.connect(probe_selected_signal)
     wave_open.clicked.connect(load_wave)
     wave_refresh.clicked.connect(refresh_evidence)
     tabs.addTab(wave_page, "Waveforms")
@@ -338,6 +373,7 @@ def make_studio_tabs(state, QtCore, QtGui, QtWidgets, parent=None):
     tabs.loadSource = load_editor
     tabs.sourceEditor = editor
     tabs.waveTable = wave_table
+    tabs.waveCanvas = wave_canvas
     tabs.formalViewer = formal_result
     tabs.jobTable = job_table
     tabs.agentViewer = agent_trace
