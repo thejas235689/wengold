@@ -111,3 +111,36 @@ def test_ai_debug_only_evidence_hypotheses(project, monkeypatch):
                                 "http://127.0.0.1:11434", "local-model")
     assert result["status"] == "ai_debug_hypotheses_unverified"
     assert len(result["log_sha256"]) == 64
+
+
+
+def test_draft_export_is_explicit_and_never_overwrites(project):
+    draft = {"status": "draft_not_verified", "kind": "verification_plan",
+             "text": "# DRAFT verification plan"}
+    output = dv_pipeline.save_draft(
+        project, draft, "wengold-drafts/verification_plan.md")
+    assert output["status"] == "saved_unverified_draft"
+    assert (project / "wengold-drafts" / "verification_plan.md").is_file()
+    with pytest.raises(FileExistsError):
+        dv_pipeline.save_draft(project, draft, "wengold-drafts/verification_plan.md")
+    with pytest.raises(ValueError):
+        dv_pipeline.save_draft(project, draft, "rtl/counter.sv")
+    with pytest.raises(ValueError):
+        dv_pipeline.save_draft(project, draft, "../escape.md")
+
+
+def test_regression_rejects_vacuous_no_artifact_manifest(project):
+    (project / "flow.json").write_text(json.dumps({
+        "kind": "uvm", "argv": ["python3", "-V"],
+        "inputs": ["rtl/counter.sv"], "artifacts": []}))
+    with pytest.raises(ValueError, match="evidence"):
+        dv_pipeline.run_regression(project, "flow.json")
+
+
+def test_specification_file_is_auto_discovered(project):
+    from wengold.project_scan import discover
+    from wengold.desktop import build_state
+    inventory = discover(project)
+    assert "spec/requirements.md" in inventory["specifications"]
+    state = build_state(str(project))
+    assert "spec/requirements.md" in state["file_paths"]
