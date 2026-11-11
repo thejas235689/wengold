@@ -3,13 +3,14 @@
 CSS = """
 #milestone-controls{display:flex;align-items:center;flex-wrap:wrap;gap:7px;padding:8px 12px;background:#fffbea;border-bottom:1px solid #e5d8a7}
 #milestone-controls button{padding:6px 10px;background:#ffdf4e;color:#332700;border:1px solid #d3b42d;border-radius:6px;cursor:pointer;font-size:11px}
-#milestone-controls input{min-width:110px;max-width:220px;padding:7px;border:1px solid #d9cb9f;border-radius:6px;background:white;color:#2c281c}
+#milestone-controls select,#milestone-controls input{min-width:110px;max-width:220px;padding:7px;border:1px solid #d9cb9f;border-radius:6px;background:white;color:#2c281c}
 #milestone-output{padding:10px 14px;white-space:pre-wrap;max-height:175px;overflow:auto;font:11px/1.5 ui-monospace,monospace;color:#373127;background:#fffdf6;border-bottom:1px solid #eee4cb}
 """
 
 HTML = """
 <div id="milestone-controls" style="display:none">
- <input id="ms-property" placeholder="Formal property e.g. count <= 3" aria-label="Safety property">
+ <select id="ms-source" aria-label="RTL source for formal check"></select>
+ <input id="ms-property" placeholder="Formal property e.g. count &lt;= 3" aria-label="Safety property">
  <button id="ms-formal">Run Formal</button>
  <button id="ms-syntax">Syntax Diagnostics</button>
  <button id="ms-jobs">Refresh Jobs</button>
@@ -26,6 +27,10 @@ JS = r"""
 (function(){
 const $=id=>document.getElementById(id),panel=$('milestone-controls'),out=$('milestone-output');
 let jobId='';
+const sourceSelect=$('ms-source');
+for(const name of (window.__WENGOLD__?.tree?.files||[])){
+ const opt=document.createElement('option');opt.value=name;opt.textContent=name;sourceSelect.appendChild(opt);
+}
 const editor=$('studio-editor'),pick=$('studio-file');
 function message(value){out.style.display='block';out.textContent=typeof value==='string'?value:JSON.stringify(value,null,2)}
 function sync(){
@@ -34,7 +39,7 @@ function sync(){
  panel.style.display=enabled?'flex':'none';
  out.style.display=enabled?'block':'none';
  for(const [id,condition] of [
- ['ms-formal',v==='formal'],['ms-syntax',v==='editor'],['ms-jobs',v==='orchestrate'||v==='formal'],
+ ['ms-formal',v==='formal'],['ms-source',v==='formal'],['ms-syntax',v==='editor'],['ms-jobs',v==='orchestrate'||v==='formal'],
  ['ms-reviewer',v==='orchestrate'||v==='formal'],['ms-accept',v==='orchestrate'||v==='formal'],
  ['ms-reject',v==='orchestrate'||v==='formal'],['ms-property',v==='formal'],
  ['ms-signal',v==='wave'],['ms-probe',v==='wave']]){
@@ -48,7 +53,7 @@ async function request(url,body){
 }
 async function launch(kind){
  const rtl=(window.__WENGOLD__?.tree?.files||[]);
- const f=kind==='syntax'?pick.value:rtl[0];
+ const f=kind==='syntax'?pick.value:sourceSelect.value;
  if(!f)return message('No indexed RTL file selected.');
  if(kind==='syntax'&&$('studio-save').disabled===false)return message('Save RTL changes before diagnostics.');
  try{
@@ -71,6 +76,12 @@ async function signoff(decision){
 }
 $('ms-accept').addEventListener('click',()=>signoff('accept'));
 $('ms-reject').addEventListener('click',()=>signoff('reject'));
+$('studio-wave').addEventListener('click',event=>{
+ const row=event.target.closest('tr');if(!row)return;
+ const name=row.querySelector('td')?.textContent||'';
+ const cleaned=name.replace(/\s+\[\d+\]$/, '');
+ if(cleaned){$('ms-signal').value=cleaned;$('ms-probe').click()}
+});
 $('ms-probe').addEventListener('click',async()=>{
  const sig=$('ms-signal').value.trim();
  if(!sig)return message('Enter an exact waveform signal or leaf name.');
