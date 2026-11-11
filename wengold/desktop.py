@@ -518,10 +518,12 @@ HTML = HTML.replace("\nboot();\n", "\n" + _MS_JS + "\nboot();\n")
 def build_state(path: str) -> dict:
     """Everything the UI needs, computed once at startup."""
     from .cli import _collect
+    from .project_scan import discover
     from .graph.builder import GraphBuilder
     from .graph.model import NodeKind
 
     files = _collect(path)
+    inventory = discover(path) if Path(path).is_dir() else None
     g = GraphBuilder().build_from_files(files, backend="auto")
     c = g.completeness()
     blocks = sorted(n for n, d in g.nodes.items() if d.kind is NodeKind.RTL)
@@ -534,6 +536,10 @@ def build_state(path: str) -> dict:
 
     return {
         "path": str(path),
+        "project_inventory": inventory,
+        "verification_paths": inventory["verification"] if inventory else [],
+        "automation_paths": inventory["automation"] if inventory else [],
+        "filelist_paths": inventory["filelists"] if inventory else [],
         "files": len(files), "nodes": len(g.nodes), "edges": len(g.edges),
         "blocks": len(blocks), "unresolved": len(c["unresolved"]),
         # "coverage" invited the reading "test coverage". It is the share of
@@ -545,10 +551,12 @@ def build_state(path: str) -> dict:
         "complete": bool(c["complete"]),
         "notes": [n for n in dict.fromkeys(g.notes)][:3],
         "graph": g, "block_names": blocks,
-        "file_paths": sorted(
-            str(Path(f).resolve().relative_to(Path(path).resolve()))
-            if str(Path(f).resolve()).startswith(str(Path(path).resolve())) else f
-            for f in files),
+        "file_paths": sorted(set(
+            [str(Path(f).resolve().relative_to(Path(path).resolve()))
+             if Path(f).resolve().is_relative_to(Path(path).resolve()) else f
+             for f in files] +
+            ([v for category in ("design", "verification", "automation", "filelists")
+              for v in inventory[category]] if inventory else []))),
     }
 
 
