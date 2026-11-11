@@ -498,6 +498,18 @@ if(_ask){inp.value=_ask;setTimeout(()=>runCmd(_ask),120);}
 </script></body></html>
 """
 
+from .studio_ui import STYLE as _STUDIO_STYLE, HTML as _STUDIO_HTML, JS as _STUDIO_JS
+HTML = HTML.replace("</style></head>", _STUDIO_STYLE + "</style></head>")
+HTML = HTML.replace('<button type="button" class="workspace-tab" data-view="agent" aria-pressed="false">Agent CLI</button>',
+    '<button type="button" class="workspace-tab" data-view="agent" aria-pressed="false">Agent CLI</button>'
+    '<button type="button" class="workspace-tab" data-view="editor" aria-pressed="false">RTL Editor</button>'
+    '<button type="button" class="workspace-tab" data-view="wave" aria-pressed="false">Waveforms</button>'
+    '<button type="button" class="workspace-tab" data-view="formal" aria-pressed="false">Formal Results</button>'
+    '<button type="button" class="workspace-tab" data-view="orchestrate" aria-pressed="false">Agent Orchestration</button>')
+HTML = HTML.replace('<div id="cli">', _STUDIO_HTML + '<div id="cli">')
+HTML = HTML.replace("\nboot();\n", "\n" + _STUDIO_JS + "\nboot();\n")
+HTML = HTML.replace('/*__STATE__*/', '/*__STATE__*/\nwindow.__WENGOLD_STUDIO_TOKEN__ = __STUDIO_TOKEN__;')
+
 
 def build_state(path: str) -> dict:
     """Everything the UI needs, computed once at startup."""
@@ -604,7 +616,7 @@ def _table(rows, headers=("metric", "value")) -> str:
     return "\n".join(out)
 
 
-def _page(state: dict) -> str:
+def _page(state: dict, studio_token: str = '') -> str:
     """The app HTML with the initial state inlined."""
     import json as _json
     initial = {
@@ -621,7 +633,8 @@ def _page(state: dict) -> str:
     # "silently does nothing" failure this pane exists to avoid.
     verbs = _json.dumps(list(CLI_COMMANDS))
     return (HTML.replace("__BARE_VERBS__", verbs)
-            .replace("/*__STATE__*/", "window.__WENGOLD__ = " + blob + ";"))
+            .replace("/*__STATE__*/", "window.__WENGOLD__ = " + blob + ";")
+            .replace("__STUDIO_TOKEN__", _json.dumps(studio_token)))
 
 
 
@@ -928,6 +941,9 @@ def _singularity(state: dict) -> dict:
 
 
 def _handler(state: dict):
+    import secrets
+    from .studio_workspace import Refused, source as studio_source, save_source, list_evidence, waveform as studio_waveform, formal_report, MAX_BODY
+    token = secrets.token_urlsafe(32)
     cache: dict = {}
 
     class H(BaseHTTPRequestHandler):
@@ -950,7 +966,7 @@ def _handler(state: dict):
                 # Server-render the first paint. Fetching the initial state meant a
                 # blank window until three round-trips finished, and anything that
                 # screenshots or proxies the page before then saw "loading…".
-                self._send(_page(state).encode(), "text/html; charset=utf-8")
+                self._send(_page(state, token).encode(), "text/html; charset=utf-8")
                 return
             if u.path == "/api/summary":
                 self._json({k: v for k, v in state.items()
