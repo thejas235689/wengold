@@ -330,6 +330,7 @@ def build_window(state: dict):
                 ("verification", "Verification / UVM"),
                 ("automation", "Automation / Scripts"),
                 ("filelists", "Filelists / Build"),
+                ("specifications", "Specification / Requirements"),
             )
             grouped = set()
             for key, title in categories:
