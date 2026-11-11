@@ -118,6 +118,8 @@ def run_regression(root: str | Path, manifest_rel: str) -> dict:
     spec = inspect_manifest(root, manifest_rel)
     if spec["kind"] not in ("uvm", "rustdv_sim", "pss"):
         raise ValueError("regression must use a reviewed UVM, RustDV or PSS manifest")
+    if not spec["artifacts_expected"]:
+        raise ValueError("regression manifest must declare real output evidence artifacts")
     result = execute_manifest(root, manifest_rel)
     result["gate"] = ("tool_evidence_present" if result["ok"] else "failed_or_missing_evidence")
     result["note"] = ("Executable exit and artifacts are checked; this does not "
@@ -182,3 +184,30 @@ def triage(root: str | Path, report_rel: str, backend: str,
         "status": "ai_debug_hypotheses_unverified", "model": model,
         "source": report_rel, "log_sha256": _hash(raw), "text": response,
     }
+
+
+
+def save_draft(root: str | Path, artifact: dict, relative_output: str) -> dict:
+    """Explicit export of AI text, never overwrite pre-existing engineer files."""
+    if artifact.get("status") != "draft_not_verified" or not artifact.get("text"):
+        raise ValueError("only nonempty AI draft artifacts may be saved")
+    base = Path(root).resolve()
+    path = (base / relative_output).resolve()
+    if (not relative_output or Path(relative_output).is_absolute() or
+            not path.is_relative_to(base) or
+            path.suffix.lower() not in {".md", ".sv", ".txt"}):
+        raise ValueError("output must be a project-relative Markdown, text or SV file")
+    if path.exists() or path.is_symlink():
+        raise FileExistsError("refusing to overwrite existing project file")
+    # Restrict auto-generated files to their own explicit review directory.
+    allowed = base / "wengold-drafts"
+    if not path.is_relative_to(allowed):
+        raise ValueError("AI outputs must be saved under wengold-drafts/")
+    allowed.mkdir(parents=True, exist_ok=True)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    output = artifact["text"].encode("utf-8")
+    with path.open("xb") as stream:
+        stream.write(output)
+    return {"status": "saved_unverified_draft", "path": relative_output,
+            "sha256": _hash(output),
+            "warning": "Review, compile and run independent verification before using"}
