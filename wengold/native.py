@@ -387,6 +387,14 @@ def build_window(state: dict):
                 f"{self.state['unresolved']} unresolved")
             self._say("  reloaded")
 
+        def closeEvent(self, event):
+            # Keep local worker ownership scoped to this native window.
+            try:
+                self.workspace.jobs.shutdown()
+            except Exception:
+                pass
+            super().closeEvent(event)
+
         def _about(self):
             QtWidgets.QMessageBox.about(
                 self, "WENGOLD",
