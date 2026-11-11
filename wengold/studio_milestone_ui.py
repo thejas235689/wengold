@@ -16,6 +16,7 @@ HTML = """
  <button id="ms-syntax">Syntax Diagnostics</button>
  <button id="ms-jobs">Refresh Jobs</button>
  <input id="ms-reviewer" placeholder="Reviewer identity" aria-label="Reviewer identity">
+ <input id="ms-credential" type="password" placeholder="Review credential" aria-label="Reviewer credential">
  <button id="ms-accept">Accept Proof</button>
  <button id="ms-reject">Reject Evidence</button>
  <input id="ms-signal" placeholder="Signal for cross-probe" aria-label="Waveform signal name">
@@ -41,7 +42,7 @@ function sync(){
  out.style.display=enabled?'block':'none';
  for(const [id,condition] of [
  ['ms-formal',v==='formal'],['ms-pipeline',v==='formal'],['ms-source',v==='formal'],['ms-syntax',v==='editor'],['ms-jobs',v==='orchestrate'||v==='formal'],
- ['ms-reviewer',v==='orchestrate'||v==='formal'],['ms-accept',v==='orchestrate'||v==='formal'],
+ ['ms-reviewer',v==='orchestrate'||v==='formal'],['ms-credential',v==='orchestrate'||v==='formal'],['ms-accept',v==='orchestrate'||v==='formal'],
  ['ms-reject',v==='orchestrate'||v==='formal'],['ms-property',v==='formal'],
  ['ms-signal',v==='wave'],['ms-probe',v==='wave']]){
   $(id).style.display=condition?'inline-block':'none';
@@ -73,7 +74,7 @@ $('ms-jobs').addEventListener('click',async()=>{
  }catch(e){message(e.message)}
 });
 async function signoff(decision){
- try{const d=await request('/api/studio/signoff',{id:jobId,decision,reviewer:$('ms-reviewer').value});message(d)}
+ try{const d=await request('/api/studio/signoff',{id:jobId,decision,reviewer:$('ms-reviewer').value,credential:$('ms-credential').value});message(d)}
  catch(e){message('Review refused: '+e.message)}
 }
 $('ms-accept').addEventListener('click',()=>signoff('accept'));
