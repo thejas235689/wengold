@@ -1,0 +1,71 @@
+name: OpenPiton Compatibility Smoke
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'tools/check-openpiton.py'
+      - 'wengold/graph/**'
+      - 'wengold/desktop.py'
+      - 'wengold/native.py'
+      - '.github/workflows/openpiton-compat.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: openpiton-compat-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  bridge-and-native-ui:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      QT_QPA_PLATFORM: offscreen
+    steps:
+      - name: Checkout WENGOLD
+        uses: actions/checkout@v4
+        with:
+          path: wengold
+      - name: Checkout pinned Princeton OpenPiton
+        uses: actions/checkout@v4
+        with:
+          repository: PrincetonUniversity/openpiton
+          ref: 1c6bfd2d2ea53ddd7b6f933fa2d439d1a540e207
+          path: openpiton
+          submodules: false
+          persist-credentials: false
+      - name: Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install real parsers, Verilog compiler and native Linux UI
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y iverilog libegl1 libgl1 libopengl0 libxkbcommon-x11-0 libxcb-cursor0
+          python -m pip install --upgrade pip
+          python -m pip install 'pyslang==12.1.0' 'PyQt6>=6.6,<7'
+      - name: Index actual OpenPiton bridge and exercise WENGOLD desktop commands
+        working-directory: wengold
+        run: |
+          python tools/check-openpiton.py \
+            --openpiton ../openpiton \
+            --report ../openpiton-wengold-evidence.json
+          python -c "import json; d=json.load(open('../openpiton-wengold-evidence.json')); assert d['status']=='PASS_SUBSYSTEM_SMOKE'"
+      - name: Render native WENGOLD Linux desktop on actual OpenPiton RTL
+        working-directory: wengold
+        run: |
+          python -m wengold.native ../openpiton/piton/design/chip/chip_bridge/rtl \
+            --screenshot ../openpiton-linux-studio.png
+          python -c "from pathlib import Path; p=Path('../openpiton-linux-studio.png'); assert p.is_file() and p.stat().st_size>10000"
+      - name: Upload real source integration evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: openpiton-wengold-bridge-evidence
+          path: |
+            openpiton-wengold-evidence.json
+            openpiton-linux-studio.png
+          if-no-files-found: warn
