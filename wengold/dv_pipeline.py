@@ -116,8 +116,8 @@ def generate_artifact(root: str | Path, spec_rel: str, rtl_rel: str,
 
 def run_regression(root: str | Path, manifest_rel: str) -> dict:
     spec = inspect_manifest(root, manifest_rel)
-    if spec["kind"] not in ("uvm", "rustdv_sim", "pss"):
-        raise ValueError("regression must use a reviewed UVM, RustDV or PSS manifest")
+    if spec["kind"] not in ("simulation", "uvm", "rustdv_sim", "pss"):
+        raise ValueError("regression must use reviewed simulation, UVM, RustDV or PSS manifest")
     if not spec["artifacts_expected"]:
         raise ValueError("regression manifest must declare real output evidence artifacts")
     result = execute_manifest(root, manifest_rel)
