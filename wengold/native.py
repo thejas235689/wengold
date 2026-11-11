@@ -78,6 +78,14 @@ QPushButton { background:#FFDF4E; color:#322700; border:1px solid #D2B02C; borde
 QPushButton:hover { background:#FFE979; }
 QStatusBar { background:#FFF7DD; color:#68552C; }
 QSplitter::handle { background:#E8DCAD; }
+QDockWidget { background:#FFFFFF; color:#443914; font-weight:600; }
+QDockWidget::title { background:#FFE88D; color:#413400; padding:8px 12px;
+                     border-top:2px solid #D4AD27; }
+QTextEdit#ciwTranscript { background:#FFFEF8; border:0; color:#2C2B23;
+                         font-family:monospace; selection-background-color:#FFEB8F; }
+QLineEdit#ciwCommandInput { background:#FFFFFF; border:1px solid #D2BA66;
+                           padding:7px; font-family:monospace; color:#27251D; }
+QLabel#ciwPromptLabel { color:#806200; font-weight:800; font-family:monospace; }
 """
 
 
