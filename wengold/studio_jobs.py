@@ -194,7 +194,7 @@ class StudioJobs:
             ids = list(self._jobs)[-50:]
         return {"jobs": [self.get(i) for i in ids]}
 
-    def signoff(self, job_id: str, reviewer: str, decision: str) -> dict:
+    def signoff(self, job_id: str, reviewer: str, decision: str, credential: str = "") -> dict:
         if not isinstance(reviewer, str) or not 2 <= len(reviewer.strip()) <= 100:
             raise Refused("reviewer identity is required", 400)
         if decision not in ("accept", "reject"):
@@ -205,6 +205,16 @@ class StudioJobs:
         if not self._ledger.audit().ok:
             raise Refused("ledger audit failed", 409)
         if decision == "accept":
+            # A locally configured shared credential gates acceptance; reviewer
+            # names are still self-asserted and this is NOT tapeout authentication.
+            import os
+            import hmac
+            expected = os.environ.get("WENGOLD_REVIEW_KEY_SHA256", "")
+            if not expected or len(expected) != 64:
+                raise Refused("approval key not configured: set WENGOLD_REVIEW_KEY_SHA256", 403)
+            if not isinstance(credential, str) or not hmac.compare_digest(
+                    hashlib.sha256(credential.encode("utf-8")).hexdigest(), expected):
+                raise Refused("review credential invalid", 403)
             if job["kind"] not in ("formal", "pipeline") or not job["result"].get("results") or not all(
                 r.get("status") == "proof" for r in job["result"]["results"]
             ):
@@ -214,7 +224,8 @@ class StudioJobs:
                 raise Refused("already reviewed; decisions are immutable", 409)
             record = self._record("studio_signoff_decision", {
                 "job_id": job_id, "reviewer": reviewer.strip(), "decision": decision,
-                "result_sha256": job["result_sha256"], "source_sha256": job["source_sha256"]})
+                "result_sha256": job["result_sha256"], "source_sha256": job["source_sha256"],
+                "auth_method": "shared_credential_sha256" if decision == "accept" else "none"})
             self._jobs[job_id]["review"] = {"decision": decision,
                                             "reviewer": reviewer.strip(), "ledger_seq": record["seq"]}
             return dict(self._jobs[job_id])
