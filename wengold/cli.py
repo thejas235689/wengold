@@ -11,16 +11,34 @@ SRC_EXT = {".sv", ".svh", ".v", ".vh", ".rdl", ".f", ".vhd", ".vhdl"}
 
 
 def _collect(path: str) -> dict[str, str]:
-    files: dict[str, str] = {}
+    """Collect HDL and filelists without recursively indexing build/cache trees.
+
+    Source files are keyed relative to the supplied root. File collections are
+    bounded so opening a huge project does not consume unlimited memory.
+    """
+    import os
+    from .project_scan import SKIP_DIRS, MAX_FILES
     p = Path(path)
     if p.is_file():
-        files[p.name] = p.read_text(errors="replace")
-        return files
-    for f in sorted(p.rglob("*")):
-        if f.is_file() and f.suffix.lower() in SRC_EXT:
-            files[str(f.relative_to(p))] = f.read_text(errors="replace")
+        return {p.name: p.read_text(errors="replace")}
+    if not p.is_dir():
+        raise FileNotFoundError(f"project directory does not exist: {path}")
+    files: dict[str, str] = {}
+    for dirname, dirs, names in os.walk(p, followlinks=False):
+        dirs[:] = sorted(d for d in dirs if d not in SKIP_DIRS
+                         and not (Path(dirname) / d).is_symlink())
+        for name in sorted(names):
+            current = Path(dirname) / name
+            if current.is_symlink() or not current.is_file():
+                continue
+            if current.suffix.lower() not in SRC_EXT:
+                continue
+            if len(files) >= MAX_FILES:
+                raise ValueError(
+                    f"more than {MAX_FILES} HDL/filelist files; choose a smaller "
+                    "design folder or a filtered project filelist")
+            files[str(current.relative_to(p))] = current.read_text(errors="replace")
     return files
-
 
 def _read(path: str) -> str:
     p = Path(path)
