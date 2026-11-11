@@ -221,3 +221,37 @@ Validate with offscreen Qt:
 ```sh
 QT_QPA_PLATFORM=offscreen python3 -m pytest -q tests/test_native_app.py tests/test_native_studio.py
 ```
+
+## Choosing and automatically loading design + verification projects
+
+Launching WENGOLD from the Linux application menu opens a native folder
+chooser. Select the project root containing RTL and testbench sources.
+Within the window, click **Open Project** or use **Ctrl+O** to switch
+projects. **Rescan Files** reloads source files; the app checks for changed
+files every 10 seconds, deferring re-indexing when the editor has unsaved edits.
+
+The Overview explorer shows distinct groups for Design RTL, Verification/UVM,
+Automation/Scripts, and Filelists. The same files appear in the editor source
+picker; existing .sv, .v, .vhd, .pss, .py, .tcl and other supported scripts
+can be viewed and saved with external-modification protection. Automation
+scripts are never executed merely because they were discovered or opened.
+
+The **Synthesis / PPA** workspace uses a real installed Yosys executable for
+bounded single-source generic synthesis. It shows actual module/cell/wire
+counts and a source/netlist digest; technology-mapped area, real STA,
+power estimates and detailed schematic require separate EDA flows.
+No simulated results are substituted for tool evidence.
+
+Generated build directories, Python venvs and source-control metadata are
+excluded from the HDL scanner. Projects exceeding 12,000 relevant sources
+must be scoped down or loaded through a filtered filelist flow.
+
+Recommended:
+
+```sh
+cd ~/wengold && git pull origin main
+sh linux/install-desktop.sh
+~/.local/bin/wengold desktop --native /absolute/path/to/your/project
+```
+
+Select the actual project folder rather than the entire home directory.
