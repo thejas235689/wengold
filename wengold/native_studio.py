@@ -118,6 +118,11 @@ def make_studio_tabs(state, QtCore, QtGui, QtWidgets, parent=None):
     syntax_btn.clicked.connect(lambda: start_job("syntax", edit_state["file"]))
     tabs.addTab(edit_page, "RTL Editor")
 
+    from .native_implementation import make_implementation_tab
+    implementation = make_implementation_tab(root, files, QtCore, QtGui, QtWidgets)
+    tabs.addTab(implementation, "Synthesis / PPA")
+    tabs.implementation = implementation
+
     # Waveforms: real VCD samples with click-to-crossprobe and no fake signals.
     wave_page, wave_layout = column()
     wave_picker = QtWidgets.QComboBox()
@@ -468,6 +473,7 @@ def make_studio_tabs(state, QtCore, QtGui, QtWidgets, parent=None):
         state = new_state
         updated = list(new_state.get("file_paths", []))
         files[:] = updated
+        implementation.refreshSources(updated)
         for picker in (edit_picker, formal_picker, worker_source):
             previous = picker.currentText()
             picker.blockSignals(True)
