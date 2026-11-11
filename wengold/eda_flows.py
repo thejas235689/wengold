@@ -92,6 +92,10 @@ def _load(root, manifest_rel):
 def execute_manifest(project_root: str | Path, manifest_rel: str) -> dict:
     root, spec, binary, argv, inputs, outputs, timeout, manifest_hash = _load(
         project_root, manifest_rel)
+    before_outputs = {
+        name: (path.stat().st_mtime_ns, _digest(path)) if path.is_file() else None
+        for name, path in outputs.items()
+    }
     started = time.time()
     base = {"kind": spec["kind"], "scope": FLOWS[spec["kind"]],
             "manifest": manifest_rel, "manifest_sha256": manifest_hash,
@@ -113,9 +117,15 @@ def execute_manifest(project_root: str | Path, manifest_rel: str) -> dict:
         log, status, code, ok = str(exc), "tool_unavailable", None, False
     seen = {name: _digest(path) for name, path in outputs.items() if path.is_file()}
     missing = [name for name in outputs if name not in seen]
+    stale = [name for name, path in outputs.items()
+             if name in seen and before_outputs[name] is not None and
+             (path.stat().st_mtime_ns, seen[name]) == before_outputs[name]]
     if missing:
         ok = False
         status = "evidence_missing"
+    elif stale:
+        ok = False
+        status = "stale_evidence"
     now_inputs = {}
     for name in inputs:
         try:
@@ -128,6 +138,7 @@ def execute_manifest(project_root: str | Path, manifest_rel: str) -> dict:
     return {**base, "ok": ok, "status": status, "exit_code": code,
             "finished_at": time.time(), "log": log,
             "artifacts_sha256": seen, "missing_artifacts": missing,
+            "stale_artifacts": stale,
             "input_unchanged": now_inputs == inputs,
             "qualification": "ENGINEERING TOOL RUN ONLY — not signoff"}
 
