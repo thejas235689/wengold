@@ -98,9 +98,14 @@ def test_the_desktop_entry_uses_an_absolute_exec(fake_home):
     body = (fake_home / ".local" / "share" / "applications"
             / "wengold.desktop").read_text()
     exec_line = [l for l in body.splitlines() if l.startswith("Exec=")][0]
-    path = exec_line.split("=", 1)[1].split()[0]
+    # Desktop entry Exec permits a quoted absolute executable, especially
+    # when users install under a prefix containing spaces.
+    import shlex
+    argv = shlex.split(exec_line.split("=", 1)[1])
+    path = argv[0]
     assert path.startswith("/"), exec_line
     assert Path(path).exists(), f"{path} does not exist"
+    assert argv[1:3] == ["desktop", "--native"]
 
 
 def test_the_desktop_entry_substitutes_both_placeholders(fake_home):
