@@ -71,7 +71,7 @@ def list_evidence(root: str | Path) -> dict:
             if not path.is_file() or path.is_symlink():
                 continue
             try:
-                rel = str(path.relative_to(base))
+                rel = path.relative_to(base).as_posix()
                 size = path.stat().st_size
             except OSError:
                 continue
