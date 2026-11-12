@@ -9,6 +9,7 @@ manager.
 These tests run the CLI with numpy, pyslang, z3 and PyQt6 all blocked, so a
 regression that quietly adds a hard dependency fails here.
 """
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -41,7 +42,7 @@ def run_blocked(argv):
         "raise SystemExit(main())\n")
     return subprocess.run([sys.executable, "-c", code], cwd=REPO,
                           capture_output=True, text=True, timeout=120,
-                          env={"PYTHONPATH": str(REPO)})
+                          env={**os.environ, "PYTHONPATH": str(REPO)})
 
 
 def test_version_works_with_no_packages():
