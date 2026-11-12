@@ -19,7 +19,7 @@ import pytest
 REPO = Path(__file__).resolve().parent.parent
 INSTALL = REPO / "linux" / "install.sh"
 
-pytestmark = pytest.mark.skipif(not INSTALL.exists(), reason="no linux/install.sh")
+pytestmark = pytest.mark.skipif(os.name == "nt" or not INSTALL.exists(), reason="POSIX Linux installer requires a shell")
 
 
 @pytest.fixture
@@ -104,6 +104,7 @@ def test_an_old_python_is_refused_with_the_fix(monkeypatch, tmp_path):
         'exec ' + sys.executable + ' "$@"\n')
     fake.chmod(0o755)
     env = dict(os.environ, HOME=str(tmp_path / "h"),
+               WENGOLD_PYTHON=str(fake),
                PATH=f"{shim}:{os.environ['PATH']}")
     r = subprocess.run(["sh", str(INSTALL)], cwd=REPO, env=env,
                        capture_output=True, text=True, timeout=60)
