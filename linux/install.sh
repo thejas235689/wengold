@@ -53,7 +53,17 @@ fail() { printf '  error: %s\n' "$*" >&2; exit 1; }
 # Explicit installed interpreter wins; otherwise select a suitable 3.11+.
 # Rocky 9 ships python3=3.9, but may have python3.11 installed alongside it.
 PY=""
-for candidate in "${WENGOLD_PYTHON:-}" python3.13 python3.12 python3.11 python3; do
+if [ -n "${WENGOLD_PYTHON:-}" ]; then
+    if ! command -v "$WENGOLD_PYTHON" >/dev/null 2>&1; then
+        fail "requested WENGOLD_PYTHON=$WENGOLD_PYTHON not found"
+    fi
+    if ! "$WENGOLD_PYTHON" -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 11) else 1)' 2>/dev/null; then
+        fail "WENGOLD needs Python 3.11 or newer; requested $WENGOLD_PYTHON is unsupported. On Rocky Linux 9 install python3.11 alongside system python3; do not replace python3 because dnf runs on it."
+    fi
+    PY=$(command -v "$WENGOLD_PYTHON")
+fi
+for candidate in python3.13 python3.12 python3.11 python3; do
+    [ -z "$PY" ] || break
     [ -n "$candidate" ] || continue
     command -v "$candidate" >/dev/null 2>&1 || continue
     if "$candidate" -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 11) else 1)' 2>/dev/null; then
