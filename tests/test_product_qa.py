@@ -163,3 +163,21 @@ def test_active_llm_job_prevents_closing_and_project_switch(qa_window, monkeypat
     assert window.close() is False
     assert "DV Workflow" in messages[-1]
     state["busy"] = False
+
+
+
+def test_local_ai_connection_button_reports_real_model_discovery(qa_window, monkeypatch):
+    from PyQt6 import QtWidgets
+    from wengold import ai_workbench
+    root, app, window = qa_window
+    panel = window.workspace.dvWorkflow
+    selected = panel.findChild(QtWidgets.QLineEdit, "dvModel").text()
+    monkeypatch.setattr(ai_workbench, "list_models",
+                        lambda backend, endpoint: [selected])
+    check = panel.findChild(QtWidgets.QPushButton, "dvTestConnection")
+    assert check.isEnabled()
+    check.click()
+    _await(app, lambda: "Model ready:" in panel.findChild(
+        QtWidgets.QLabel, "dvModelStatus").text())
+    assert not panel.pipelineState["busy"]
+    assert check.isEnabled()
