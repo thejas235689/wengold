@@ -48,7 +48,14 @@ def make_dv_pipeline_tab(root, files, QtCore, QtGui, QtWidgets):
     modelrow.addWidget(backend)
     modelrow.addWidget(endpoint, 2)
     modelrow.addWidget(model, 2)
+    check_model = QtWidgets.QPushButton("Test connection")
+    check_model.setObjectName("dvTestConnection")
+    check_model.setToolTip("Discover models from the configured local Ollama or OpenAI-compatible server")
+    modelrow.addWidget(check_model)
     layout.addLayout(modelrow)
+    model_status = QtWidgets.QLabel("Local AI not tested · No inference has run")
+    model_status.setObjectName("dvModelStatus")
+    layout.addWidget(model_status)
 
     phases = QtWidgets.QTabWidget()
     phases.setObjectName("dvWorkflowStages")
@@ -135,6 +142,11 @@ def make_dv_pipeline_tab(root, files, QtCore, QtGui, QtWidgets):
         def run(self):
             try:
                 functions = {
+                    "probe": lambda backend, endpoint, model: {
+                        "status": "connected" if model in
+                        __import__("wengold.ai_workbench", fromlist=["list_models"])
+                        .list_models(backend, endpoint) else "model_not_found",
+                        "model": model},
                     "intake": dv_pipeline.intake,
                     "generate": dv_pipeline.generate_artifact,
                     "regression": dv_pipeline.run_regression,
@@ -204,6 +216,36 @@ def make_dv_pipeline_tab(root, files, QtCore, QtGui, QtWidgets):
         thread.finished.connect(worker.deleteLater)
         thread.finished.connect(thread.deleteLater)
         thread.start()
+
+    def check_connection():
+        if state["busy"]:
+            model_status.setText("Another DV task is running")
+            return
+        state["busy"] = True
+        check_model.setEnabled(False)
+        model_status.setText("Connecting to local model server…")
+        thread = QtCore.QThread(page)
+        worker = Worker("probe", (backend.currentText(),
+                                  endpoint.text().strip(), model.text().strip()))
+        state["thread"], state["worker"] = thread, worker
+        worker.moveToThread(thread)
+        def finished(message):
+            model_status.setText(message)
+            state["busy"] = False
+            check_model.setEnabled(True)
+            thread.quit()
+        worker.succeeded.connect(lambda result:
+            finished("Model ready: " + result["model"] if
+                     result["status"] == "connected" else
+                     "Server reachable; chosen model not installed. "
+                     "Select or pull the exact model before generating."))
+        worker.failed.connect(lambda error: finished("Local AI unavailable: " + error))
+        thread.started.connect(worker.run)
+        thread.finished.connect(worker.deleteLater)
+        thread.finished.connect(thread.deleteLater)
+        thread.start()
+
+    check_model.clicked.connect(check_connection)
 
     controls["dvIntake"]["button"].clicked.connect(
         lambda: handle("dvIntake", "intake", current_sources()))
