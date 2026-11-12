@@ -17,6 +17,7 @@ def diagnostics(window, QtWidgets) -> dict:
         "waveforms": ("waveFilePicker", "waveformTable", "waveRootCauseCandidates"),
         "formal": ("formalSourcePicker",),
         "local_ai": ("aiBackend", "aiConnect", "aiGenerate", "aiEvidence"),
+        "dv_workflow": ("dvSpec", "dvRtl", "dvIntakeButton", "dvPlanButton", "dvTestConnection", "dvCoverageButton"),
         "workers": ("durableWorkerQueue",),
     }
     ui = {}
@@ -29,7 +30,7 @@ def diagnostics(window, QtWidgets) -> dict:
         ui[category] = {"present": present, "missing": missing,
                         "controls_present": len(missing) == 0}
     commands = ("iverilog", "vvp", "verilator", "yosys", "cargo",
-                "satya", "opensta", "ngspice", "klayout")
+                "satya", "sta", "ngspice", "klayout")
     tools = {name: shutil.which(name) for name in commands}
     inventory = window.state.get("project_inventory") or {}
     path = Path(window.state["path"])
