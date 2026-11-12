@@ -23,10 +23,10 @@ def run_synthesis(root: str | Path, rel: str, top: str = "", liberty: str = "", 
     path = project_file(root, rel, {".v", ".sv"})
     if path.stat().st_size > 2_000_000:
         raise ValueError("source exceeds 2 MiB single-file synthesis limit")
-    yosys = shutil.which("yosys")
-    if not yosys:
-        return {"ok": False, "status": "unavailable", "message":
-                "Yosys is not installed. Install yosys or configure a reviewed EDA flow."}
+    # Validate caller options before checking the host toolchain. Invalid
+    # constraints are an input error even if Yosys is not installed.
+    if sdc and (not liberty or not top):
+        raise ValueError("STA requires both an explicit top module and Liberty")
     lib_path = None
     if liberty:
         lib_path = project_file(root, liberty, {".lib"})
@@ -39,6 +39,10 @@ def run_synthesis(root: str | Path, rel: str, top: str = "", liberty: str = "", 
         sdc_path = project_file(root, sdc, {".sdc"})
         if sdc_path.stat().st_size > 1_000_000:
             raise ValueError("SDC exceeds 1 MiB analysis limit")
+    yosys = shutil.which("yosys")
+    if not yosys:
+        return {"ok": False, "status": "unavailable", "message":
+                "Yosys is not installed. Install yosys or configure a reviewed EDA flow."}
     source = path.read_bytes()
     with tempfile.TemporaryDirectory(prefix="wengold-yosys-") as temp:
         work = Path(temp)
