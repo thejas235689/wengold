@@ -520,10 +520,41 @@ def build_window(state: dict):
         def _say(self, text: str):
             self.transcript.append(text)
 
+        def _active_operations(self):
+            """Prevent Qt worker threads being destroyed during project switch."""
+            active = []
+            workspace = self.workspace
+            checks = (
+                ("Local AI", getattr(getattr(workspace, "aiPage", None), "aiState", None)),
+                ("DV Workflow", getattr(getattr(workspace, "dvWorkflow", None), "pipelineState", None)),
+                ("Synthesis / EDA", getattr(getattr(workspace, "implementation", None), "synthesisState", None)),
+                ("Wave Debug AI", getattr(getattr(workspace, "waveDebug", None), "debugState", None)),
+            )
+            for name, state in checks:
+                if not state:
+                    continue
+                if state.get("busy"):
+                    active.append(name)
+                    continue
+                thread = state.get("thread")
+                try:
+                    if thread is not None and thread.isRunning():
+                        active.append(name)
+                except RuntimeError:
+                    pass
+            return active
+
         def _open_project(self):
             folder = QtWidgets.QFileDialog.getExistingDirectory(
                 self, "Open RTL and verification project", self.state["path"])
             if not folder:
+                return
+            active = self._active_operations()
+            if active:
+                QtWidgets.QMessageBox.warning(
+                    self, "Project is busy",
+                    "Cannot switch projects while these jobs are running: "
+                    + ", ".join(active) + ". Finish the jobs first.")
                 return
             if self.workspace.editorDirty():
                 decision = QtWidgets.QMessageBox.question(
@@ -604,7 +635,15 @@ def build_window(state: dict):
             self._say("  source files refreshed")
 
         def closeEvent(self, event):
-            # Keep local worker ownership scoped to this native window.
+            active = self._active_operations()
+            if active:
+                QtWidgets.QMessageBox.warning(
+                    self, "Verification job running",
+                    "Finish the active job before closing WENGOLD: "
+                    + ", ".join(active) + ".")
+                event.ignore()
+                return
+            # Do not delete a window with live QThreads owned by its pages.
             try:
                 self.workspace.jobs.shutdown()
             except Exception:
