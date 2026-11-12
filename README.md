@@ -22,6 +22,11 @@ Everything above is dual-licensed under MIT or Apache-2.0. Commercial tools plug
 in through adapters; the open stack (Verilator, Icarus, cocotb, Yosys,
 SymbiYosys, Z3, GTKWave) is first-class.
 
+**Patent licensing:** Apache-2.0 Section 3 contains an express, limited contributor
+patent grant. See [PATENTS.md](PATENTS.md) for scope, exclusions, and how it
+differs from the MIT option. This notice does not create a new patent grant
+or register a patent.
+
 ## Why
 
 A late change to RTL, a register map or a clock tree puts earlier results in
