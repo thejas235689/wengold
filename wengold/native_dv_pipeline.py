@@ -75,6 +75,11 @@ def make_dv_pipeline_tab(root, files, QtCore, QtGui, QtWidgets):
             "Outputs are evidence-gated. Generated content is DRAFT until independently checked.")
         help_label.setWordWrap(True)
         v.addWidget(help_label)
+        step_status = QtWidgets.QLabel("NOT RUN · no evidence")
+        step_status.setObjectName(key + "Status")
+        step_status.setStyleSheet("color:#665C35; font-weight:600; padding:3px 0;")
+        v.addWidget(step_status)
+        controls[key + "_status"] = step_status
         if key == "dvUvm":
             uvm_choice = QtWidgets.QComboBox()
             uvm_choice.setObjectName("dvArtifactKind")
@@ -177,6 +182,7 @@ def make_dv_pipeline_tab(root, files, QtCore, QtGui, QtWidgets):
         for pair in controls.values():
             if isinstance(pair, dict):
                 pair["button"].setEnabled(False)
+        controls[key + "_status"].setText("RUNNING · waiting for tool/model evidence")
         banner.setText("Running " + key + " — waiting for actual local result.")
         thread = QtCore.QThread(page)
         worker = Worker(op, values)
@@ -201,12 +207,18 @@ def make_dv_pipeline_tab(root, files, QtCore, QtGui, QtWidgets):
                     {k: v for k, v in result.items() if k != "text"}, indent=2))
             else:
                 output.setPlainText(json.dumps(result, indent=2, default=str))
-            banner.setText(key + ": " + result.get("status", "completed") +
-                           " — not signoff")
+            run_status = str(result.get("status", "completed"))
+            label = ("DRAFT · human review required" if "draft" in run_status
+                     else "EVIDENCE IMPORTED · no signoff" if key in ("dvRegression", "dvCoverage")
+                     else "SOURCE LOADED · not verified" if key == "dvIntake"
+                     else "HYPOTHESIS · confirm with independent tests")
+            controls[key + "_status"].setText(label)
+            banner.setText(key + ": " + run_status + " — not signoff")
             done()
 
         def failed(message):
             output.setPlainText("FAILED / NO VALID EVIDENCE\n" + message)
+            controls[key + "_status"].setText("FAILED · no checks credited")
             banner.setText(key + ": failed — no checks credited")
             done()
 
@@ -321,6 +333,7 @@ def make_dv_pipeline_tab(root, files, QtCore, QtGui, QtWidgets):
             for key in ("dvIntake", "dvPlan", "dvUvm", "dvRegression", "dvDebug", "dvCoverage"):
                 controls[key]["evidence"].setPlainText(
                     "STALE — project source inventory refreshed; rerun this stage.")
+                controls[key + "_status"].setText("STALE · rerun required")
             banner.setText("STALE EVIDENCE — rerun source intake and independent checks")
         for widget, endings in (
             (spec, (".txt", ".md", ".rst", ".yaml", ".yml", ".json", ".pdf")),
