@@ -5,6 +5,7 @@ with a raw `ModuleNotFoundError` from a module-level import, which reads as a br
 install rather than a missing optional tool. Every other part of the project treats
 pyslang as optional and says so; this one did not.
 """
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -30,7 +31,7 @@ print("imported", c._HAVE_SLANG)
 '''
     r = subprocess.run([sys.executable, "-c", code], cwd=REPO,
                        capture_output=True, text=True, timeout=120,
-                       env={"PYTHONPATH": str(REPO)})
+                       env={**os.environ, "PYTHONPATH": str(REPO)})
     assert r.returncode == 0, r.stderr
     assert "imported False" in r.stdout
 
@@ -55,7 +56,7 @@ except RuntimeError as e:
 '''
     r = subprocess.run([sys.executable, "-c", code], cwd=REPO,
                        capture_output=True, text=True, timeout=120,
-                       env={"PYTHONPATH": str(REPO)})
+                       env={**os.environ, "PYTHONPATH": str(REPO)})
     assert r.returncode == 0, r.stderr
     assert "REFUSED" in r.stdout
     assert "pip install" in r.stdout, "it must say how to fix it"
@@ -81,6 +82,6 @@ raise SystemExit(main())
 ''' % (str(spec), str(tmp_path / "out"))
     r = subprocess.run([sys.executable, "-c", code], cwd=REPO,
                        capture_output=True, text=True, timeout=180,
-                       env={"PYTHONPATH": str(REPO)})
+                       env={**os.environ, "PYTHONPATH": str(REPO)})
     assert "ModuleNotFoundError" not in r.stderr, r.stderr[-400:]
     assert "Traceback" not in r.stderr, r.stderr[-400:]
