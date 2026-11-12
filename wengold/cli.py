@@ -128,6 +128,17 @@ def cmd_classify(args) -> int:
 def cmd_formal(args) -> int:
     from .formal import Property, prove
     text = _read(args.file)
+    # The bounded in-process RTL model has no package resolution. Returning an
+    # ordinary "unknown" for this known unsupported construct hides the actual
+    # blocker in CI and wastes a verification engineer's debug time.
+    import re as _re
+    uncommented = _re.sub(r"/\\*.*?\\*/|//[^\\n]*", " ", text, flags=_re.S)
+    if _re.search(r"\\bimport\\s+[A-Za-z_]\\w*\\s*::", uncommented):
+        print("  cannot prove: this formal frontend does not resolve "
+              "SystemVerilog package imports (pkg::*).")
+        print("  Use a package-aware, externally elaborated formal flow; "
+              "do not treat UNKNOWN as a proof or failure.")
+        return 2
     props = [Property.safety(f"p{i}", expr, clock=args.clock, reset=args.reset)
              for i, expr in enumerate(args.property)]
     from .formal.rtl_model import UnsupportedConstruct
