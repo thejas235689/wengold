@@ -178,7 +178,7 @@ def cmd_regmap(args) -> int:
     try:
         text = _read(args.file)
         amap = parse_ipxact(text) if suffix == ".xml" else parse_rdl(text)
-    except (OSError, ValueError) as exc:
+    except (OSError, ValueError, SyntaxError) as exc:
         print(f"  regmap input error: {exc}")
         return 2
     print(f"{amap.name}: {len(amap.registers)} register(s)")
