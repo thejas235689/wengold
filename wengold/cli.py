@@ -170,8 +170,17 @@ def cmd_formal(args) -> int:
 
 def cmd_regmap(args) -> int:
     from .graph.regmap import parse_ipxact, parse_rdl
-    text = _read(args.file)
-    amap = parse_ipxact(text) if args.file.endswith(".xml") else parse_rdl(text)
+    suffix = Path(args.file).suffix.lower()
+    if suffix not in (".rdl", ".xml"):
+        print("  regmap expects a SystemRDL .rdl or IP-XACT .xml file; "
+              f"got {suffix or 'no extension'}. RTL .sv belongs in the RTL analyzer.")
+        return 2
+    try:
+        text = _read(args.file)
+        amap = parse_ipxact(text) if suffix == ".xml" else parse_rdl(text)
+    except (OSError, ValueError) as exc:
+        print(f"  regmap input error: {exc}")
+        return 2
     print(f"{amap.name}: {len(amap.registers)} register(s)")
     for r in amap.registers:
         fields = ", ".join(f"{f.name}[{f.msb}:{f.lsb}]{f.sw}" for f in r.fields)
@@ -1206,7 +1215,7 @@ def main(argv=None) -> int:
     p.set_defaults(func=cmd_formal)
 
     p = sub.add_parser("regmap", help="parse a SystemRDL or IP-XACT register map")
-    p.add_argument("file")
+    p.add_argument("file", help="SystemRDL .rdl or IP-XACT .xml (not RTL .sv)")
     p.set_defaults(func=cmd_regmap)
 
     p = sub.add_parser("cdc", help="report clock-domain crossings in an RTL file")
