@@ -169,6 +169,7 @@ def build_window(state: dict):
             self.tree.setHeaderLabels(["FILE"])
             self.tree.setColumnWidth(0, 230)
             self.tree.itemSelectionChanged.connect(self._on_file)
+            self.tree.itemDoubleClicked.connect(self._open_selected_source)
 
             self.table = QtWidgets.QTableWidget(0, 3)
             self.table.setHorizontalHeaderLabels(["BLOCK", "OUT", "IN"])
@@ -192,6 +193,14 @@ def build_window(state: dict):
                 head = QtWidgets.QLabel(title)
                 head.setObjectName("sectionTitle")
                 v.addWidget(head)
+                if w is self.tree:
+                    self.fileFilter = QtWidgets.QLineEdit()
+                    self.fileFilter.setObjectName("projectFileFilter")
+                    self.fileFilter.setClearButtonEnabled(True)
+                    self.fileFilter.setPlaceholderText("Filter RTL, UVM, specs, scripts…")
+                    self.fileFilter.textChanged.connect(self._filter_files)
+                    self.fileFilter.setToolTip("Search discovered project files by path")
+                    v.addWidget(self.fileFilter)
                 v.addWidget(w)
                 top.addWidget(box)
             top.setSizes([260, 420, 480])
@@ -321,6 +330,38 @@ def build_window(state: dict):
             layout.addWidget(close)
             dialog.exec()
 
+        def _filter_files(self, query):
+            """Filter the inventory without destroying its path metadata."""
+            needle = query.strip().casefold()
+            for i in range(self.tree.topLevelItemCount()):
+                group = self.tree.topLevelItem(i)
+                visible = 0
+                for j in range(group.childCount()):
+                    child = group.child(j)
+                    match = needle in child.text(0).casefold()
+                    child.setHidden(not match)
+                    visible += bool(match)
+                group.setHidden(bool(needle) and visible == 0)
+                if needle and visible:
+                    group.setExpanded(True)
+
+        def _open_selected_source(self, item, _column):
+            """Double-click a source file to open it in the real editor."""
+            rel = item.data(0, QtCore.Qt.ItemDataRole.UserRole)
+            if not rel:
+                return
+            if Path(rel).suffix.lower() == ".pdf":
+                self.statusBar().showMessage(
+                    "PDF specifications must be exported to text/Markdown before editing.")
+                return
+            self.workspace.loadSource(rel)
+            # Keep the viewer visible if a dirty-edit confirmation was refused.
+            if self.workspace.editorFile() == rel:
+                for i in range(self.workspace.count()):
+                    if self.workspace.tabText(i) == "RTL Editor":
+                        self.workspace.setCurrentIndex(i)
+                        break
+
         def _populate(self):
             """Present design, verification, automation and filelists independently."""
             self.tree.clear()
@@ -360,13 +401,15 @@ def build_window(state: dict):
                     if col == 0:
                         cell.setData(QtCore.Qt.ItemDataRole.UserRole, b)
                     self.table.setItem(i, col, cell)
+            if hasattr(self, "fileFilter"):
+                self._filter_files(self.fileFilter.text())
             self.detail.setHtml(self._overview_html())
 
         def _overview_html(self) -> str:
             s = self.state
-            notes = "".join(f"<li>{n}</li>" for n in s.get("notes", []))
+            notes = "".join(f"<li>{_esc(str(n))}</li>" for n in s.get("notes", []))
             return (
-                f"<h3 style='margin:0 0 8px'>{Path(s['path']).name}</h3>"
+                f"<h3 style='margin:0 0 8px'>{_esc(Path(s['path']).name)}</h3>"
                 f"<p style='color:{MUTED}'>{s['files']} files · {s['blocks']} blocks"
                 f" · {s['nodes']} nodes · {s['edges']} edges</p>"
                 f"<p>Design units <b>{s['design_units']}/{s['files']}</b> · "
@@ -383,6 +426,20 @@ def build_window(state: dict):
             if not rel:
                 return
             d = _file_detail(self.state, rel)
+            # HDL graph details exclude requirements and scripts. Preview them
+            # from the guarded workspace instead of showing an empty pane.
+            if not d.get("source") and Path(rel).suffix.lower() in (
+                    ".md", ".rst", ".txt", ".py", ".tcl", ".do", ".pss",
+                    ".psf", ".sh", ".mk", ".yaml", ".yml", ".json", ".f", ".flist"):
+                try:
+                    from .studio_workspace import source
+                    content = source(self.state["path"], rel)["content"]
+                    excerpt = "\n".join(content.splitlines()[:400])
+                    d = dict(d, source=excerpt, lines=len(content.splitlines()),
+                             truncated=len(content.splitlines()) > 400)
+                except Exception as exc:
+                    self.detail.setPlainText(f"Cannot preview {rel}: {exc}")
+                    return
             blocks = d.get("blocks", [])
             rows = "".join(
                 f"<tr><td>{b['name']}</td><td align=right>{b['instantiates']}</td>"
