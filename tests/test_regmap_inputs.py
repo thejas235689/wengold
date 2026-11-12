@@ -24,3 +24,15 @@ def test_regmap_invalid_rdl_has_human_error(tmp_path, capsys):
     file.write_text("module not_rdl; endmodule")
     assert cmd_regmap(Namespace(file=str(file))) == 2
     assert "input error" in capsys.readouterr().out
+
+
+
+def test_regmap_overlap_diagnostics_are_not_duplicated():
+    from wengold.graph.regmap import parse_rdl
+    rdl = ("addrmap test { "
+           "reg { field {} A[31:0]; } x @ 0x0; "
+           "reg { field {} B[31:0]; } y @ 0x2; };")
+    amap = parse_rdl(rdl)
+    first = amap.check()
+    assert len(first) == 1, first
+    assert first == amap.check()
