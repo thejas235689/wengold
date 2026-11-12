@@ -43,8 +43,8 @@ def make_studio_tabs(state, QtCore, QtGui, QtWidgets, parent=None):
     edit_picker.setObjectName("rtlFilePicker")
     edit_picker.addItems(files)
     open_btn = QtWidgets.QPushButton("Open source")
-    save_btn = QtWidgets.QPushButton("Save RTL")
-    syntax_btn = QtWidgets.QPushButton("Run syntax")
+    save_btn = QtWidgets.QPushButton("Save source")
+    syntax_btn = QtWidgets.QPushButton("Check HDL syntax")
     open_btn.setObjectName("openRtlButton")
     save_btn.setObjectName("saveRtlButton")
     toolbar(edit_layout, edit_picker, open_btn, save_btn, syntax_btn)
@@ -104,6 +104,9 @@ def make_studio_tabs(state, QtCore, QtGui, QtWidgets, parent=None):
     def start_job(kind, rel, expr=""):
         if not rel:
             alert("Select a source file", True)
+            return
+        if kind == "syntax" and not rel.lower().endswith((".sv", ".v", ".vhd", ".vhdl")):
+            alert("HDL syntax check supports RTL/VHDL files only; Python/Tcl/PSS needs its own tool", True)
             return
         if kind == "syntax" and edit_state["dirty"] and rel == edit_state["file"]:
             alert("Save or discard source edits first", True)
@@ -479,12 +482,18 @@ def make_studio_tabs(state, QtCore, QtGui, QtWidgets, parent=None):
         files[:] = updated
         implementation.refreshSources(updated)
         dv_page.refreshSources(updated)
+        if edit_state["file"] and edit_state["file"] not in updated:
+            edit_state.update(file=None, sha=None, dirty=False)
+            editor.setPlainText("")
+            edit_detail.setText("Previously open file was removed; choose another source.")
         for picker in (edit_picker, formal_picker, worker_source):
             previous = picker.currentText()
             picker.blockSignals(True)
             picker.clear()
-            picker.addItems(updated)
-            if previous in updated:
+            allowed = (updated if picker is edit_picker
+                       else [p for p in updated if p.lower().endswith((".sv", ".v", ".vhd", ".vhdl"))])
+            picker.addItems(allowed)
+            if previous in allowed:
                 picker.setCurrentText(previous)
             picker.blockSignals(False)
         refresh_evidence()
