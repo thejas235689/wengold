@@ -127,7 +127,9 @@ def parse_filelist(text: str, base: Path, env: dict | None = None) -> list[str]:
             p = Path(token)
             if not p.is_absolute():
                 p = (base / p)
-            out.append(str(p))
+            # Stable path separators for filelists exported by Unix EDA tools,
+            # including when inspected on a Windows host.
+            out.append(p.as_posix())
     return out
 
 
