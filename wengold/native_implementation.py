@@ -149,18 +149,34 @@ def make_implementation_tab(root, files, QtCore, QtGui, QtWidgets):
     page.synthesisState = state
 
     def refresh_files(updated_files):
+        clear_unverified_results()
+        synth_log.setPlainText("Sources changed; rerun synthesis for valid evidence.")
+        status.setText("STALE: project files changed; no current synthesis evidence")
         chosen = selector.currentText()
         selector.clear()
         selector.addItems([f for f in updated_files if f.lower().endswith((".sv", ".v"))])
         if selector.findText(chosen) >= 0:
             selector.setCurrentText(chosen)
 
+    def clear_unverified_results():
+        # Never retain metrics from an earlier successful run after a failed
+        # or changed-input invocation.
+        state["result"] = None
+        hierarchy.clear()
+        netlist.clear()
+        schematic.showSchematic({})
+        ppa.setPlainText(
+            "Timing: NOT RUN. Requires Liberty, SDC and STA.\n"
+            "Area: NOT AVAILABLE without a successful mapped netlist.\n"
+            "Power: NOT RUN. No independent power evidence.")
+
     def show_result(result):
-        state["result"] = result
         if not result.get("ok"):
+            clear_unverified_results()
             status.setText("Synthesis not completed: " + result.get("status", "unknown"))
             synth_log.setPlainText(result.get("log") or result.get("message", "No evidence"))
             return
+        state["result"] = result
         status.setText("Yosys generic synthesis completed; NOT physical signoff")
         synth_log.setPlainText(result["log"])
         hierarchy.clear()
@@ -198,6 +214,8 @@ def make_implementation_tab(root, files, QtCore, QtGui, QtWidgets):
             status.setText("Select a design RTL file before synthesis.")
             return
         state["busy"] = True
+        clear_unverified_results()
+        flow_evidence.clear()
         synth.setEnabled(False)
         status.setText("Running Yosys on the selected local RTL source…")
         thread = QtCore.QThread(page)
@@ -213,6 +231,7 @@ def make_implementation_tab(root, files, QtCore, QtGui, QtWidgets):
 
         worker.completed.connect(lambda result: (show_result(result), done()))
         worker.failed.connect(lambda error: (
+            clear_unverified_results(),
             status.setText("Synthesis failed"),
             synth_log.setPlainText(error), done()))
         thread.started.connect(worker.run)
