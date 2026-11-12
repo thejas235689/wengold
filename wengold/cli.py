@@ -132,8 +132,8 @@ def cmd_formal(args) -> int:
     # ordinary "unknown" for this known unsupported construct hides the actual
     # blocker in CI and wastes a verification engineer's debug time.
     import re as _re
-    uncommented = _re.sub(r"/\\*.*?\\*/|//[^\\n]*", " ", text, flags=_re.S)
-    if _re.search(r"\\bimport\\s+[A-Za-z_]\\w*\\s*::", uncommented):
+    uncommented = _re.sub(r"/\*.*?\*/|//[^\n]*", " ", text, flags=_re.S)
+    if _re.search(r"\bimport\s+[A-Za-z_]\w*\s*::", uncommented):
         print("  cannot prove: this formal frontend does not resolve "
               "SystemVerilog package imports (pkg::*).")
         print("  Use a package-aware, externally elaborated formal flow; "
