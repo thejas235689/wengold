@@ -22,6 +22,7 @@ FLOWS = {
     "rustdv_sim": "RustDV simulator-backed regression",
     "pss": "Portable Stimulus generation/verification",
     "dft": "DFT or ATPG execution",
+    "formal": "Externally elaborated SystemVerilog/SVA formal verification",
     "sta": "Static timing analysis with real constraints and libraries",
     "power": "Library and activity-based dynamic/leakage power analysis",
     "upf": "Power-aware RTL/UPF simulation",
