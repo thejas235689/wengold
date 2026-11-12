@@ -49,6 +49,7 @@ on:
       - 'tests/test_native_studio.py'
       - 'tests/test_product_qa.py'
       - 'tests/test_studio_milestone.py'
+      - 'tests/test_studio_workspace.py'
       - 'linux/**'
       - 'pyproject.toml'
       - '.github/workflows/linux-desktop-smoke.yml'
