@@ -12,7 +12,7 @@ from pathlib import Path
 from .ide_server import Refused, SOURCE_SUFFIXES, MAX_BODY
 from .wave import from_vcd
 
-EDITOR_SUFFIXES = SOURCE_SUFFIXES | {".py", ".tcl", ".do", ".f", ".flist", ".pss", ".psf", ".yaml", ".yml", ".mk", ".sh"}
+EDITOR_SUFFIXES = SOURCE_SUFFIXES | {".py", ".tcl", ".do", ".f", ".flist", ".pss", ".psf", ".yaml", ".yml", ".mk", ".sh", ".md", ".txt", ".rst", ".json"}
 
 MAX_VCD_BYTES = 8 * 1024 * 1024
 MAX_REPORT_BYTES = 2 * 1024 * 1024
