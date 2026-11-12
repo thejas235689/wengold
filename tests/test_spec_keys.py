@@ -58,10 +58,10 @@ def test_every_nested_key_is_known(path):
                     f"the loader accepts {sorted(_KEY_SETS['fields'])}")
 
 
-def test_an_unknown_nested_key_is_still_rejected():
+def test_an_unknown_nested_key_is_still_rejected(tmp_path):
     """The acceptance tests above must not have been achieved by loosening this."""
     with pytest.raises(SpecError):
-        load_spec(str(_write(tmp := Path("/tmp/_k"), """
+        load_spec(str(_write(tmp := tmp_path / "_k", """
 module: t
 clock: clk
 reset: rst
