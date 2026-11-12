@@ -76,6 +76,13 @@ QTreeWidget, QTableWidget, QTextEdit, QPlainTextEdit, QLineEdit, QComboBox {
 QHeaderView::section { background:#FFF5C8; color:#655117; border:0; padding:6px; border-bottom:1px solid #E5D49C; }
 QPushButton { background:#FFDF4E; color:#322700; border:1px solid #D2B02C; border-radius:5px; padding:7px 10px; font-weight:600; }
 QPushButton:hover { background:#FFE979; }
+QPushButton:disabled { background:#F1EBDD; color:#8A8370; border:1px solid #D6CFBB; }
+QLineEdit:focus, QComboBox:focus, QPlainTextEdit:focus {
+ border:2px solid #BE9416; selection-background-color:#FFE488; }
+QTabBar::tab:hover { background:#FFEBA1; }
+QTabBar::tab:disabled { color:#9A927A; }
+QToolTip { background:#FFFCEB; color:#332A10; border:1px solid #BFA13C;
+ padding:5px; }
 QStatusBar { background:#FFF7DD; color:#68552C; }
 QSplitter::handle { background:#E8DCAD; }
 QDockWidget { background:#FFFFFF; color:#443914; font-weight:600; }
@@ -228,6 +235,8 @@ def build_window(state: dict):
             from .native_studio import make_studio_tabs
             self.workspace = make_studio_tabs(state, QtCore, QtGui, QtWidgets, self)
             self.workspace.insertTab(0, top, "Overview")
+            self.workspace.setUsesScrollButtons(True)
+            self.workspace.setElideMode(QtCore.Qt.TextElideMode.ElideRight)
             self.workspace.setCurrentIndex(0)
 
             central = QtWidgets.QWidget()
@@ -292,6 +301,16 @@ def build_window(state: dict):
             focus_ciw.setShortcut("Ctrl+`")
             focus_ciw.triggered.connect(self.ciwFocus)
             view.addAction(focus_ciw)
+            view.addSeparator()
+            workspaces = view.addMenu("Go to Workspace")
+            for idx in range(self.workspace.count()):
+                name = self.workspace.tabText(idx)
+                action = QtGui.QAction(name, self)
+                if idx < 9:
+                    action.setShortcut(f"Ctrl+Alt+{idx + 1}")
+                action.triggered.connect(
+                    lambda _checked=False, i=idx: self.workspace.setCurrentIndex(i))
+                workspaces.addAction(action)
             view.addSeparator()
             for name, focus in (("Files", self.tree), ("Blocks", self.table),
                                 ("CLI", self.input)):
