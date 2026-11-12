@@ -182,7 +182,8 @@ def parse_rdl(text: str) -> AddressMap:
     inner, _ = _match_block(toks, 2)
     amap = AddressMap(name=name)
     _parse_rdl_body(inner, amap, base=0, prefix="")
-    amap.issues += amap.check()
+    # Issues are derived dynamically by check(); do not append them to
+    # themselves or each subsequent call will report duplicates.
     return amap
 
 
@@ -258,7 +259,8 @@ def parse_ipxact(text: str) -> AddressMap:
                 fields.append(Field(_text(f, "name", "field"), bit_off + bit_w - 1,
                                     bit_off, sw=sw))
             amap.registers.append(Register(name, base + offset, size, fields))
-    amap.issues += amap.check()
+    # Issues are derived dynamically by check(); do not append them to
+    # themselves or each subsequent call will report duplicates.
     return amap
 
 
