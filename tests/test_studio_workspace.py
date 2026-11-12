@@ -29,8 +29,11 @@ def test_editor_rejects_traversal_and_non_source(tmp_path):
     (tmp_path / "readme.txt").write_text("safe")
     with pytest.raises(Refused):
         source(tmp_path, "../readme.txt")
+    # Specifications and text are intentionally editable from the DV project UI.
+    assert source(tmp_path, "readme.txt")["content"] == "safe"
+    (tmp_path / "unsafe.bin").write_bytes(b"binary")
     with pytest.raises(Refused):
-        source(tmp_path, "readme.txt")
+        source(tmp_path, "unsafe.bin")
     with pytest.raises(Refused):
         save_source(tmp_path, "script.py", "print('x')", "abc")
 
