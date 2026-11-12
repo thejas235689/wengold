@@ -37,7 +37,7 @@ def _collect(path: str) -> dict[str, str]:
                 raise ValueError(
                     f"more than {MAX_FILES} HDL/filelist files; choose a smaller "
                     "design folder or a filtered project filelist")
-            files[str(current.relative_to(p))] = current.read_text(errors="replace")
+            files[current.relative_to(p).as_posix()] = current.read_text(errors="replace")
     return files
 
 def _read(path: str) -> str:
