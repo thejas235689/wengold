@@ -68,7 +68,7 @@ QLabel#ciwPromptLabel { color: #254d99; font-weight: 750; }
 SECTIONS = (
     ("PROJECT", ("Overview", "RTL Editor")),
     ("VERIFY", ("DV Workflow", "Formal", "Jobs & Signoff")),
-    ("DEBUG", ("Waveforms", "Wave Debug")),
+    ("DEBUG", ("Waveforms", "Wave Debug", "Trace Tools")),
     ("TOOLS", ("Synthesis / PPA", "Agents", "Workers", "Local AI")),
 )
 
@@ -78,7 +78,8 @@ DESCRIPTIONS = {
     "DV Workflow": "Connect specifications, tests, regression logs and coverage evidence.",
     "Formal": "Run a bounded property check or inspect an imported formal report.",
     "Jobs & Signoff": "Inspect local tool outcomes, evidence freshness and review decisions.",
-    "Waveforms": "Open a VCD and inspect sampled signals and source matches.",
+    "Waveforms": "Open VCD or FST and inspect sampled signals and source matches.",
+    "Trace Tools": "Compare aligned traces and inspect APB and AXI transaction lanes.",
     "Wave Debug": "Compare design and testbench activity and investigate suspicious signals.",
     "Synthesis / PPA": "Run configured synthesis and inspect netlists and estimates.",
     "Agents": "Inspect the graph-based verification plan.",

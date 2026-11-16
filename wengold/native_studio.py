@@ -178,13 +178,23 @@ def make_studio_tabs(state, QtCore, QtGui, QtWidgets, parent=None):
                                  wave_page.selectSignal, focus_wave_sample)
     tabs.addTab(wave_debug, "Wave Debug")
     tabs.waveDebug = wave_debug
-    wave_page.traceLoaded = wave_debug.loadWave
+    from .native_trace_tools import make_trace_tools
+    trace_tools = make_trace_tools(root, QtCore, QtGui, QtWidgets, alert, focus_wave_sample)
+    tabs.addTab(trace_tools, "Trace Tools")
+
+    def trace_loaded(data):
+        wave_debug.loadWave(data)
+        trace_tools.setTrace(data)
+
+    wave_page.traceLoaded = trace_loaded
     wave_page.refreshFiles = lambda: refresh_evidence()
 
     def refresh_evidence():
         try:
             inventory = list_evidence(root)
-            wave_page.setFiles(inventory["waveforms"])
+            traces = sorted(inventory["waveforms"] + inventory["fst_waveforms"])
+            wave_page.setFiles(traces)
+            trace_tools.setFiles(traces)
             previous_report = formal_picker_reports.currentText()
             formal_picker_reports.clear()
             formal_picker_reports.addItems(inventory["formal_reports"])

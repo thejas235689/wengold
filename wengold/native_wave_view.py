@@ -1,10 +1,11 @@
-"""Native trace inspection UI. Only observed VCD data enters WaveDrom exports."""
+"""Native trace inspection UI. Only observed trace data enters WaveDrom exports."""
 from __future__ import annotations
 
 from fnmatch import fnmatchcase
 import json
 from pathlib import Path
 
+from .native_trace_load import load_paths
 from .native_waveplot import build_wave_canvas
 from .studio_workspace import waveform
 from .wave_inspect import nearest_sample, next_change, render_value, time_at, time_label, wave_drom
@@ -31,7 +32,7 @@ def make_wave_view(root, QtCore, QtGui, QtWidgets, alert, crossprobe, open_sourc
     file_bar = row()
     picker = QtWidgets.QComboBox()
     picker.setObjectName("waveFilePicker")
-    picker.setAccessibleName("Project VCD files")
+    picker.setAccessibleName("Project VCD and FST files")
     picker.setSizeAdjustPolicy(QtWidgets.QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
     picker.setMinimumContentsLength(12)
     file_bar.addWidget(picker, 1)
@@ -40,7 +41,7 @@ def make_wave_view(root, QtCore, QtGui, QtWidgets, alert, crossprobe, open_sourc
     export = button("Export WaveDrom…", "waveExportDrom", file_bar)
     export.setToolTip("Export the pinned signals and the A/B time window as observed WaveJSON")
 
-    details = QtWidgets.QLabel("Load a project VCD to inspect real sampled signal values.")
+    details = QtWidgets.QLabel("Load a project VCD or FST to inspect real sampled signal values.")
     details.setObjectName("waveTraceDetails")
     details.setTextFormat(QtCore.Qt.TextFormat.PlainText)
     details.setWordWrap(True)
@@ -72,8 +73,8 @@ def make_wave_view(root, QtCore, QtGui, QtWidgets, alert, crossprobe, open_sourc
     cursor_bar.addWidget(cursor_choice)
     jump = QtWidgets.QLineEdit()
     jump.setObjectName("waveJumpTick")
-    jump.setPlaceholderText("Go to VCD tick")
-    jump.setAccessibleName("Go to nearest VCD tick")
+    jump.setPlaceholderText("Go to trace tick")
+    jump.setAccessibleName("Go to nearest trace tick")
     jump.setMaximumWidth(168)
     cursor_bar.addWidget(jump, 1)
     go = button("Go", "waveGoToTick", cursor_bar)
@@ -249,7 +250,7 @@ def make_wave_view(root, QtCore, QtGui, QtWidgets, alert, crossprobe, open_sourc
         try:
             tick = int(jump.text().strip())
         except ValueError:
-            alert("Enter a VCD tick as an integer", True)
+            alert("Enter a trace tick as an integer", True)
             return
         mark(nearest_sample(state["data"]["times"], tick), reveal=True)
 
@@ -316,13 +317,23 @@ def make_wave_view(root, QtCore, QtGui, QtWidgets, alert, crossprobe, open_sourc
 
     def load_trace():
         if not picker.currentText():
-            alert("No supported VCD files found in project evidence directories", True)
+            alert("No supported VCD or FST files found in project evidence directories", True)
             return
-        try:
-            data = waveform(root, picker.currentText())
-        except Exception as exc:
-            alert(f"Waveform load failed: {exc}", True)
-            return
+        chosen = picker.currentText()
+        load.setEnabled(False)
+        if chosen.lower().endswith(".fst"):
+            alert("Decoding FST locally…")
+
+        def loaded(values, error):
+            load.setEnabled(True)
+            if error:
+                alert(f"Waveform load failed: {error}", True)
+            elif chosen == picker.currentText():
+                show_trace(values[0])
+
+        load_paths(page, QtCore, [chosen], lambda path: waveform(root, path), loaded)
+
+    def show_trace(data):
         state.update(data=data, signals={s["name"]: s for s in data["signals"]},
                      pinned=set(), cursor=[0 if data["cycles"] else None, None])
         with QtCore.QSignalBlocker(pinned_only):
@@ -341,14 +352,14 @@ def make_wave_view(root, QtCore, QtGui, QtWidgets, alert, crossprobe, open_sourc
         scroll.horizontalScrollBar().setValue(0)
         refresh_rows()
         summary = [f"{len(data['signals'])} digital signals", f"{data['cycles']} observed timestamps",
-                   f"VCD scale {data['timescale'] or 'unknown'}", "sample-spaced view"]
+                   f"{data['source_format'].upper()} scale {data['timescale'] or 'unknown'}", "sample-spaced view"]
         if data["samples_truncated"]:
             summary.append("trace truncated by viewer limits")
         if data["signals_omitted"] or data["unsupported_signals"]:
             summary.append(f"{data['signals_omitted'] + data['unsupported_signals']} signals omitted")
         details.setText("  ·  ".join(summary))
         page.traceLoaded(data)
-        alert(f"Opened observed VCD {data['source']}")
+        alert(f"Opened observed {data['source_format'].upper()} {data['source']}")
 
     def export_window():
         a, b = state["cursor"]
@@ -376,7 +387,7 @@ def make_wave_view(root, QtCore, QtGui, QtWidgets, alert, crossprobe, open_sourc
         except (OSError, ValueError) as exc:
             alert(f"WaveDrom export failed: {exc}", True)
             return
-        alert(f"Exported observed VCD window to {target.name}")
+        alert(f"Exported observed waveform window to {target.name}")
 
     def set_files(paths):
         previous_path = picker.currentText()
@@ -391,6 +402,8 @@ def make_wave_view(root, QtCore, QtGui, QtWidgets, alert, crossprobe, open_sourc
             open_source(match["file"], match["line"])
 
     open_match.clicked.connect(open_current_match)
+    picker.currentTextChanged.connect(
+        lambda path: load.setText("Load FST" if path.lower().endswith(".fst") else "Load VCD"))
     load.clicked.connect(load_trace)
     refresh.clicked.connect(lambda: page.refreshFiles())
     filter_.textChanged.connect(refresh_rows)
