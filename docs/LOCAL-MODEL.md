@@ -186,3 +186,27 @@ Try a short requirement summary or use **DV Workflow → Root-Cause Debug**
 with a project-relative Xezim or Yosys log. Check the cited lines yourself.
 The output is a draft or a debug hypothesis. It does not alter simulation,
 coverage, proof results, or signoff.
+
+## Independent SystemVerilog agents
+
+In **DV Workflow → Independent Agents**, select a role and explicit project
+inputs. Use Dhīr 2B or enter another instruction-following model available on
+your local server. Specification, RTL, UVM, Formal/SVA, Debug, Coverage,
+Integration and Signoff Review each run in a fresh model session. No other role
+must run first and no previous agent's output is sent automatically. The Studio
+keeps the latest result separately for each role in the current project session.
+
+For example, from the repository root with a local server running:
+
+```sh
+sh wengold.sh sv-agent formal examples/soc_verification \
+  --rtl rtl/dma.sv --spec requirements.json \
+  --task 'Draft a completion-interrupt assertion and a reachability cover.'
+```
+
+Debug, Coverage and Signoff Review require an explicitly selected
+project-relative log or JSON report. Each result has a run ID and input and
+output hashes. Large input files may be excerpted, which the result records.
+These roles generate read-only drafts or review notes. They do not edit RTL,
+run EDA, credit coverage, establish a proof, or grant signoff. Use the
+existing independent simulation and formal workflows to establish those results.

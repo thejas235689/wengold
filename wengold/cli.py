@@ -1222,6 +1222,28 @@ def cmd_multi_rag(args) -> int:
     return 0
 
 
+def cmd_sv_agent(args) -> int:
+    from .agent.llm import DEFAULT_OLLAMA, DEFAULT_OPENAI, from_env, preset
+    from .ide_server import Refused
+    from .sv_agents import run
+    configured = from_env()
+    model = args.model or (configured.model if configured else "dhir-2b")
+    known = preset(model)
+    backend = (args.backend or (configured.backend if configured and not args.model else None)
+               or (known.backend if known else "ollama"))
+    endpoint = args.endpoint or (
+        configured.endpoint if configured and not (args.model or args.backend)
+        else DEFAULT_OPENAI if backend == "openai" else DEFAULT_OLLAMA)
+    try:
+        result = run(args.path, args.role, args.rtl, args.spec, args.evidence,
+                     args.task, backend, endpoint, model)
+    except (OSError, ValueError, RuntimeError, Refused) as exc:
+        print(f"wengold: sv-agent: {exc}", file=sys.stderr)
+        return 2
+    print(json.dumps(result, indent=2, ensure_ascii=False))
+    return 0
+
+
 def main(argv=None) -> int:
     from . import __version__ as _version
     parser = argparse.ArgumentParser(prog="wengold",
@@ -1239,6 +1261,19 @@ def main(argv=None) -> int:
     p.add_argument("--query", required=True, help="RTL, DV, specification, or assertion question")
     p.add_argument("--limit", type=int, default=8, help="maximum number of excerpts (1–12)")
     p.set_defaults(func=cmd_multi_rag)
+
+    from .sv_agents import ROLES
+    p = sub.add_parser("sv-agent", help="run one independent local SystemVerilog agent")
+    p.add_argument("role", choices=tuple(ROLES))
+    p.add_argument("path", nargs="?", default=".", help="project root")
+    p.add_argument("--rtl", required=True, help="project-relative RTL file")
+    p.add_argument("--spec", default="", help="optional project-relative text specification")
+    p.add_argument("--evidence", default="", help="project-relative log or report")
+    p.add_argument("--task", default="", help="optional question for this run")
+    p.add_argument("--model", help="local model alias (defaults to Dhīr 2B when unconfigured)")
+    p.add_argument("--backend", choices=("openai", "ollama"))
+    p.add_argument("--endpoint", help="HTTP loopback model URL")
+    p.set_defaults(func=cmd_sv_agent)
 
     p = sub.add_parser("index", help="index a project into a dependency graph")
     p.add_argument("path", nargs="?", default=".")

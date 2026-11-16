@@ -286,7 +286,7 @@ def test_graphical_schematic_controls_and_real_cells(native_window):
 
 
 
-def test_dv_workflow_native_six_stages_and_draft_gates(native_window):
+def test_dv_workflow_native_stages_and_draft_gates(native_window):
     from PyQt6 import QtWidgets
     root, app, window = native_window
     spec = root / "spec"
@@ -298,9 +298,9 @@ def test_dv_workflow_native_six_stages_and_draft_gates(native_window):
     tabs = panel.workflowTabs
     assert "DV Workflow" in [
         window.workspace.tabText(i) for i in range(window.workspace.count())]
-    assert tabs.count() == 6
+    assert tabs.count() == 7
     for name in ("dvIntake", "dvPlan", "dvUvm", "dvRegression",
-                 "dvDebug", "dvCoverage"):
+                 "dvDebug", "dvCoverage", "dvAgent"):
         btn = panel.findChild(QtWidgets.QPushButton, name + "Button")
         evidence = panel.findChild(QtWidgets.QPlainTextEdit, name + "Evidence")
         assert btn is not None and btn.isEnabled(), name
@@ -336,3 +336,46 @@ def test_dhir_preset_updates_local_model_controls(native_window, prefix):
     endpoint.setText("http://127.0.0.1:9090/v1")
     button.click()
     assert endpoint.text() == "http://127.0.0.1:9090/v1"
+
+
+def test_native_sv_agent_roles_keep_separate_results(native_window, monkeypatch):
+    import time
+    from PyQt6 import QtWidgets
+    from wengold import sv_agents
+
+    _, app, window = native_window
+    panel = window.workspace.dvWorkflow
+    selector = panel.findChild(QtWidgets.QComboBox, "dvAgentRole")
+    button = panel.findChild(QtWidgets.QPushButton, "dvAgentButton")
+    output = panel.findChild(QtWidgets.QPlainTextEdit, "dvAgentEvidence")
+    calls = []
+
+    def run(_root, role, *_args):
+        calls.append(role)
+        if role == "debug":
+            raise RuntimeError("debug model unavailable")
+        return {"role": role, "text": role + " draft", "status": "draft_not_verified"}
+
+    monkeypatch.setattr(sv_agents, "run", run)
+
+    def click_and_wait():
+        button.click()
+        deadline = time.monotonic() + 5
+        while panel.pipelineState["busy"] and time.monotonic() < deadline:
+            app.processEvents()
+            time.sleep(.01)
+        app.processEvents()
+        assert not panel.pipelineState["busy"]
+
+    selector.setCurrentIndex(selector.findData("formal"))
+    click_and_wait()
+    assert "formal draft" in output.toPlainText()
+    selector.setCurrentIndex(selector.findData("debug"))
+    click_and_wait()
+    assert "debug model unavailable" in output.toPlainText()
+    selector.setCurrentIndex(selector.findData("spec"))
+    click_and_wait()
+    assert "spec draft" in output.toPlainText()
+    selector.setCurrentIndex(selector.findData("formal"))
+    assert "formal draft" in output.toPlainText()
+    assert calls == ["formal", "debug", "spec"]

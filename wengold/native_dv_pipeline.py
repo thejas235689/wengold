@@ -1,6 +1,6 @@
 """Native Linux specification-to-coverage DV workflow.
 
-The six independent gates show actual source/tool evidence. Local AI runs
+The workflow gates show actual source/tool evidence. Local AI runs
 asynchronously and produces drafts or hypotheses, never a simulated PASS.
 """
 from __future__ import annotations
@@ -9,7 +9,7 @@ import json
 import os
 
 from .agent.llm import DEFAULT_OLLAMA, DEFAULT_OPENAI, PRESETS, preset
-from . import dv_pipeline
+from . import dv_pipeline, sv_agents
 
 
 def make_dv_pipeline_tab(root, files, QtCore, QtGui, QtWidgets):
@@ -90,6 +90,7 @@ def make_dv_pipeline_tab(root, files, QtCore, QtGui, QtWidgets):
         ("Testcases + Regression", "dvRegression", "Run reviewed regression"),
         ("Root-Cause Debug", "dvDebug", "Explain actual regression log"),
         ("Coverage Closure", "dvCoverage", "Analyze measured coverage bins"),
+        ("Independent Agents", "dvAgent", "Run selected SystemVerilog agent"),
     ]
     controls = {}
     for label, key, action in stages:
@@ -137,6 +138,22 @@ def make_dv_pipeline_tab(root, files, QtCore, QtGui, QtWidgets):
             target.setSuffix("% target")
             v.addWidget(target)
             controls["target"] = target
+        if key == "dvAgent":
+            role = QtWidgets.QComboBox()
+            role.setObjectName("dvAgentRole")
+            for role_id, (label, _) in sv_agents.ROLES.items():
+                role.addItem(label, role_id)
+            v.addWidget(role)
+            agent_evidence = QtWidgets.QLineEdit()
+            agent_evidence.setObjectName("dvAgentInput")
+            agent_evidence.setPlaceholderText(
+                "Project-relative log/report (required for Debug, Coverage and Signoff)")
+            v.addWidget(agent_evidence)
+            agent_task = QtWidgets.QLineEdit()
+            agent_task.setObjectName("dvAgentTask")
+            agent_task.setMaxLength(2000)
+            agent_task.setPlaceholderText("Optional task for this run")
+            v.addWidget(agent_task)
         btn = QtWidgets.QPushButton(action)
         btn.setObjectName(key + "Button")
         v.addWidget(btn)
@@ -176,6 +193,7 @@ def make_dv_pipeline_tab(root, files, QtCore, QtGui, QtWidgets):
                         __import__("wengold.ai_workbench", fromlist=["list_models"])
                         .list_models(backend, endpoint) else "model_not_found",
                         "model": model},
+                    "sv_agent": sv_agents.run,
                     "intake": dv_pipeline.intake,
                     "generate": dv_pipeline.generate_artifact,
                     "regression": dv_pipeline.run_regression,
@@ -213,16 +231,22 @@ def make_dv_pipeline_tab(root, files, QtCore, QtGui, QtWidgets):
         state["thread"], state["worker"] = thread, worker
         worker.moveToThread(thread)
         output = controls[key]["evidence"]
+        if key == "dvAgent":
+            role.setEnabled(False)
+            state["results"].pop("dvAgent:" + values[1], None)
 
         def done():
             state["busy"] = False
+            if key == "dvAgent":
+                role.setEnabled(True)
             for pair in controls.values():
                 if isinstance(pair, dict):
                     pair["button"].setEnabled(True)
             thread.quit()
 
         def ok(result):
-            state["results"][key] = result
+            result_key = "dvAgent:" + result["role"] if key == "dvAgent" else key
+            state["results"][result_key] = result
             if key == "dvIntake":
                 state["source_fingerprints"] = (
                     result["spec_sha256"], result["rtl_sha256"])
@@ -348,13 +372,33 @@ def make_dv_pipeline_tab(root, files, QtCore, QtGui, QtWidgets):
                         backend.currentText(), endpoint.text().strip(),
                         model.text().strip())))
 
+    def run_sv_agent():
+        # Keep each role's last result separate even though they share a UI tab.
+        role_id = role.currentData()
+        selected_spec = spec.currentText().strip()
+        handle("dvAgent", "sv_agent",
+               (root, role_id, rtl.currentText().strip(), selected_spec,
+                agent_evidence.text().strip(), agent_task.text(),
+                backend.currentText(), endpoint.text().strip(), model.text().strip()))
+
+    controls["dvAgent"]["button"].clicked.connect(run_sv_agent)
+
+    def show_role_result(_index):
+        result = state["results"].get("dvAgent:" + str(role.currentData()))
+        controls["dvAgent"]["evidence"].setPlainText(
+            json.dumps(result, indent=2) if result else "No result for this role.")
+        controls["dvAgent_status"].setText(
+            "DRAFT · human review required" if result else "NOT RUN · no evidence")
+
+    role.currentIndexChanged.connect(show_role_result)
+
     def refresh_files(newfiles):
         # A project refresh invalidates in-memory DV run assumptions. Saved
         # source digests remain in exported artifacts for external audit.
         if state["results"]:
             state["results"].clear()
             state["source_fingerprints"] = None
-            for key in ("dvIntake", "dvPlan", "dvUvm", "dvRegression", "dvDebug", "dvCoverage"):
+            for key in ("dvIntake", "dvPlan", "dvUvm", "dvRegression", "dvDebug", "dvCoverage", "dvAgent"):
                 controls[key]["evidence"].setPlainText(
                     "STALE — project source inventory refreshed; rerun this stage.")
                 controls[key + "_status"].setText("STALE · rerun required")
