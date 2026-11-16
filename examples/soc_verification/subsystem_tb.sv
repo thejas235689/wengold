@@ -1,13 +1,13 @@
 module subsystem_tb;
   logic clk = 0, rst_n = 0, start = 0, cpu = 0, stall = 0;
   logic ready, irq, dma, gd, gc;
-  logic [3:0] dma_addr, rd = 0;
-  logic [7:0] dma_data, value;
-  wire [3:0] addr = gd ? dma_addr : 4'd2;
-  wire [7:0] data = gd ? dma_data : 8'hE2;
-  preview_dma engine(clk, rst_n, start, gd && ready, dma, irq, dma_addr, dma_data);
-  preview_arbiter arb(clk, rst_n, dma, cpu, ready, gd, gc);
-  preview_memory mem(clk, rst_n, gd || gc, stall, addr, rd, data, ready, value);
+  logic [3:0] rd = 0;
+  wire [3:0] addr;
+  wire [7:0] data, value;
+  preview_subsystem dut(.clk(clk), .rst_n(rst_n), .start(start), .cpu(cpu),
+                        .stall(stall), .read_addr(rd), .ready(ready), .irq(irq),
+                        .dma(dma), .gd(gd), .gc(gc), .write_addr(addr),
+                        .write_data(data), .read_data(value), .dma_addr(), .dma_data());
   always #5 clk = ~clk;
 
   int cycle = 0, beats = 0, cpu_beats = 0, irqs = 0;

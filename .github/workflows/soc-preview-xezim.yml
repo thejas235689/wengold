@@ -2,14 +2,14 @@ name: SoC preview (Xezim)
 
 on:
   pull_request:
-    branches: [main, feat/systemverilog-multi-rag, feat/xezim-simulation]
+    branches: [main, feat/systemverilog-multi-rag, feat/xezim-simulation, feat/soc-verification-preview]
     paths:
       - '.github/workflows/soc-preview-xezim.yml'
       - 'examples/soc_verification/**'
       - 'tests/test_soc_verification_preview.py'
       - 'wengold/**'
   push:
-    branches: [main, feat/soc-verification-preview]
+    branches: [main, feat/soc-verification-preview, feat/soc-formal-connectivity]
     paths:
       - '.github/workflows/soc-preview-xezim.yml'
       - 'examples/soc_verification/**'
