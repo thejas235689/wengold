@@ -73,3 +73,9 @@ verify that an intentional mismatch fails the run.
 - The adapter runs a selected test with ordered sources, `-I` includes,
   `-D` defines and an optional UVM library. It does not qualify the simulator
   for full UVM, formal, UPF, gate-level timing or tapeout signoff.
+
+## Run a subsystem example
+
+[SoC Verification Preview](../examples/soc_verification/README.md) uses the same
+runner to verify DMA, arbiter, and memory interaction, distinguish caught faults
+from unexercised checks, and demonstrate evidence invalidation after a change.
