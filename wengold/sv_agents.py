@@ -80,7 +80,7 @@ def run(root: str | Path, role: str, rtl: str, spec: str, evidence: str,
         ),
     )
     if not text.strip():
-        raise RuntimeError("local model returned no agent draft")
+        raise RuntimeError("model returned no agent draft")
     return {
         "run_id": uuid4().hex, "role": role, "status": "draft_not_verified",
         "model": model, "backend": backend, "tool_status": "not_run",

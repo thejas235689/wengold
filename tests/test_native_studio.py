@@ -338,6 +338,34 @@ def test_dhir_preset_updates_local_model_controls(native_window, prefix):
     assert endpoint.text() == "http://127.0.0.1:9090/v1"
 
 
+@pytest.mark.parametrize("prefix", ["ai", "dv", "waveAi"])
+def test_model_presets_keep_local_and_cloud_routes_distinct(native_window, prefix):
+    from PyQt6 import QtWidgets
+
+    _, _, window = native_window
+    get = lambda kind, name: window.findChild(kind, prefix + name)
+    backend = get(QtWidgets.QComboBox, "Backend")
+    endpoint = get(QtWidgets.QLineEdit, "Endpoint")
+    model = get(QtWidgets.QComboBox if prefix == "ai" else QtWidgets.QLineEdit, "Model")
+    model_text = model.currentText if prefix == "ai" else model.text
+    notice = get(QtWidgets.QLabel, "CloudNotice")
+    backend.setCurrentText("openai")
+    endpoint.setText("http://127.0.0.1:9090/v1")
+    get(QtWidgets.QPushButton, "Gemma4Preset").click()
+    assert (backend.currentText(), endpoint.text(), model_text()) == (
+        "ollama", "http://127.0.0.1:11434", "gemma4:e4b")
+    endpoint.setText("http://127.0.0.1:11440")
+    get(QtWidgets.QPushButton, "Qwen4MaxPreset").click()
+    assert backend.currentText() == "qwencloud"
+    assert endpoint.text().startswith("https://")
+    assert model_text() == "qwen4-max"
+    assert not notice.isHidden()
+    get(QtWidgets.QPushButton, "Gemma4Preset").click()
+    assert (backend.currentText(), endpoint.text(), model_text()) == (
+        "ollama", "http://127.0.0.1:11440", "gemma4:e4b")
+    assert notice.isHidden()
+
+
 def test_native_sv_agent_roles_keep_separate_results(native_window, monkeypatch):
     import time
     from PyQt6 import QtWidgets

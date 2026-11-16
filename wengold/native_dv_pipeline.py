@@ -6,10 +6,11 @@ asynchronously and produces drafts or hypotheses, never a simulated PASS.
 from __future__ import annotations
 
 import json
-import os
 
-from .agent.llm import DEFAULT_OLLAMA, DEFAULT_OPENAI, PRESETS, preset
 from . import dv_pipeline, sv_agents
+from .ai_workbench import list_models, test_connection
+from .native_model import model_controls
+from .qwen_cloud import QWEN_BACKEND
 
 
 def make_dv_pipeline_tab(root, files, QtCore, QtGui, QtWidgets):
@@ -37,47 +38,18 @@ def make_dv_pipeline_tab(root, files, QtCore, QtGui, QtWidgets):
     layout.addLayout(identity)
 
     modelrow = QtWidgets.QHBoxLayout()
-    backend = QtWidgets.QComboBox()
-    backend.setObjectName("dvBackend")
-    backend.addItems(["ollama", "openai"])
-    env_model = os.environ.get("WENGOLD_LLM_MODEL", "qwen2.5-coder:7b")
-    configured = preset(env_model)
-    configured_backend = os.environ.get("WENGOLD_LLM_BACKEND", "").strip().lower()
-    backend.setCurrentText(configured_backend or (configured.backend if configured else "ollama"))
-    default_endpoint = DEFAULT_OPENAI if backend.currentText() == "openai" else DEFAULT_OLLAMA
-    endpoint = QtWidgets.QLineEdit(os.environ.get("WENGOLD_LLM_URL") or default_endpoint)
-    endpoint.setObjectName("dvEndpoint")
-    model = QtWidgets.QLineEdit(env_model)
-    model.setObjectName("dvModel")
-    dhir_button = QtWidgets.QPushButton("Use Dhīr 2B")
-    dhir_button.setObjectName("dvDhirPreset")
-    dhir_button.setToolTip(PRESETS["dhir-2b"].note + "\nStart locally with: " +
-                           PRESETS["dhir-2b"].serve)
-
-    def select_dhir():
-        previous = DEFAULT_OPENAI if backend.currentText() == "openai" else DEFAULT_OLLAMA
-        if endpoint.text().strip() in ("", previous):
-            endpoint.setText(DEFAULT_OPENAI)
-        backend.setCurrentText("openai")
-        model.setText("dhir-2b")
-
-    dhir_button.clicked.connect(select_dhir)
-    def choose_backend(selected):
-        if endpoint.text().strip() in ("", DEFAULT_OLLAMA, DEFAULT_OPENAI):
-            endpoint.setText(DEFAULT_OPENAI if selected == "openai" else DEFAULT_OLLAMA)
-
-    backend.currentTextChanged.connect(choose_backend)
-    modelrow.addWidget(QtWidgets.QLabel("Local AI"))
+    backend, endpoint, model, presets = model_controls(QtCore, QtWidgets, "dv", dhir=True)
+    modelrow.addWidget(QtWidgets.QLabel("AI model"))
     modelrow.addWidget(backend)
     modelrow.addWidget(endpoint, 2)
     modelrow.addWidget(model, 2)
     check_model = QtWidgets.QPushButton("Test connection")
     check_model.setObjectName("dvTestConnection")
-    check_model.setToolTip("Discover models from the configured local Ollama or OpenAI-compatible server")
-    modelrow.addWidget(dhir_button)
+    check_model.setToolTip("Discover local models, or test Qwen4-Max with a short prompt")
     modelrow.addWidget(check_model)
     layout.addLayout(modelrow)
-    model_status = QtWidgets.QLabel("Local AI not tested · No inference has run")
+    layout.addLayout(presets)
+    model_status = QtWidgets.QLabel("Model not tested · No inference has run")
     model_status.setObjectName("dvModelStatus")
     layout.addWidget(model_status)
 
@@ -127,7 +99,7 @@ def make_dv_pipeline_tab(root, files, QtCore, QtGui, QtWidgets):
             v.addWidget(cases)
             controls["testcases_button"] = cases
         if key == "dvCoverage":
-            closure = QtWidgets.QPushButton("Draft coverage closure plan with Local AI")
+            closure = QtWidgets.QPushButton("Draft coverage closure plan with AI")
             closure.setObjectName("dvCoverageClosure")
             v.addWidget(closure)
             controls["coverage_closure_button"] = closure
@@ -189,10 +161,10 @@ def make_dv_pipeline_tab(root, files, QtCore, QtGui, QtWidgets):
             try:
                 functions = {
                     "probe": lambda backend, endpoint, model: {
-                        "status": "connected" if model in
-                        __import__("wengold.ai_workbench", fromlist=["list_models"])
-                        .list_models(backend, endpoint) else "model_not_found",
+                        "status": "connected" if model in list_models(backend, endpoint)
+                        else "model_not_found",
                         "model": model},
+                    "roundtrip": test_connection,
                     "sv_agent": sv_agents.run,
                     "intake": dv_pipeline.intake,
                     "generate": dv_pipeline.generate_artifact,
@@ -225,7 +197,9 @@ def make_dv_pipeline_tab(root, files, QtCore, QtGui, QtWidgets):
             if isinstance(pair, dict):
                 pair["button"].setEnabled(False)
         controls[key + "_status"].setText("RUNNING · waiting for tool/model evidence")
-        banner.setText("Running " + key + " — waiting for actual local result.")
+        cloud = (op in ("sv_agent", "generate", "debug", "coverage_closure")
+                 and backend.currentText() == QWEN_BACKEND)
+        banner.setText("Running " + key + (" using Alibaba Cloud…" if cloud else " locally…"))
         thread = QtCore.QThread(page)
         worker = Worker(op, values)
         state["thread"], state["worker"] = thread, worker
@@ -283,9 +257,10 @@ def make_dv_pipeline_tab(root, files, QtCore, QtGui, QtWidgets):
             return
         state["busy"] = True
         check_model.setEnabled(False)
-        model_status.setText("Connecting to local model server…")
+        cloud = backend.currentText() == QWEN_BACKEND
+        model_status.setText("Testing Qwen4-Max…" if cloud else "Connecting to local model server…")
         thread = QtCore.QThread(page)
-        worker = Worker("probe", (backend.currentText(),
+        worker = Worker("roundtrip" if cloud else "probe", (backend.currentText(),
                                   endpoint.text().strip(), model.text().strip()))
         state["thread"], state["worker"] = thread, worker
         worker.moveToThread(thread)
@@ -296,10 +271,10 @@ def make_dv_pipeline_tab(root, files, QtCore, QtGui, QtWidgets):
             thread.quit()
         worker.succeeded.connect(lambda result:
             finished("Model ready: " + result["model"] if
-                     result["status"] == "connected" else
+                     result["status"] in ("connected", "responding") else
                      "Server reachable; chosen model not installed. "
                      "Select or pull the exact model before generating."))
-        worker.failed.connect(lambda error: finished("Local AI unavailable: " + error))
+        worker.failed.connect(lambda error: finished("Model unavailable: " + error))
         thread.started.connect(worker.run)
         thread.finished.connect(worker.deleteLater)
         thread.finished.connect(thread.deleteLater)
