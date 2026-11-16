@@ -1,0 +1,15 @@
+{
+  "kind": "simulation",
+  "argv": [
+    "wengold", "xezim", "--top", "counter4_tb",
+    "--pass-marker", "REGRESSION_PASS", "--seed", "1",
+    "--log", "results/xezim.log",
+    "rtl/counter4.sv", "tb/counter4_tb.sv"
+  ],
+  "inputs": [
+    "rtl/counter4.sv",
+    "tb/counter4_tb.sv"
+  ],
+  "artifacts": ["results/xezim.log"],
+  "timeout_seconds": 150
+}

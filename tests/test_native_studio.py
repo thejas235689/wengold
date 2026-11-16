@@ -251,6 +251,12 @@ def test_ui_diagnostics_reports_actual_missing_tools(native_window, monkeypatch)
     assert report["ui"]["local_ai"]["controls_present"]
     assert report["installed_tools"]["yosys"] is None
     assert report["installed_tools"]["iverilog"] is None
+    assert report["runtime_gates"]["rtl_simulation"]["status"] == "simulator_missing"
+    monkeypatch.setattr(native_health.shutil, "which",
+                        lambda name: "/tools/xezim" if name == "xezim" else None)
+    report = diagnostics(window, QtWidgets)
+    assert report["installed_tools"]["xezim"] == "/tools/xezim"
+    assert report["runtime_gates"]["rtl_simulation"]["status"] == "tools_detected_not_executed"
     menu_actions = [a.text() for menu in window.menuBar().actions()
                     for a in menu.menu().actions() if menu.menu()]
     assert "UI & Tool Diagnostics" in menu_actions

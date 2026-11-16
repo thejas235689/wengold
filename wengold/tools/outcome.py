@@ -80,9 +80,9 @@ def run_tool(binary: str | None, argv: list[str], *, tool: str = "", action: str
         p = subprocess.run([binary, *argv], capture_output=True, text=True,
                            timeout=timeout, cwd=cwd, env=env)
     except subprocess.TimeoutExpired as e:
-        log = (e.stdout or "") + (e.stderr or "")
-        if isinstance(log, bytes):  # pragma: no cover
-            log = log.decode(errors="replace")
+        # TimeoutExpired can carry bytes even when subprocess.run uses text mode.
+        log = "".join(part.decode(errors="replace") if isinstance(part, bytes) else part or ""
+                      for part in (e.stdout, e.stderr))
         return Outcome(tool, action, ToolOutcome.TIMEOUT, rc=None, log=log,
                        duration=time.monotonic() - start,
                        spec={"binary": binary, "argv": list(argv), "timeout": timeout})

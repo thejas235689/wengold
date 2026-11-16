@@ -615,6 +615,35 @@ def cmd_rootcause(args) -> int:
     return status
 
 
+def cmd_xezim(args) -> int:
+    from .tools.adapters.xezim import XezimAdapter
+    from .tools.outcome import ToolOutcome
+
+    root = Path(args.project).resolve()
+    try:
+        log_path = None
+        if args.log:
+            rel = Path(args.log)
+            log_path = (root / rel).resolve()
+            if (rel.is_absolute() or not log_path.is_relative_to(root)
+                    or log_path.suffix.lower() != ".log"):
+                raise ValueError("--log must be a project-relative .log file")
+        result = XezimAdapter(args.binary).run(
+            top=args.top, files=args.files, cwd=root, include_dirs=args.include,
+            defines=args.define, seed=args.seed, timeout=args.timeout,
+            pass_marker=args.pass_marker, uvm_dir=args.uvm_dir, uvm_test=args.uvm_test)
+        if log_path is not None:
+            log_path.parent.mkdir(parents=True, exist_ok=True)
+            log_path.write_text(result.log, encoding="utf-8")
+    except (ValueError, OSError) as exc:
+        print(f"wengold xezim: {exc}", file=sys.stderr)
+        return 2
+    print(json.dumps({**result.as_dict(), "log": result.log}, indent=2))
+    return {ToolOutcome.PASS: 0, ToolOutcome.FAIL: 1,
+            ToolOutcome.ERROR: 2, ToolOutcome.TOOL_MISSING: 2,
+            ToolOutcome.INCONCLUSIVE: 3, ToolOutcome.TIMEOUT: 3}[result.outcome]
+
+
 def cmd_tools(args) -> int:
     """Report the open-source toolchain, and install it when asked.
 
@@ -1413,6 +1442,21 @@ def main(argv=None) -> int:
     p.add_argument("--change", action="append", default=[],
                    help="a node that changed (repeatable)")
     p.set_defaults(func=cmd_rootcause)
+
+    p = sub.add_parser("xezim", help="run RTL or UVM simulation with Xezim")
+    p.add_argument("files", nargs="+", help="ordered project-relative Verilog/SV files")
+    p.add_argument("--project", default=".", help="project root (default: current directory)")
+    p.add_argument("--top", required=True, help="testbench top module")
+    p.add_argument("-I", "--include", action="append", default=[], help="project-relative include directory")
+    p.add_argument("-D", "--define", action="append", default=[], help="macro NAME or NAME=VALUE")
+    p.add_argument("--uvm-dir", help="optional local Accellera UVM release root or src directory")
+    p.add_argument("--uvm-test", help="optional UVM_TESTNAME override")
+    p.add_argument("--pass-marker", help="exact successful self-check line, required for an RTL pass")
+    p.add_argument("--seed", type=int, default=1)
+    p.add_argument("--timeout", type=int, default=120, help="wall-time limit in seconds")
+    p.add_argument("--binary", default="xezim", help="Xezim executable name or path")
+    p.add_argument("--log", help="also write raw simulator output to a project-relative .log")
+    p.set_defaults(func=cmd_xezim)
 
     p = sub.add_parser("tools", help="what is installed, and install the "
                                      "open-source toolchain")

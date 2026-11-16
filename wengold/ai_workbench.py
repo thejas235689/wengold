@@ -190,7 +190,7 @@ def validate_rtl(code: str, root: str | Path, testbench: str = "",
 
 def tool_status() -> dict:
     return {tool: bool(shutil.which(tool)) for tool in
-            ("iverilog", "vvp", "verilator", "satya", "cargo",
+            ("iverilog", "vvp", "verilator", "xezim", "satya", "cargo",
              "vcs", "xrun", "vsim", "ngspice", "klayout")}
 
 
