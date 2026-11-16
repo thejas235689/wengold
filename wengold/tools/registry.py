@@ -19,6 +19,7 @@ SIMULATION = [
     ToolSpec("xcelium",     "Xcelium",     "Cadence",   "simulation", "simulator",  False, "xrun"),
     ToolSpec("questa",      "Questa",      "Siemens",   "simulation", "simulator",  False, "qsim"),
     ToolSpec("verilator",   "Verilator",   "Verilator", "simulation", "simulator",  True,  "verilator"),
+    ToolSpec("xezim",       "Xezim",       "aionhw",    "simulation", "simulator",  True,  "xezim"),
     ToolSpec("verdi",       "Verdi",       "Synopsys",  "simulation", "debug",      False, "verdi"),
     ToolSpec("simvision",   "SimVision",   "Cadence",   "simulation", "debug",      False, "simvision"),
     ToolSpec("verisium",    "Verisium",    "Cadence",   "simulation", "debug",      False, None),

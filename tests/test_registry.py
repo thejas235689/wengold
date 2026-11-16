@@ -2,7 +2,7 @@
 from wengold.tools.registry import TOOL_GROUPS, GROUP_TITLES, all_tools
 
 EXPECTED = {
-    "simulation": {"VCS", "Xcelium", "Questa", "Verilator", "Verdi", "SimVision",
+    "simulation": {"VCS", "Xcelium", "Questa", "Verilator", "Xezim", "Verdi", "SimVision",
                    "Verisium", "GTKWave", "cocotb", "UVM"},
     "formal": {"JasperGold", "VC Formal", "OneSpin", "ZeBu", "Palladium",
                "Veloce", "Vivado", "Quartus", "Yosys", "vManager"},

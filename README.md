@@ -747,7 +747,10 @@ WENGOLD drives the tools a verification team already uses, in three groups — s
 [`wengold/tools/registry.py`](wengold/tools/registry.py):
 
 **01 · Simulation, debug and testbench** — VCS, Xcelium, Questa, Verilator,
-Verdi, SimVision, Verisium, GTKWave, cocotb, UVM.
+Xezim, Verdi, SimVision, Verisium, GTKWave, cocotb, UVM.
+
+Use `wengold xezim` for self-checking RTL or Accellera UVM tests with the
+optional open-source simulator. See the [Xezim setup and smoke tests](docs/XEZIM.md).
 
 **02 · Formal, emulation and FPGA** — JasperGold, VC Formal, OneSpin, ZeBu,
 Palladium, Veloce, Vivado, Quartus, Yosys, vManager.

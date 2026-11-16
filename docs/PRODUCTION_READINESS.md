@@ -64,8 +64,9 @@ Sample schema (replace all placeholders with actual project files/tools):
 An actual `run_uvm.py` should compile UVM, launch the simulator, check fatal
 UVM errors and scoreboard failures, and fail nonzero when required assertions
 or tests fail. The manifest itself is **not** the simulator and is never
-treated as proof of UVM correctness. For real UVM, use Questa/Xcelium/VCS
-or an independently qualified compatible simulator.
+treated as proof of UVM correctness. Run the [Xezim and Accellera UVM smoke
+test](XEZIM.md) for an open-source starting point. For a project regression,
+qualify Xezim or use a compatible simulator such as Questa, Xcelium or VCS.
 
 ## 3. Package-aware formal
 
