@@ -7,6 +7,8 @@ from __future__ import annotations
 
 import json
 import os
+
+from .agent.llm import DEFAULT_OLLAMA, DEFAULT_OPENAI, PRESETS, preset
 from . import dv_pipeline
 
 
@@ -38,12 +40,33 @@ def make_dv_pipeline_tab(root, files, QtCore, QtGui, QtWidgets):
     backend = QtWidgets.QComboBox()
     backend.setObjectName("dvBackend")
     backend.addItems(["ollama", "openai"])
-    endpoint = QtWidgets.QLineEdit(os.environ.get(
-        "WENGOLD_LLM_URL", "http://127.0.0.1:11434"))
+    env_model = os.environ.get("WENGOLD_LLM_MODEL", "qwen2.5-coder:7b")
+    configured = preset(env_model)
+    configured_backend = os.environ.get("WENGOLD_LLM_BACKEND", "").strip().lower()
+    backend.setCurrentText(configured_backend or (configured.backend if configured else "ollama"))
+    default_endpoint = DEFAULT_OPENAI if backend.currentText() == "openai" else DEFAULT_OLLAMA
+    endpoint = QtWidgets.QLineEdit(os.environ.get("WENGOLD_LLM_URL") or default_endpoint)
     endpoint.setObjectName("dvEndpoint")
-    model = QtWidgets.QLineEdit(os.environ.get(
-        "WENGOLD_LLM_MODEL", "qwen2.5-coder:7b"))
+    model = QtWidgets.QLineEdit(env_model)
     model.setObjectName("dvModel")
+    dhir_button = QtWidgets.QPushButton("Use Dhīr 2B")
+    dhir_button.setObjectName("dvDhirPreset")
+    dhir_button.setToolTip(PRESETS["dhir-2b"].note + "\nStart locally with: " +
+                           PRESETS["dhir-2b"].serve)
+
+    def select_dhir():
+        previous = DEFAULT_OPENAI if backend.currentText() == "openai" else DEFAULT_OLLAMA
+        if endpoint.text().strip() in ("", previous):
+            endpoint.setText(DEFAULT_OPENAI)
+        backend.setCurrentText("openai")
+        model.setText("dhir-2b")
+
+    dhir_button.clicked.connect(select_dhir)
+    def choose_backend(selected):
+        if endpoint.text().strip() in ("", DEFAULT_OLLAMA, DEFAULT_OPENAI):
+            endpoint.setText(DEFAULT_OPENAI if selected == "openai" else DEFAULT_OLLAMA)
+
+    backend.currentTextChanged.connect(choose_backend)
     modelrow.addWidget(QtWidgets.QLabel("Local AI"))
     modelrow.addWidget(backend)
     modelrow.addWidget(endpoint, 2)
@@ -51,6 +74,7 @@ def make_dv_pipeline_tab(root, files, QtCore, QtGui, QtWidgets):
     check_model = QtWidgets.QPushButton("Test connection")
     check_model.setObjectName("dvTestConnection")
     check_model.setToolTip("Discover models from the configured local Ollama or OpenAI-compatible server")
+    modelrow.addWidget(dhir_button)
     modelrow.addWidget(check_model)
     layout.addLayout(modelrow)
     model_status = QtWidgets.QLabel("Local AI not tested · No inference has run")

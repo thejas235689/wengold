@@ -78,6 +78,19 @@ class Preset:
 
 
 PRESETS: dict[str, Preset] = {
+    "dhir-2b": Preset(
+        name="dhir-2b",
+        hf="dassomnath/Dhir-2B-GGUF",
+        params="2B",
+        licence="Apache-2.0",
+        instruction_tuned=True,
+        backend="openai",
+        serve="llama-server -m dhir-2b-Q4_K_M.gguf --alias dhir-2b "
+              "--host 127.0.0.1 --port 8080 --ctx-size 8192 --jinja",
+        note="ZenteiQ Dhīr 2B conversational model; this preset uses a community "
+             "Q4_K_M GGUF. Try it for document Q&A, specification summaries and "
+             "log triage. Its output is advisory, not a verification result.",
+    ),
     "sarvam-m": Preset(
         name="sarvam-m",
         hf="sarvamai/sarvam-m",

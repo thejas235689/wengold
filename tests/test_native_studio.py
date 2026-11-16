@@ -315,3 +315,24 @@ def test_dv_workflow_native_six_stages_and_draft_gates(native_window):
         "rtl/module.sv") >= 0
     assert "NOT SIGNED OFF" in panel.findChild(
         QtWidgets.QLabel, "dvPipelineStatus").text()
+
+
+@pytest.mark.parametrize("prefix", ["ai", "dv"])
+def test_dhir_preset_updates_local_model_controls(native_window, prefix):
+    from PyQt6 import QtWidgets
+
+    _, _, window = native_window
+    button = window.findChild(QtWidgets.QPushButton, prefix + "DhirPreset")
+    backend = window.findChild(QtWidgets.QComboBox, prefix + "Backend")
+    endpoint = window.findChild(QtWidgets.QLineEdit, prefix + "Endpoint")
+    kind = QtWidgets.QComboBox if prefix == "ai" else QtWidgets.QLineEdit
+    model = window.findChild(kind, prefix + "Model")
+    backend.setCurrentText("ollama")
+    endpoint.setText("http://127.0.0.1:11434")
+    button.click()
+    assert backend.currentText() == "openai"
+    assert endpoint.text() == "http://127.0.0.1:8080/v1"
+    assert (model.currentText() if prefix == "ai" else model.text()) == "dhir-2b"
+    endpoint.setText("http://127.0.0.1:9090/v1")
+    button.click()
+    assert endpoint.text() == "http://127.0.0.1:9090/v1"

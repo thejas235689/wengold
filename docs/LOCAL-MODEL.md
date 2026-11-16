@@ -159,3 +159,30 @@ leaving it in a README nobody reads.
 The preset table, the routing, the refusal and the CLI output are tested. **Neither
 model has been run** — this was written where no 24B model fits. `doctor --llm` on
 your machine is the check that closes that.
+
+## Dhīr 2B for offline specification and log assistance
+
+Wengold includes an optional **Dhīr 2B** preset in **Local AI** and
+**DV Workflow**. It does not download weights, start a server, or change the
+default model. Download the
+[community Q4_K_M GGUF](https://huggingface.co/dassomnath/Dhir-2B-GGUF/blob/580edf584d5b4042ca3dd75814b1d29ab7b6d7d0/dhir-2b-Q4_K_M.gguf)
+of ZenteiQ's Apache-2.0 model once. The file is about 1.2 GiB. Inference
+also needs memory for context and runtime. See
+[ZenteiQ's local deployment notes](https://www.zenteiq.ai/research/blog/inferencing-dhir-on-edge-devices/).
+
+From the directory containing the downloaded file, with a recent llama.cpp:
+
+```sh
+llama-server -m dhir-2b-Q4_K_M.gguf --alias dhir-2b \
+  --host 127.0.0.1 --port 8080 --ctx-size 8192 --jinja
+```
+
+In Wengold, click **Use Dhīr 2B**, then **Test Inference** in **Local AI**.
+The default endpoint is `http://127.0.0.1:8080/v1`. If using a different
+server alias, enter the exact model ID shown by **Connect / Models**. CLI users
+can set `WENGOLD_LLM_MODEL=dhir-2b` and run `wengold doctor --llm`.
+
+Try a short requirement summary or use **DV Workflow → Root-Cause Debug**
+with a project-relative Xezim or Yosys log. Check the cited lines yourself.
+The output is a draft or a debug hypothesis. It does not alter simulation,
+coverage, proof results, or signoff.
