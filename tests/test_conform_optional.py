@@ -15,17 +15,20 @@ import pytest
 REPO = Path(__file__).resolve().parent.parent
 
 
-def test_conform_imports_without_pyslang():
-    """Importing the module must work; only *parsing* may need pyslang."""
-    code = '''
+BLOCK_PYSLANG = '''
 import sys
 class Block:
-    def find_module(self, name, path=None):
-        if name == "pyslang" or name.startswith("pyslang."):
-            return self
-    def load_module(self, name):
-        raise ImportError("blocked for this test")
+    def find_spec(self, fullname, path=None, target=None):
+        if fullname.split(".", 1)[0] == "pyslang":
+            raise ModuleNotFoundError("blocked for this test", name=fullname)
+        return None
 sys.meta_path.insert(0, Block())
+'''
+
+
+def test_conform_imports_without_pyslang():
+    """Importing the module must work; only *parsing* may need pyslang."""
+    code = BLOCK_PYSLANG + '''
 import wengold.generate.conform as c
 print("imported", c._HAVE_SLANG)
 '''
@@ -39,15 +42,7 @@ print("imported", c._HAVE_SLANG)
 def test_parsing_without_pyslang_refuses_clearly():
     """It must refuse, not imitate the check with a regex — a regex would report
     conformance it had not established."""
-    code = '''
-import sys
-class Block:
-    def find_module(self, name, path=None):
-        if name == "pyslang" or name.startswith("pyslang."):
-            return self
-    def load_module(self, name):
-        raise ImportError("blocked")
-sys.meta_path.insert(0, Block())
+    code = BLOCK_PYSLANG + '''
 from wengold.generate.conform import _parse
 try:
     _parse("module m; endmodule")
@@ -67,15 +62,7 @@ def test_vibe_does_not_traceback_without_pyslang(tmp_path):
     spec = REPO / "examples" / "timer" / "timer.spec.yaml"
     if not spec.exists():
         pytest.skip("no example spec")
-    code = '''
-import sys
-class Block:
-    def find_module(self, name, path=None):
-        if name == "pyslang" or name.startswith("pyslang."):
-            return self
-    def load_module(self, name):
-        raise ImportError("blocked")
-sys.meta_path.insert(0, Block())
+    code = BLOCK_PYSLANG + '''
 sys.argv = ["wengold", "vibe", %r, "--out", %r]
 from wengold.cli import main
 raise SystemExit(main())
