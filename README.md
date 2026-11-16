@@ -201,6 +201,11 @@ clean/changed/pending, RTL with line numbers, a unified diff, a block table
 (block | file | depends on | consumed by | cluster | verdict), and a **waveform
 panel** from a VCD or a formal counterexample, with the failing cycle marked.
 
+The native Linux Studio also offers dual cursors, signal pins, four-state values,
+transition navigation, bookmarks, RTL cross-probing and WaveDrom export.
+See [advanced waveform debugging](docs/WAVEFORM_DEBUG.md) for a runnable
+Xezim dropped-write example.
+
 ## Register maps and clock domains
 
 - **SystemRDL and IP-XACT** (`wengold/graph/regmap.py`) parse into a normalised

@@ -10,7 +10,7 @@ import json
 from pathlib import Path
 
 from .ide_server import Refused, SOURCE_SUFFIXES, MAX_BODY
-from .wave import from_vcd
+from .wave import parse_vcd
 
 EDITOR_SUFFIXES = SOURCE_SUFFIXES | {".py", ".tcl", ".do", ".f", ".flist", ".pss", ".psf", ".yaml", ".yml", ".mk", ".sh", ".md", ".txt", ".rst", ".json"}
 
@@ -88,14 +88,13 @@ def waveform(root: str | Path, rel: str) -> dict:
     path = project_file(root, rel, {".vcd"})
     if path.stat().st_size > MAX_VCD_BYTES:
         raise Refused("VCD exceeds 8 MB viewer limit", 413)
-    result = from_vcd(path)
+    with path.open("rb") as stream:
+        raw = stream.read(MAX_VCD_BYTES + 1)
+    if len(raw) > MAX_VCD_BYTES:
+        raise Refused("VCD exceeds 8 MB viewer limit", 413)
+    result = parse_vcd(raw.decode("utf-8", errors="replace"), limit=1200, signal_limit=256)
     result["source"] = rel
-    # Cap payload size without inventing any samples. Full-resolution source remains on disk.
-    result["signals"] = result["signals"][:256]
-    for sig in result["signals"]:
-        sig["values"] = sig["values"][:1200]
-    result["times"] = result.get("times", [])[:1200]
-    result["cycles"] = min(result["cycles"], 1200)
+    result["source_sha256"] = hashlib.sha256(raw).hexdigest()
     return result
 
 
