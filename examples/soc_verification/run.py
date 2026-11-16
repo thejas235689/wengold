@@ -13,7 +13,7 @@ from wengold.tools.adapters.xezim import REFERENCE_VERSION, XezimAdapter
 
 HERE = Path(__file__).resolve().parent
 RULE = "rtl/arbiter.sv"
-SYSTEM = ["rtl/dma.sv", RULE, "rtl/memory.sv", "subsystem_tb.sv"]
+SYSTEM = ["rtl/dma.sv", RULE, "rtl/memory.sv", "rtl/subsystem.sv", "subsystem_tb.sv"]
 MEMORY = ["rtl/memory.sv", "memory_tb.sv"]
 REQS = json.loads((HERE / "requirements.json").read_text())
 SYSTEM_REQS = [key for key in REQS if key != "REQ-MEMORY"]

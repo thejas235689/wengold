@@ -1,0 +1,37 @@
+name: SoC Yosys Formal
+
+on:
+  push:
+    branches: [main, feat/soc-formal-connectivity]
+    paths:
+      - "examples/soc_verification/**"
+      - ".github/workflows/soc-yosys-formal.yml"
+      - "tests/test_soc_yosys_formal.py"
+  pull_request:
+    paths:
+      - "examples/soc_verification/**"
+      - ".github/workflows/soc-yosys-formal.yml"
+      - "tests/test_soc_yosys_formal.py"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  formal:
+    runs-on: ubuntu-latest
+    container: debian:trixie
+    timeout-minutes: 20
+    steps:
+      - name: Install Yosys and Z3
+        run: |
+          apt-get update -qq
+          apt-get install -y --no-install-recommends ca-certificates git python3 yosys=0.52-2 z3
+      - uses: actions/checkout@v4
+      - name: Prove properties and check expected counterexamples
+        run: python3 examples/soc_verification/formal/run.py --output soc-formal-evidence
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: soc-yosys-formal-evidence
+          path: soc-formal-evidence
