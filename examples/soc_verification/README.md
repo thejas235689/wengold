@@ -36,3 +36,23 @@ memory test as valid, and an example of unmapped external evidence as unknown.
 These classifications use the reviewed file dependencies of the bundled runs.
 They are not automatic dependency discovery or per-property reuse for arbitrary
 SoCs. Testbench hit counts are directed scenario evidence, not coverage closure.
+
+## Replay saved evidence
+
+The evidence directory contains each run's exact source snapshot, including the
+modified arbiter for the DMA-first runs. The paths in the replay recipe are
+relative to the bundle, so you can move or download the whole directory.
+
+From the Wengold checkout, with Xezim 0.11.6 on PATH:
+
+```sh
+PYTHONPATH=. python3 examples/soc_verification/run.py \
+  --replay soc-preview-evidence/report.json --run reverified_dma_first
+```
+
+Replay verifies input and original transcript hashes and reruns the selected
+scenario. It compares simulator version, execution verdict, check hits and failing
+cycle. `replay_matched` means the saved outcome was reproduced. For example, a
+matching replay of `dropped_write` reproduces an expected simulation failure.
+The original evidence is not overwritten. Use evidence bundles from sources you
+trust, since replay compiles and executes their SystemVerilog testbenches.

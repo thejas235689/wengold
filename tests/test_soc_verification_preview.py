@@ -33,3 +33,30 @@ def test_soc_preview_live(tmp_path):
         report["runs"]["reverified_dma_first"]["inputs"]["rtl/arbiter.sv"])
     assert report["runs"]["dropped_write"]["checks"]["REQ-DATA"]["first_failing_cycle"] > 0
     assert report["runs"]["early_interrupt"]["checks"]["REQ-IRQ"]["first_failing_cycle"] > 0
+
+
+@pytest.mark.skipif(not shutil.which("xezim"), reason="requires Xezim 0.11.6")
+def test_replay_relocated_snapshots_and_detect_tampering(tmp_path):
+    output = tmp_path / "evidence"
+    report = preview.verify(output)
+    assert report["status"] == "preview_verified"
+    relocated = output.rename(tmp_path / "relocated")
+    saved = relocated / "report.json"
+    before = saved.read_bytes()
+    for name, run in report["runs"].items():
+        result = preview.replay(saved, name)
+        assert result["status"] == "replay_matched", result
+        assert result["verdict"] == run["verdict"]
+    assert saved.read_bytes() == before
+
+    changed = report["runs"]["reverified_dma_first"]
+    arbiter = relocated / changed["snapshot"] / "rtl/arbiter.sv"
+    assert "CPU_FIRST = 1'b0" in arbiter.read_text()
+    arbiter.write_text(arbiter.read_text() + "\n// tampered\n")
+    with pytest.raises(ValueError, match="snapshot hash mismatch"):
+        preview.replay(saved, "reverified_dma_first")
+
+    log = relocated / report["runs"]["baseline"]["log"]
+    log.write_text(log.read_text() + "\ntampered\n")
+    with pytest.raises(ValueError, match="original transcript hash mismatch"):
+        preview.replay(saved, "baseline")

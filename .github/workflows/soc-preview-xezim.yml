@@ -1,0 +1,74 @@
+name: SoC preview (Xezim)
+
+on:
+  pull_request:
+    branches: [main, feat/xezim-simulation]
+    paths:
+      - '.github/workflows/soc-preview-xezim.yml'
+      - 'examples/soc_verification/**'
+      - 'tests/test_soc_verification_preview.py'
+      - 'wengold/**'
+  push:
+    branches: [main, feat/soc-verification-preview]
+    paths:
+      - '.github/workflows/soc-preview-xezim.yml'
+      - 'examples/soc_verification/**'
+      - 'tests/test_soc_verification_preview.py'
+      - 'wengold/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  live-preview:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    env:
+      XEZIM_REV: df09d68bfb3fd1c525937bd97b30dcd6ec328d7e
+      XEZIM_RUST: 1.100.0
+      CARGO_BUILD_JOBS: "2"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install Xezim build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends clang llvm
+          rustup toolchain install "$XEZIM_RUST" --profile minimal
+      - name: Build Xezim 0.11.6 from pinned source
+        run: |
+          xezim_src="$RUNNER_TEMP/xezim-src"
+          git init "$xezim_src"
+          git -C "$xezim_src" fetch --no-tags --depth 1 https://github.com/aionhw/xezim.git "$XEZIM_REV"
+          git -C "$xezim_src" checkout --detach FETCH_HEAD
+          test "$(git -C "$xezim_src" rev-parse HEAD)" = "$XEZIM_REV"
+          cd "$xezim_src"
+          cargo "+$XEZIM_RUST" build --bin xezim
+          "$xezim_src/target/debug/xezim" -V | grep -Fx 'xezim version 0.11.6'
+          echo "$xezim_src/target/debug" >> "$GITHUB_PATH"
+      - name: Run real SoC regression and replay from relocated evidence
+        env:
+          PYTHONPATH: .
+        run: |
+          python examples/soc_verification/run.py --output "$RUNNER_TEMP/soc-evidence"
+          mv "$RUNNER_TEMP/soc-evidence" "$RUNNER_TEMP/soc-evidence-relocated"
+          for run in baseline no_backpressure dropped_write early_interrupt isolated_memory old_checker_after_rule_change reverified_dma_first; do
+            python examples/soc_verification/run.py \
+              --replay "$RUNNER_TEMP/soc-evidence-relocated/report.json" --run "$run"
+          done
+          python -m pip install 'pytest>=8,<9'
+          python -m pytest -q tests/test_soc_verification_preview.py
+      - name: Upload evidence bundle
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: wengold-soc-preview-evidence
+          path: |
+            ${{ runner.temp }}/soc-evidence/
+            ${{ runner.temp }}/soc-evidence-relocated/
+          if-no-files-found: warn
