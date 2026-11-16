@@ -8,6 +8,7 @@ from __future__ import annotations
 import os
 
 from .ai_prompts import PROFILES
+from .multi_rag import MultiRAG
 from .eda_flows import inspect_manifest, execute_manifest
 from .ai_workbench import (generate, list_models, tool_status, validate_rtl, satya_check,
                            satya_generate_uvm, rustdv_unit_check, rustdv_simulate, test_connection)
@@ -106,6 +107,17 @@ def create_ai_tab(root, QtCore, QtGui, QtWidgets, parent=None):
     eda_row.addWidget(inspect_btn)
     outer.addLayout(eda_row)
 
+    rag_row = QtWidgets.QHBoxLayout()
+    rag_manifest = QtWidgets.QLineEdit()
+    rag_manifest.setObjectName("aiRagManifest")
+    rag_manifest.setPlaceholderText("Optional project-relative manifest, e.g. multi-rag.json")
+    rag_preview = QtWidgets.QPushButton("Preview Multi-RAG context")
+    rag_preview.setObjectName("aiRagPreview")
+    rag_row.addWidget(QtWidgets.QLabel("Multi-RAG"))
+    rag_row.addWidget(rag_manifest, 1)
+    rag_row.addWidget(rag_preview)
+    outer.addLayout(rag_row)
+
     preview = QtWidgets.QPlainTextEdit()
     preview.setObjectName("aiArtifactPreview")
     preview.setPlaceholderText("AI output appears here as DRAFT; review before use.")
@@ -136,10 +148,14 @@ def create_ai_tab(root, QtCore, QtGui, QtWidgets, parent=None):
                 elif self.op == "roundtrip":
                     result = test_connection(*self.values)
                 elif self.op == "generate":
-                    result = generate(*self.values[:5])
-                    if self.values[0] == "RTL Design":
+                    rag = self.values[8]
+                    options = {"project_root": self.values[5], "rag_manifest": rag} if rag else {}
+                    result = generate(*self.values[:5], **options)
+                    if self.values[0] == "RTL Design" and not rag:
                         result["validation"] = validate_rtl(
                             result["text"], self.values[5], self.values[6], self.values[7])
+                elif self.op == "rag_preview":
+                    result = MultiRAG.load(self.values[0], self.values[1]).retrieve(self.values[2])
                 elif self.op == "validate":
                     result = validate_rtl(*self.values)
                 elif self.op == "satya":
@@ -163,12 +179,15 @@ def create_ai_tab(root, QtCore, QtGui, QtWidgets, parent=None):
     state = {"draft": None, "busy": False, "thread": None, "worker": None}
     page.aiState = state
 
+    buttons = (discover, roundtrip, generate_btn, compile_btn, satya_btn, uvm_btn,
+               rust_btn, rustsim_btn, eda_btn, inspect_btn, rag_preview)
+
     def perform(op, values):
         if state["busy"]:
             status.setText("A local AI or tool check is still running")
             return
         state["busy"] = True
-        for btn in (discover, roundtrip, generate_btn, compile_btn, satya_btn, uvm_btn, rust_btn, rustsim_btn, eda_btn, inspect_btn):
+        for btn in buttons:
             btn.setEnabled(False)
         status.setText("Running " + op + " (real local execution)…")
         thread = QtCore.QThread(page)
@@ -192,11 +211,12 @@ def create_ai_tab(root, QtCore, QtGui, QtWidgets, parent=None):
             elif op == "generate":
                 state["draft"] = result
                 preview.setPlainText(result["text"])
-                import json
+                report = {"validation": result["validation"]}
+                if "retrieval" in result:
+                    report["retrieval"] = result["retrieval"]
                 evidence.setPlainText(
                     "AI-GENERATED DRAFT | " + result["model"] + " | sha256 " +
-                    result["sha256"] + "\n" +
-                    json.dumps(result.get("validation"), indent=2))
+                    result["sha256"] + "\n" + json.dumps(report, indent=2))
                 if isinstance(result.get("validation"), dict):
                     if result["validation"]["status"] == "simulation_completed":
                         status.setText("Simulation completed; testbench quality and signoff not proven")
@@ -215,7 +235,7 @@ def create_ai_tab(root, QtCore, QtGui, QtWidgets, parent=None):
 
         def finish():
             state["busy"] = False
-            for btn in (discover, roundtrip, generate_btn, compile_btn, satya_btn, uvm_btn, rust_btn):
+            for btn in buttons:
                 btn.setEnabled(True)
             thread.quit()
 
@@ -239,7 +259,11 @@ def create_ai_tab(root, QtCore, QtGui, QtWidgets, parent=None):
     generate_btn.clicked.connect(lambda: perform(
         "generate", (mode.currentText(), task.toPlainText(), backend.currentText(),
                      endpoint.text().strip(), model.currentText().strip(),
-                     root, testbench.text().strip(), top.text().strip())))
+                     root, testbench.text().strip(), top.text().strip(),
+                     rag_manifest.text().strip())))
+    rag_preview.clicked.connect(lambda: perform(
+        "rag_preview", (root, rag_manifest.text().strip() or "multi-rag.json",
+                        task.toPlainText())))
 
     def check_rtl():
         if mode.currentText() != "RTL Design":

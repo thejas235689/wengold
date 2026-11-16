@@ -111,11 +111,39 @@ def test_native_local_ai_panel_contains_discipline_and_validation_controls(nativ
                  "aiTestInference", "aiDiscipline", "aiTask", "aiGenerate",
                  "aiCheckRtl", "aiCheckSatya", "aiSatyaUvm", "aiRustDv",
                  "aiArtifactPreview", "aiEvidence", "aiEdaManifest",
-                 "aiInspectEdaFlow", "aiRunEdaFlow"):
+                 "aiInspectEdaFlow", "aiRunEdaFlow", "aiRagManifest", "aiRagPreview"):
         assert panel.findChild(QtWidgets.QWidget, name), name
     profiles = panel.findChild(QtWidgets.QComboBox, "aiDiscipline")
     assert profiles.count() == 15
 
+
+
+def test_native_multi_rag_preview_retrieves_without_a_model(native_window, monkeypatch):
+    import json
+    import time
+    from PyQt6 import QtWidgets
+    from wengold import native_ai
+
+    root, app, window = native_window
+    (root / "multi-rag.json").write_text(json.dumps({
+        "sources": [{"kind": "rtl", "path": "rtl/module.sv"}],
+    }))
+
+    def do_not_generate(*args, **kwargs):
+        pytest.fail("preview must not request model inference")
+
+    monkeypatch.setattr(native_ai, "generate", do_not_generate)
+    panel = window.workspace.aiPage
+    panel.findChild(QtWidgets.QPlainTextEdit, "aiTask").setPlainText("module_a interface")
+    panel.findChild(QtWidgets.QPushButton, "aiRagPreview").click()
+    deadline = time.monotonic() + 5
+    while panel.aiState["busy"] and time.monotonic() < deadline:
+        app.processEvents()
+        time.sleep(.01)
+    app.processEvents()
+    assert not panel.aiState["busy"]
+    result = json.loads(panel.aiEvidence.toPlainText())
+    assert result["sources"][0]["path"] == "rtl/module.sv"
 
 
 def test_advanced_wave_debug_separates_rtl_and_testbench(native_window):

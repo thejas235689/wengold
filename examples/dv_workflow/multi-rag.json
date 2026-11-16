@@ -1,0 +1,7 @@
+{
+  "sources": [
+    {"kind": "rtl", "path": "rtl/counter4.sv"},
+    {"kind": "spec", "path": "spec/requirements.md"}
+  ],
+  "compile_files": ["rtl/counter4.sv"]
+}

@@ -171,7 +171,9 @@ class _NoRedirect(urllib.request.HTTPRedirectHandler):
             f"WENGOLD_LLM_URL at the final address.")
 
 
-_OPENER = urllib.request.build_opener(_NoRedirect)
+# Local prompts can contain proprietary RTL. Environment proxies must never
+# see these requests, even when NO_PROXY omits a loopback address.
+_OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}), _NoRedirect)
 
 
 def _get_json(url: str, timeout: float) -> dict:

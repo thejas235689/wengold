@@ -5,6 +5,7 @@ import argparse
 import json
 import os
 import sys
+from subprocess import TimeoutExpired
 from pathlib import Path
 
 SRC_EXT = {".sv", ".svh", ".v", ".vh", ".rdl", ".f", ".vhd", ".vhdl"}
@@ -1181,6 +1182,17 @@ def cmd_demo(args) -> int:
     return 0
 
 
+def cmd_multi_rag(args) -> int:
+    from .multi_rag import MultiRAG
+    try:
+        result = MultiRAG.load(args.path, args.manifest).retrieve(args.query, limit=args.limit)
+    except (ValueError, OSError, RuntimeError, TimeoutExpired) as exc:
+        print(f"wengold: Multi-RAG: {exc}", file=sys.stderr)
+        return 2
+    print(json.dumps(result, indent=2, ensure_ascii=False))
+    return 0
+
+
 def main(argv=None) -> int:
     from . import __version__ as _version
     parser = argparse.ArgumentParser(prog="wengold",
@@ -1191,6 +1203,13 @@ def main(argv=None) -> int:
     parser.add_argument("--version", action="version",
                         version=f"wengold {_version}")
     sub = parser.add_subparsers(dest="cmd", required=True)
+
+    p = sub.add_parser("multi-rag", help="inspect project-local retrieval context without a model")
+    p.add_argument("path", nargs="?", default=".", help="project root")
+    p.add_argument("--manifest", default="multi-rag.json", help="project-relative source manifest")
+    p.add_argument("--query", required=True, help="RTL, DV, specification, or assertion question")
+    p.add_argument("--limit", type=int, default=8, help="maximum number of excerpts (1–12)")
+    p.set_defaults(func=cmd_multi_rag)
 
     p = sub.add_parser("index", help="index a project into a dependency graph")
     p.add_argument("path", nargs="?", default=".")
