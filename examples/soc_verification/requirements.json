@@ -1,0 +1,9 @@
+{
+  "REQ-RESET": "DMA request, interrupt and both grants are clear after reset.",
+  "REQ-HOLD": "An offered write keeps its owner, address and data stable until accepted.",
+  "REQ-ARBITRATE": "The arbiter never grants both requesters at once.",
+  "REQ-PRIORITY": "On a new, unstalled arbitration with both requests pending, CPU wins (baseline). The alternate policy gives DMA priority.",
+  "REQ-DATA": "Both DMA writes and the CPU write reach their expected addresses and leave an untouched address unchanged.",
+  "REQ-IRQ": "The DMA signals completion exactly once, only after its second accepted write, and deasserts the interrupt.",
+  "REQ-MEMORY": "The isolated memory returns reset data, then returns the accepted write."
+}
