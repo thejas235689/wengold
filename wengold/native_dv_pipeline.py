@@ -7,8 +7,7 @@ from __future__ import annotations
 
 import json
 
-from . import dv_pipeline, sv_agents
-from .ai_workbench import list_models, test_connection
+from . import ai_workbench, dv_pipeline, sv_agents
 from .native_model import model_controls
 from .qwen_cloud import QWEN_BACKEND
 
@@ -161,10 +160,10 @@ def make_dv_pipeline_tab(root, files, QtCore, QtGui, QtWidgets):
             try:
                 functions = {
                     "probe": lambda backend, endpoint, model: {
-                        "status": "connected" if model in list_models(backend, endpoint)
+                        "status": "connected" if model in ai_workbench.list_models(backend, endpoint)
                         else "model_not_found",
                         "model": model},
-                    "roundtrip": test_connection,
+                    "roundtrip": ai_workbench.test_connection,
                     "sv_agent": sv_agents.run,
                     "intake": dv_pipeline.intake,
                     "generate": dv_pipeline.generate_artifact,
