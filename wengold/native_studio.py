@@ -35,7 +35,9 @@ def make_studio_tabs(state, QtCore, QtGui, QtWidgets, parent=None):
 
     def alert(message, error=False):
         status.setText(str(message))
-        status.setStyleSheet("color: #a12924" if error else "color: #594812")
+        status.setProperty("severity", "error" if error else "info")
+        status.style().unpolish(status)
+        status.style().polish(status)
 
     # RTL source editor: load, modify, save with hash conflict detection.
     edit_page, edit_layout = column()
@@ -473,6 +475,8 @@ def make_studio_tabs(state, QtCore, QtGui, QtWidgets, parent=None):
 
     status = QtWidgets.QLabel("Native Linux workspace ready")
     status.setObjectName("studioStatus")
+    status.setTextFormat(QtCore.Qt.TextFormat.PlainText)
+    status.setWordWrap(True)
     tabs.statusLabel = status
     def refresh_project_sources(new_state):
         """Update all project source pickers without discarding the editor."""
