@@ -146,3 +146,107 @@ def test_slang_frontend_validates_sv_standard(tmp_path):
     with pytest.raises(ValueError, match="SystemVerilog standard"):
         elaborate_with_yosys(tmp_path, [], top="top",
                               frontend="slang", sv_standard="1364-2005")
+
+
+
+def sample_slang_ast():
+    return {"design": {"kind": "Root", "members": [
+        {"kind": "Instance", "name": "top", "body": {
+            "kind": "InstanceBody", "name": "top",
+            "members": [
+                {"kind": "Port", "name": "clk", "addr": 10,
+                 "type": "logic", "direction": "In"},
+                {"kind": "Net", "name": "clk", "addr": 11, "type": "logic"},
+                {"kind": "Net", "name": "req_valid", "addr": 12, "type": "logic"},
+                {"kind": "Net", "name": "data_bus", "addr": 13, "type": "logic[63:0]"},
+                {"kind": "Instance", "name": "u_sub", "connections": [
+                    {"port": {"kind": "Port", "name": "clk_i", "type": "logic",
+                              "direction": "In"},
+                     "expr": {"kind": "NamedValue", "type": "logic",
+                              "symbol": "11 clk"}},
+                    {"port": {"kind": "Port", "name": "valid_i", "type": "logic",
+                              "direction": "In"},
+                     "expr": {"kind": "NamedValue", "type": "logic",
+                              "symbol": "12 req_valid"}},
+                    {"port": {"kind": "Port", "name": "data_i", "type": "logic[63:0]",
+                              "direction": "In"},
+                     "expr": {"kind": "NamedValue", "type": "logic[63:0]",
+                              "symbol": "13 data_bus"}},
+                ], "body": {
+                    "kind": "InstanceBody", "name": "sub",
+                    "members": [
+                        {"kind": "Port", "name": "clk_i", "type": "logic", "direction": "In"},
+                        {"kind": "Port", "name": "valid_i", "type": "logic", "direction": "In"},
+                        {"kind": "Port", "name": "data_i", "type": "logic[63:0]", "direction": "In"},
+                        {"kind": "Instance", "name": "u_leaf", "connections": [],
+                         "body": {"kind": "InstanceBody", "name": "leaf", "members": [
+                             {"kind": "Port", "name": "enable", "type": "logic", "direction": "In"}
+                         ]}},
+                    ],
+                }},
+            ],
+        }},
+    ]}}
+
+
+def test_build_hierarchy_from_slang_ast_maps_instance_port_expressions():
+    from wengold.rtl_hierarchy import build_hierarchy_from_slang_ast
+    graph = build_hierarchy_from_slang_ast(sample_slang_ast(), top="top")
+    assert [node["id"] for node in graph["nodes"]] == [
+        "top", "top.u_sub", "top.u_sub.u_leaf"]
+    assert graph["nodes"][1]["module"] == "sub"
+    assert graph["connection_unit"] == "port connections"
+    assert graph["connection_count"] == 3
+    assert graph["edges"][0]["from"] == "top.clk"
+    assert graph["edges"][0]["to"] == "top.u_sub.clk_i"
+    assert graph["edges"][2]["from"] == "top.data_bus"
+    assert graph["edges"][2]["width"] == 64
+
+
+def test_slang_ast_requires_selected_top():
+    import pytest
+    from wengold.rtl_hierarchy import build_hierarchy_from_slang_ast
+    with pytest.raises(ValueError, match="Top instance"):
+        build_hierarchy_from_slang_ast(sample_slang_ast(), top="missing")
+
+
+def test_slang_ast_expansion_limit_is_reported():
+    from wengold.rtl_hierarchy import build_hierarchy_from_slang_ast
+    graph = build_hierarchy_from_slang_ast(
+        sample_slang_ast(), top="top", max_instances=1)
+    assert graph["instance_count"] == 1
+    assert graph["truncated"] is True
+
+
+def test_slang_ast_cli_exports_elaborated_json(tmp_path, monkeypatch):
+    import json
+    from wengold import rtl_hierarchy
+
+    source = tmp_path / "top.sv"
+    source.write_text("module top(input logic clk); endmodule")
+    ast_doc = {"design": {"kind": "Root", "members": [{
+        "kind": "Instance", "name": "top",
+        "body": {"kind": "InstanceBody", "name": "top", "members": [
+            {"kind": "Port", "name": "clk", "type": "logic", "direction": "In"}
+        ]},
+    }]}}
+    calls = {}
+
+    def fake_run(command, **kwargs):
+        calls["command"] = command
+        output = tmp_path / ".wengold" / "slang_ast.json"
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(json.dumps(ast_doc))
+        class Result:
+            returncode = 0
+            stdout = "Slang AST ok"
+            stderr = ""
+        return Result()
+
+    monkeypatch.setattr(rtl_hierarchy.shutil, "which", lambda _name: "/usr/bin/slang")
+    monkeypatch.setattr(rtl_hierarchy.subprocess, "run", fake_run)
+    graph = rtl_hierarchy.elaborate_with_slang_ast(
+        tmp_path, [source], top="top")
+    assert graph["frontend"] == "Slang CLI elaborated AST JSON"
+    assert "--ast-json-source-info" in calls["command"]
+    assert calls["command"][calls["command"].index("--max-loop-analysis-steps") + 1] == "0"
