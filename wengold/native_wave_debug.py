@@ -108,6 +108,75 @@ def make_wave_debug(QtCore, QtGui, QtWidgets, project_root, on_crossprobe=None,
     layout.addWidget(diff_timeline)
     diff_state = {"report": None, "pass_wave": None, "fail_wave": None}
 
+    # Live schematic context for waveform and protocol debugging.  The diagram
+    # is intentionally structural: only the alert/status is derived from trace
+    # evidence; it never infers connectivity from signal-name similarity.
+    schematic_group = QtWidgets.QGroupBox("Schematic View — AXI data path")
+    schematic_group.setObjectName("waveSchematicGroup")
+    schematic_layout = QtWidgets.QVBoxLayout(schematic_group)
+    schematic_alert = QtWidgets.QLabel("No divergence selected — schematic is a structural view")
+    schematic_alert.setObjectName("waveSchematicAlert")
+    schematic_alert.setWordWrap(True)
+    schematic_layout.addWidget(schematic_alert)
+    schematic_scene = QtWidgets.QGraphicsScene(page)
+    schematic_view = QtWidgets.QGraphicsView(schematic_scene)
+    schematic_view.setObjectName("waveSchematicView")
+    schematic_view.setMinimumHeight(205)
+    schematic_view.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing)
+    schematic_view.setDragMode(QtWidgets.QGraphicsView.DragMode.ScrollHandDrag)
+    schematic_layout.addWidget(schematic_view)
+    schematic_scene.setSceneRect(0, 0, 760, 190)
+
+    def schematic_node(x, y, width, height, title, detail, fill):
+        rect = schematic_scene.addRoundedRect(
+            x, y, width, height, 9, 9,
+            QtGui.QPen(QtGui.QColor("#38bdf8"), 2),
+            QtGui.QBrush(QtGui.QColor(fill)))
+        rect.setToolTip(title + "\\n" + detail)
+        text_item = schematic_scene.addText(title + "\\n" + detail)
+        text_item.setDefaultTextColor(QtGui.QColor("#f8fafc"))
+        text_item.setFont(QtGui.QFont("Sans Serif", 9, QtGui.QFont.Weight.DemiBold))
+        text_item.setTextWidth(width - 16)
+        text_item.setPos(x + 8, y + 10)
+        return rect
+
+    def schematic_link(x1, y1, x2, y2, label, color="#94a3b8"):
+        pen = QtGui.QPen(QtGui.QColor(color), 2)
+        schematic_scene.addLine(x1, y1, x2, y2, pen)
+        label_item = schematic_scene.addText(label)
+        label_item.setDefaultTextColor(QtGui.QColor(color))
+        label_item.setFont(QtGui.QFont("Sans Serif", 8))
+        label_item.setPos((x1 + x2) / 2 - 24, (y1 + y2) / 2 - 18)
+
+    def update_schematic(alert=None, severity="info"):
+        schematic_scene.clear()
+        schematic_node(18, 55, 145, 82, "AXI Master", "AW / W / B\nAR / R channels", "#17365d")
+        schematic_node(245, 55, 165, 82, "AXI Slave Interface", "Handshake + ID routing", "#123b68")
+        schematic_node(505, 15, 190, 65, "Memory Controller", "Address decode + access", "#14532d")
+        schematic_node(505, 112, 190, 65, "Response Logic", "BRESP / RRESP generation", "#4c1d95")
+        schematic_link(163, 76, 245, 76, "AW / W / AR")
+        schematic_link(245, 118, 163, 118, "B / R", "#22c55e")
+        schematic_link(410, 76, 505, 48, "Address / data")
+        schematic_link(505, 144, 410, 111, "Response", "#c084fc")
+        schematic_link(600, 80, 600, 112, "status", "#f59e0b")
+        if alert:
+            color = "#ef4444" if severity == "error" else "#f59e0b"
+            alert_item = schematic_scene.addText("! " + alert)
+            alert_item.setDefaultTextColor(QtGui.QColor(color))
+            alert_item.setFont(QtGui.QFont("Sans Serif", 9, QtGui.QFont.Weight.Bold))
+            alert_item.setPos(18, 5)
+            schematic_alert.setText(alert)
+            schematic_alert.setStyleSheet(
+                "color: " + color + "; font-weight: 700; padding: 4px;")
+        else:
+            schematic_alert.setText("No protocol failure identified from current evidence.")
+            schematic_alert.setStyleSheet("color: #94a3b8; padding: 4px;")
+        schematic_view.fitInView(schematic_scene.sceneRect(),
+                                 QtCore.Qt.AspectRatioMode.KeepAspectRatio)
+
+    update_schematic()
+    layout.addWidget(schematic_group)
+
     def browse_vcd(field, caption):
         filename, _ = QtWidgets.QFileDialog.getOpenFileName(
             page, caption, "", "VCD waveform (*.vcd);;All files (*)")
@@ -146,6 +215,18 @@ def make_wave_debug(QtCore, QtGui, QtWidgets, project_root, on_crossprobe=None,
             diff_timeline.setRowCount(0)
             return
         diff_state.update(report=report, pass_wave=p_wave, fail_wave=f_wave)
+        if report.get("first_divergence"):
+            first_item = report["first_divergence"]
+            is_response_error = ("bresp" in first_item["signal"].lower()
+                                 or "rresp" in first_item["signal"].lower()
+                                 or "slverr" in str(first_item["fail"]).lower()
+                                 or "decerr" in str(first_item["fail"]).lower())
+            update_schematic(
+                f"First divergence at {first_item['aligned_time']} {first_item['time_unit']}: "
+                f"{first_item['signal']} PASS={first_item['pass']} FAIL={first_item['fail']}",
+                "error" if is_response_error else "warning")
+        else:
+            update_schematic()
         diff_table.setRowCount(len(report["per_signal"]))
         for row, item in enumerate(report["per_signal"]):
             first = item["first_difference"]
@@ -548,6 +629,23 @@ def make_wave_debug(QtCore, QtGui, QtWidgets, project_root, on_crossprobe=None,
             findings_detail.setPlainText("AXI4 decode configuration error: " + str(exc))
             return
         state["traffic"] = result
+        protocol_errors = result["metrics"].get("protocol_errors", 0)
+        if protocol_errors:
+            first_finding = result.get("findings", [{}])[0]
+            update_schematic(
+                f"AXI4 decoder reported {protocol_errors} protocol error(s): "
+                f"{first_finding.get('rule', first_finding.get('message', 'inspect findings'))}",
+                "error")
+        elif diff_state.get("report") and diff_state["report"].get("first_divergence"):
+            # Preserve the differential alert if the AXI decoder found no
+            # protocol errors; a value mismatch is not automatically a violation.
+            first_item = diff_state["report"]["first_divergence"]
+            update_schematic(
+                f"Waveform divergence at {first_item['aligned_time']} "
+                f"{first_item['time_unit']}: {first_item['signal']}",
+                "warning")
+        else:
+            update_schematic("AXI4 decode completed with no reported protocol errors.")
         rows = result["transactions"]
         traffic_table.setRowCount(len(rows))
         for i, tx in enumerate(rows):
@@ -687,5 +785,7 @@ def make_wave_debug(QtCore, QtGui, QtWidgets, project_root, on_crossprobe=None,
     page.axiDecodeButton = axi_decode_button
     page.axiTransactions = traffic_table
     page.axiTrafficSummary = traffic_summary
+    page.schematicView = schematic_view
+    page.schematicAlert = schematic_alert
     page.rootEvidence = findings_detail
     return page
