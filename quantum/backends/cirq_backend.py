@@ -22,7 +22,7 @@ class CirqBackend(Backend):
             "statevector": True, "sampling": True, "noise": False, "hardware": False,
             "supported_gates": [
                 "I", "H", "X", "Y", "Z", "S", "T", "RX", "RY", "RZ",
-                "CNOT", "CX", "CZ", "SWAP", "CCX", "TOFFOLI", "CSWAP", "MEASURE",
+                "CNOT", "CX", "CZ", "SWAP", "CCX", "TOFFOLI", "CSWAP", "MEASURE", "RESET", "BARRIER",
             ],
         }
 
@@ -60,6 +60,8 @@ class CirqBackend(Backend):
                     "RX": c.rx, "RY": c.ry, "RZ": c.rz
                 }[gate](float(params[0]))
                 operations.append(gate_obj.on(targets[0]))
+            elif gate == "RESET":
+                operations.extend(c.reset(*targets))
             elif gate == "BARRIER":
                 # Cirq moments preserve operation order; barriers have no state effect.
                 continue
