@@ -62,6 +62,25 @@ def test_an_empty_trace_is_an_empty_waveform():
 
 
 # ---- from a VCD ------------------------------------------------------------
+def test_vcd_preserves_timescale_for_telemetry():
+    wave_ns = parse_vcd(VCD)
+    assert wave_ns["timescale"] == "1ns"
+    assert wave_ns["time_unit_ns"] == "1"
+    assert wave_ns["time_unit_label"] == "ns"
+
+    wave_ps = parse_vcd(VCD.replace("$timescale 1ns", "$timescale 10ps"))
+    assert wave_ps["timescale"] == "10ps"
+    assert wave_ps["time_unit_ns"] == "0.010"
+    assert wave_ps["time_unit_label"] == "ps"
+
+
+def test_vcd_without_timescale_is_explicitly_ticks():
+    wave = parse_vcd("$scope module top $end\n$enddefinitions $end\n#0\n")
+    assert wave["timescale"] is None
+    assert wave["time_unit_ns"] is None
+    assert wave["time_unit_label"] == "tick"
+
+
 def test_vcd_values_land_on_the_right_cycle():
     """A VCD lists changes after their #time marker; sampling on the marker
     gives the previous cycle and shifts the whole waveform.
