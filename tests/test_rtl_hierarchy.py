@@ -76,12 +76,8 @@ def test_riscv_filelist_loader_uses_run_py_authoritative_list(tmp_path):
     from wengold.rtl_hierarchy import load_riscv_core_sources
     (tmp_path / "sim").mkdir()
     (tmp_path / "rtl").mkdir()
-    (tmp_path / "sim" / "run.py").write_text("\\n".join([
-        "import sys",
-        "if '--list-rtl' in sys.argv:",
-        " print('rtl/rv64_pkg.sv')",
-        " print('rtl/riscv_core_top.sv')",
-        ""]))
+    (tmp_path / "sim" / "run.py").write_text(
+        "RTL_SRCS = ['rv64_pkg.sv', 'riscv_core_top.sv']\\n")
     (tmp_path / "rtl" / "rv64_pkg.sv").write_text("package rv64_pkg; endpackage")
     (tmp_path / "rtl" / "riscv_core_top.sv").write_text("module riscv_core_top; endmodule")
     assert load_riscv_core_sources(tmp_path) == [
@@ -93,12 +89,8 @@ def test_riscv_filelist_loader_rejects_missing_sources(tmp_path):
     from wengold.rtl_hierarchy import load_riscv_core_sources
     (tmp_path / "sim").mkdir()
     (tmp_path / "rtl").mkdir()
-    (tmp_path / "sim" / "run.py").write_text("\\n".join([
-        "import sys",
-        "if '--list-rtl' in sys.argv:",
-        " print('rtl/rv64_pkg.sv')",
-        " print('rtl/riscv_core_top.sv')",
-        ""]))
+    (tmp_path / "sim" / "run.py").write_text(
+        "RTL_SRCS = ['rv64_pkg.sv', 'riscv_core_top.sv']\\n")
     (tmp_path / "rtl" / "rv64_pkg.sv").write_text("package rv64_pkg; endpackage")
     with pytest.raises(FileNotFoundError, match="missing files"):
         load_riscv_core_sources(tmp_path)
