@@ -90,7 +90,7 @@ class CirqBackend(Backend):
         state = simulator.simulate(circuit_obj, qubit_order=qubits).final_state_vector
         encoded = [[float(a.real), float(a.imag)] for a in state]
         probabilities = {
-            format(index, f"0{circuit.num_qubits}b"): float(abs(amplitude) ** 2)
+            format(index, f"0{circuit.num_qubits}b")[::-1]: float(abs(amplitude) ** 2)
             for index, amplitude in enumerate(state)
         }
         elapsed = (time.perf_counter() - start) * 1000
