@@ -72,7 +72,17 @@ jobs:
           cmake -S quantum/native -B build/quest-bridge -DCMAKE_BUILD_TYPE=Release -Dpybind11_DIR="$(python -m pybind11 --cmakedir)" -DCMAKE_PREFIX_PATH="$RUNNER_TEMP/quest-prefix/quest" -DCMAKE_INCLUDE_PATH="$RUNNER_TEMP/quest-prefix/quest/include" -DCMAKE_LIBRARY_PATH="$RUNNER_TEMP/quest-prefix/quest/lib"
           cmake --build build/quest-bridge --parallel 2
           cmake --install build/quest-bridge --prefix "$GITHUB_WORKSPACE"
+      - name: Smoke-test the compiled QuEST bridge directly
+        env:
+          LD_LIBRARY_PATH: ${{ runner.temp }}/quest-prefix/quest/lib
+        run: |
+          python - <<'PY'
+          from quantum.backends import _quest_bridge
+          print("QuEST bridge:", _quest_bridge.__file__)
+          print("one-qubit |0>:", _quest_bridge.run_statevector(1, []))
+          print("Hadamard:", _quest_bridge.run_statevector(1, [("H", [0], [], 0.0)]))
+          PY
       - name: Test QuEST CPU backend against Bell and bit-order reference
         env:
           LD_LIBRARY_PATH: ${{ runner.temp }}/quest-prefix/quest/lib
-        run: python -m pytest -q tests/test_quantum_quest_bridge.py
+        run: python -m pytest -vv -s tests/test_quantum_quest_bridge.py
