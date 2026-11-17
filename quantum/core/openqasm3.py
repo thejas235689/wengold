@@ -134,7 +134,7 @@ def import_openqasm3(source: str, *, circuit_id: str | None = None) -> Circuit:
         if parameter_match:
             gate = parameter_match.group(1).lower()
             if gate not in rotations:
-                raise CircuitValidationError(f"line {line_no}: unsupported parameterized gate {gate}")
+                raise CircuitValidationError(f"line {line_no}: unsupported OpenQASM parameterized gate {gate}")
             params = (_angle(parameter_match.group(2)),)
             operands = [x.strip() for x in parameter_match.group(3).split(",")]
         else:
