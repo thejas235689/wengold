@@ -74,5 +74,5 @@ jobs:
           cmake --install build/quest-bridge --prefix "$GITHUB_WORKSPACE"
       - name: Test QuEST CPU backend against Bell and bit-order reference
         env:
-          LD_LIBRARY_PATH: ${{ runner.temp }}/quest-install/lib
+          LD_LIBRARY_PATH: ${{ runner.temp }}/quest-prefix/quest/lib
         run: python -m pytest -q tests/test_quantum_quest_bridge.py
