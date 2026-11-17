@@ -444,10 +444,11 @@ def _check_partial_success(signal: str, response_bytes: bytes) -> None:
     if response.HasField("partial_success"):
         partial = response.partial_success
         rejected = getattr(partial, rejected_field, 0)
-        detail = (partial.error_message or "server reported partial success").strip()
+        detail = partial.error_message.strip()
         if rejected or detail:
             raise DynatraceExportError(
-                f"Dynatrace partially accepted {signal}: rejected={rejected}; {detail}"
+                f"Dynatrace partially accepted {signal}: rejected={rejected}; "
+                f"{detail or 'server reported rejected telemetry'}"
             )
 
 
