@@ -376,9 +376,12 @@ def make_wave_debug(QtCore, QtGui, QtWidgets, project_root, on_crossprobe=None,
         if port and on_crossprobe:
             on_crossprobe(signal_path)
         elif node.get("ports") and on_crossprobe:
-            on_crossprobe(wave_prefix + "." + node_path + "." +
-                          node["ports"][0]["name"] if wave_prefix else
-                          node_path + "." + node["ports"][0]["name"])
+            base_path = node_path
+            if wave_prefix and top_name and node_path.startswith(top_name + "."):
+                base_path = wave_prefix + "." + node_path[len(top_name) + 1:]
+            elif wave_prefix and node_path == top_name:
+                base_path = wave_prefix
+            on_crossprobe(base_path + "." + node["ports"][0]["name"])
         if source and source.get("file"):
             hierarchy_status.setText(
                 f"Source: {source['file']}:{source['line']}:{source.get('column', 1)} · "
