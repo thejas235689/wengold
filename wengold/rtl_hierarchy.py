@@ -330,10 +330,19 @@ def build_hierarchy_from_slang_ast(ast_document: dict[str, Any], *,
         if len(nodes) >= max_instances:
             truncated = True
             return
-        body = instance.get("body") or {}
-        module_name = body.get("name") or instance.get("name", "")
+        raw_body = instance.get("body")
+        body = raw_body if isinstance(raw_body, dict) else {}
+        module_name = (body.get("name") or
+                       (raw_body if isinstance(raw_body, str) else None) or
+                       instance.get("module") or instance.get("name", ""))
         members = body.get("members") or []
         port_members = [member for member in members if member.get("kind") == "Port"]
+        if not port_members:
+            # Slang can serialize external / black-box instances without an
+            # InstanceBody. Their elaborated connection records still carry
+            # the exact formal port name, direction and type.
+            port_members = [connection.get("port", {})
+                            for connection in instance.get("connections") or []]
         ports = []
         for port in port_members:
             type_name = str(port.get("type", ""))
