@@ -89,7 +89,8 @@ def make_wave_debug(QtCore, QtGui, QtWidgets, project_root, on_crossprobe=None,
     dynatrace_endpoint.setPlaceholderText(
         "https://<environment-id>.live.dynatrace.com/api/v2/otlp")
     dynatrace_token = QtWidgets.QLineEdit(
-        os.environ.get("WENGOLD_DYNATRACE_PLATFORM_TOKEN",\n                   os.environ.get("WENGOLD_DYNATRACE_API_TOKEN", "")))
+        os.environ.get("WENGOLD_DYNATRACE_PLATFORM_TOKEN",
+                   os.environ.get("WENGOLD_DYNATRACE_API_TOKEN", "")))
     dynatrace_token.setObjectName("waveDynatraceToken")
     dynatrace_token.setEchoMode(QtWidgets.QLineEdit.EchoMode.Password)
     dynatrace_token.setPlaceholderText("Dynatrace platform token (openpipeline:traces/metrics/logs:ingest)")
