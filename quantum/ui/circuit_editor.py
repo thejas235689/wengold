@@ -422,6 +422,8 @@ def build_editor(QtWidgets):
         def show_result(result):
             root.debug_trace = None
             step_slider.setEnabled(False)
+            compare_button.setEnabled(False)
+            amplitude_table.setRowCount(0)
             previous_button.setEnabled(False)
             next_button.setEnabled(False)
             canvas.set_debug_operation(None)
