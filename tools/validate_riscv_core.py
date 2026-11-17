@@ -63,6 +63,7 @@ def main() -> int:
         "truncated": graph["truncated"],
         "frontend": graph["frontend"],
         "qualification": graph["qualification"],
+        "diagnostics": graph.get("diagnostics", graph.get("warnings", [])),
     }
     if args.vcd:
         if not args.vcd.is_file():
