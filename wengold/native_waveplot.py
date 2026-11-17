@@ -74,7 +74,7 @@ def build_wave_canvas(QtCore, QtGui, QtWidgets):
             count = self.data["cycles"]
             if not self.visible_signals or not count:
                 painter.setPen(color("#516079"))
-                painter.drawText(12, 27, "No matching signals" if count else "Load a VCD to inspect its signals")
+                painter.drawText(12, 27, "No matching signals" if count else "Load a VCD or FST to inspect its signals")
                 return
             ruler = self.ruler_height
             first = max(0, int((rect.left() - self.label_width) // self.step))
@@ -84,7 +84,7 @@ def build_wave_canvas(QtCore, QtGui, QtWidgets):
             painter.fillRect(0, 0, self.width(), ruler, color("#e8eef8"))
             painter.fillRect(0, ruler, self.label_width, self.height() - ruler, color("#f1f5fc"))
             painter.setPen(color("#435674"))
-            painter.drawText(8, 21, "SIGNAL  /  VCD TICKS")
+            painter.drawText(8, 21, self.data.get("ruler", "SIGNAL  /  TRACE TICKS"))
             font = painter.fontMetrics()
             tick_spacing = max(1, round(95 / self.step))
             for row in range(first_row, stop_row):

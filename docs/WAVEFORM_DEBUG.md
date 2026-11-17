@@ -1,8 +1,8 @@
 # Advanced waveform debugging in Linux Silicon Studio
 
 Open a project with `wengold desktop --native /path/to/project`, choose
-**Waveforms**, and load a VCD from a project evidence folder such as `waves/`
-or `formal-results/`. Imported VCD is observed trace data, not a specification
+**Waveforms**, and load a VCD or FST from a project evidence folder such as `waves/`
+or `formal-results/`. Imported VCD and FST are observed trace data, not a specification
 diagram or a new verification verdict.
 
 1. Filter by a hierarchical name or glob such as `subsystem_tb.dut.*`. Use
@@ -29,11 +29,64 @@ diagram or a new verification verdict.
    npx wavedrom --input observed-waveform.json > observed-waveform.svg
    ```
 
-The desktop reads VCD files up to 8 MiB and displays at most 256 digital signals
+The desktop reads VCD or FST files up to 8 MiB and displays at most 256 digital signals
 and 1,200 timestamps. It reports omitted signals and truncated samples. Real
 and string signals are not decoded. Formal witness VCDs can be inspected as raw
 traces, but the viewer does not infer proof status, assumptions or solver step
 mappings from a VCD alone.
+
+## Compare a baseline against a candidate
+
+Open **Trace Tools → Trace comparison**, select a baseline and a candidate
+VCD or FST, then **Load and compare**. By default each trace starts at its
+first captured timestamp. To align at a reset release, handshake, or a
+bookmark, enter that event's observed tick from each file and apply alignment.
+Traces with declared timescales are compared in physical time, even if their
+time units differ. Two traces without timescales can be compared in raw ticks.
+A trace with units and a trace without units cannot be aligned.
+
+The table reports the first different four-state value per matched signal,
+plus paths found on only one side and same-name signals whose widths differ.
+Click a row for synchronized baseline and candidate plots around the first
+difference. The plots show up to 14 aligned sample slots at a time, with equal
+width per slot. Use the reported timestamps, not pixel distance, to measure
+time. Comparison matches exact hierarchical paths and covers only the
+overlapping captured window. It does not infer renamed or missing signals.
+
+## Decode APB or AXI transactions
+
+Load a trace in **Waveforms**, then open **Trace Tools → Protocol lanes**.
+Choose APB, AXI4, or AXI4-Lite and enter the prefix that precedes each protocol
+signal, such as `tb.dut.` or `tb.dut.s_axi_`. The decoder looks for standard
+signal names with that prefix. Enter the full clock or active-low reset signal
+path when it differs from the default protocol name. Use the lane map or
+double-click a row to jump to the observed sample in **Waveforms**.
+
+- APB shows completed accesses, read or write, address and available payload,
+  wait edges, and setup-to-completion latency when setup was captured.
+- AXI shows independent AW, W, B, AR and R handshakes, available fields, and
+  wait edges. It correlates AW to B and AR to the last R beat by ID, in order
+  within each ID. AXI4-Lite uses in-order address/response pairing without IDs.
+  W beats are visible on their own lane. This viewer does not attribute W beats
+  to an AW burst or check all protocol requirements. Ambiguous address or
+  completion edges can suspend correlation for that direction until reset.
+- Decoding uses stable pre-edge values. Controls that change at the sampling
+  timestamp can be ambiguous, so those events are skipped and counted. Fields
+  with a same-timestamp change or X/Z are marked ambiguous. Missing lanes,
+  unpaired responses, unknown reset edges, and truncated input are reported.
+
+## Load FST files
+
+Install the GTKWave package for your Linux distribution and verify
+`command -v fst2vcd`. Place the `.fst` under a project evidence directory
+such as `waves/`, refresh files, and use **Load FST**. The app runs the
+converter locally outside the UI thread without modifying your trace.
+WaveDrom export retains the FST filename and the original file's SHA-256.
+
+FST is decoded through `fst2vcd`, not a native random-access FST index.
+Input and expanded VCD are each limited to 8 MiB and conversion is time-bounded.
+If the converter is missing or the trace exceeds those limits, the viewer
+shows an error. The same digital signal and timestamp caps apply after conversion.
 
 ## Reproduce the dropped DMA write with Xezim
 

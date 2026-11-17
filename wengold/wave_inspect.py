@@ -102,11 +102,12 @@ def wave_drom(data: dict, signals: list[dict], a: int, b: int,
             lane["data"] = labels
         lanes.append(lane)
     scale = data.get("timescale")
+    source_format = data.get("source_format", "vcd")
     return {"signal": lanes,
-            "head": {"text": "Observed VCD waveform", "tick": 0},
+            "head": {"text": f"Observed {source_format.upper()} waveform", "tick": 0},
             "foot": {"text": f"Slot width: {time_label(step, scale)}. "
                               "Last slot shows the endpoint sample only."},
-            "wengold": {"kind": "observed_vcd", "source": data["source"],
+            "wengold": {"kind": f"observed_{source_format}", "source": data["source"],
                         "source_sha256": data.get("source_sha256"),
                         "timescale": scale, "start_tick": times[start],
                         "end_tick": times[end], "ticks_per_slot": step,
