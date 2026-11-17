@@ -213,7 +213,7 @@ def make_wave_debug(QtCore, QtGui, QtWidgets, project_root, on_crossprobe=None,
                 detail = f"{type(exc).__name__}: {exc}"
                 sent = getattr(exc, "sent_signals", ())
                 if sent:
-                    detail += "\\nEarlier signal requests accepted: " + ", ".join(sent)
+                    detail += "\nEarlier signal requests accepted: " + ", ".join(sent)
                 self.failed.emit(detail)
 
     def send_to_dynatrace():
