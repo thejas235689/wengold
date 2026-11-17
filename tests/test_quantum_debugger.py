@@ -67,3 +67,48 @@ def test_debug_snapshot_index_is_checked():
     trace = build_debug_trace(Circuit("empty", 1), FakeStatevectorBackend())
     with pytest.raises(IndexError):
         trace.snapshot(1)
+
+
+
+def test_amplitude_rows_report_complex_components_and_probability():
+    from quantum.service.debugger import amplitude_rows
+
+    rows = amplitude_rows(((1.0, 0.0), (0.0, 1.0)))
+    assert [row.basis_state for row in rows] == ["0", "1"]
+    assert rows[0].probability == pytest.approx(0.5)
+    assert rows[1].probability == pytest.approx(0.5)
+    assert rows[1].phase_radians == pytest.approx(1.57079632679)
+
+
+def test_amplitude_rows_threshold_and_invalid_vectors():
+    from quantum.service.debugger import QuantumDebugError, amplitude_rows
+
+    assert len(amplitude_rows(((0.99, 0.0), (0.1, 0.0)), threshold=0.02)) == 1
+    with pytest.raises(QuantumDebugError, match="zero or invalid norm"):
+        amplitude_rows(((0.0, 0.0), (0.0, 0.0)))
+    with pytest.raises(ValueError, match="threshold"):
+        amplitude_rows(((1.0, 0.0),), threshold=-1)
+
+
+def test_statevector_comparison_is_global_phase_invariant():
+    import cmath
+    from quantum.service.debugger import compare_statevectors
+
+    reference = (1 / 2**0.5, 1j / 2**0.5)
+    phase = cmath.exp(0.73j)
+    candidate = tuple(phase * value for value in reference)
+
+    result = compare_statevectors(reference, candidate)
+
+    assert result.fidelity == pytest.approx(1.0)
+    assert result.global_phase_radians == pytest.approx(0.73)
+    assert result.dimension == 2
+
+
+def test_statevector_comparison_rejects_dimension_and_zero_norm():
+    from quantum.service.debugger import QuantumDebugError, compare_statevectors
+
+    with pytest.raises(QuantumDebugError, match="dimensions differ"):
+        compare_statevectors((1.0, 0.0), (1.0,))
+    with pytest.raises(QuantumDebugError, match="zero norm"):
+        compare_statevectors((0.0, 0.0), (1.0, 0.0))
