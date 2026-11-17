@@ -13,6 +13,7 @@
 namespace py = pybind11;
 
 namespace {
+constexpr double kPi = 3.141592653589793238462643383279502884;
 std::mutex quest_mutex;
 
 struct Environment {
@@ -45,10 +46,10 @@ void apply_gate(Qureg q, const Gate& item) {
     else if (gate == "X") applyPauliX(q, a);
     else if (gate == "Y") applyPauliY(q, a);
     else if (gate == "Z") applyPauliZ(q, a);
-    else if (gate == "S") applyPhaseShift(q, a, M_PI / 2.0);
-    else if (gate == "SDG") applyPhaseShift(q, a, -M_PI / 2.0);
-    else if (gate == "T") applyPhaseShift(q, a, M_PI / 4.0);
-    else if (gate == "TDG") applyPhaseShift(q, a, -M_PI / 4.0);
+    else if (gate == "S") applyPhaseShift(q, a, kPi / 2.0);
+    else if (gate == "SDG") applyPhaseShift(q, a, -kPi / 2.0);
+    else if (gate == "T") applyPhaseShift(q, a, kPi / 4.0);
+    else if (gate == "TDG") applyPhaseShift(q, a, -kPi / 4.0);
     else if (gate == "RX") applyRotateX(q, a, angle);
     else if (gate == "RY") applyRotateY(q, a, angle);
     else if (gate == "RZ") applyRotateZ(q, a, angle);
