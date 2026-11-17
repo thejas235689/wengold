@@ -1,8 +1,8 @@
-"""OpenTelemetry JSON export for WENGOLD simulation and traffic evidence.
+"""OpenTelemetry telemetry model and Dynatrace OTLP/HTTP Protobuf exporter.
 
 The decoder/rule engine remains the source of truth. This module maps its
-observations into OTLP JSON so local tools or an OpenTelemetry Collector can
-forward traces, metrics and logs to a backend such as Dynatrace.
+observations into OTLP JSON-mapped request models for inspection, and can
+serialize and send binary Protobuf requests to Dynatrace.
 
 Simulation timestamps are mapped onto a synthetic wall-clock window anchored at
 export time. The original simulator time and unit are retained as attributes;
@@ -140,8 +140,9 @@ def build_otlp_bundle(report: Mapping[str, Any], *,
             time_unit_label="tick"; the original raw times are retained.
         time_unit_label: Original VCD unit label, or "tick"/"cycle" if unknown.
 
-    The returned bundle has three independent OTLP/HTTP request bodies under
-    traces, metrics and logs. The metadata field is WENGOLD-only provenance.
+    The returned bundle has three OTLP Protobuf JSON-mapped request models under
+    traces, metrics and logs, plus WENGOLD-only provenance. Use the binary
+    sender for Dynatrace; Dynatrace does not accept these JSON request models.
     """
     if not isinstance(report, Mapping):
         raise TypeError("report must be a mapping")
