@@ -226,7 +226,7 @@ def make_wave_debug(QtCore, QtGui, QtWidgets, project_root, on_crossprobe=None,
             return
         if not endpoint_value or not token_value:
             findings_detail.setPlainText(
-                "Enter the Dynatrace OTLP base URL and an ingest API token. "
+                "Enter the Dynatrace OTLP base URL and a Dynatrace platform token. "
                 "The token is kept in this session only and is not saved.")
             return
         if state["otel_busy"]:
