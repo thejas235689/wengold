@@ -75,12 +75,15 @@ std::vector<std::pair<double, double>> run_statevector(int num_qubits, const std
     Register reg(num_qubits);
     for (const auto& gate : gates) apply_gate(reg.value, gate);
 
-    const long long count = getNumAmps(reg.value);
+    const qindex count = static_cast<qindex>(1ULL << num_qubits);
+    std::vector<qcomp> amplitudes(static_cast<size_t>(count));
+    getQuregAmps(amplitudes.data(), reg.value, 0, count);
+
     std::vector<std::pair<double, double>> state;
     state.reserve(static_cast<size_t>(count));
-    for (long long i = 0; i < count; ++i)
-        state.emplace_back(static_cast<double>(getRealAmp(reg.value, i)),
-                           static_cast<double>(getImagAmp(reg.value, i)));
+    for (const auto& amplitude : amplitudes)
+        state.emplace_back(static_cast<double>(amplitude.real()),
+                           static_cast<double>(amplitude.imag()));
     return state;
 }
 
