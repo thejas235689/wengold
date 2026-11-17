@@ -1,0 +1,172 @@
+"""RTL hierarchy and port-connectivity extraction from an elaborated Yosys JSON netlist.
+
+Yosys is the elaborator. This module preserves hierarchy (does not run flatten),
+maps instance ports to parent nets, and exposes source attributes when present.
+The resulting graph is logical connectivity, not placement or routed geometry.
+"""
+from __future__ import annotations
+
+import json
+import re
+import shutil
+import subprocess
+from pathlib import Path
+from typing import Any
+
+
+MAX_INSTANCES = 2000
+MAX_PORTS_PER_INSTANCE = 512
+
+
+def _source_location(attributes: dict[str, Any] | None) -> dict[str, Any] | None:
+    raw = (attributes or {}).get("src")
+    if raw is None:
+        return None
+    value = str(raw)
+    match = re.match(r"(.+?):(\d+)(?:\.(\d+))?", value)
+    if not match:
+        return {"raw": value}
+    return {"file": match.group(1), "line": int(match.group(2)),
+            "column": int(match.group(3) or 1), "raw": value}
+
+
+def _bit_names(module: dict[str, Any]) -> dict[int, list[str]]:
+    result: dict[int, list[str]] = {}
+    for name, net in (module.get("netnames") or {}).items():
+        for bit in net.get("bits", []):
+            if isinstance(bit, int):
+                result.setdefault(bit, []).append(name)
+    for name, port in (module.get("ports") or {}).items():
+        for bit in port.get("bits", []):
+            if isinstance(bit, int):
+                result.setdefault(bit, []).append(name)
+    return result
+
+
+def build_rtl_hierarchy(netlist: dict[str, Any], *, top: str = "",
+                        max_instances: int = MAX_INSTANCES) -> dict[str, Any]:
+    """Expand module instances and connect child ports to their parent nets."""
+    modules = netlist.get("modules") or {}
+    if not modules:
+        raise ValueError("Yosys JSON contains no modules")
+    if top not in modules:
+        marked = [name for name, item in modules.items()
+                  if str((item.get("attributes") or {}).get("top", "0")).strip("0") == "1"]
+        top = marked[0] if marked else (top or next(iter(modules)))
+    if top not in modules:
+        raise ValueError(f"Top module {top!r} was not found in the elaborated design")
+
+    nodes: list[dict[str, Any]] = []
+    edges: list[dict[str, Any]] = []
+    warnings: list[str] = []
+    truncated = False
+
+    def walk(module_name: str, instance_path: str, parent_module: dict[str, Any] | None = None,
+             instance_cell: dict[str, Any] | None = None) -> None:
+        nonlocal truncated
+        if len(nodes) >= max_instances:
+            truncated = True
+            return
+        module = modules[module_name]
+        node = {
+            "id": instance_path,
+            "module": module_name,
+            "source": _source_location((instance_cell or {}).get("attributes"))
+                      or _source_location(module.get("attributes")),
+            "ports": [],
+        }
+        nodes.append(node)
+        if parent_module is not None and instance_cell is not None:
+            parent_names = _bit_names(parent_module)
+            child_ports = module.get("ports") or {}
+            connections = instance_cell.get("connections") or {}
+            for port_name, child_port in child_ports.items():
+                parent_bits = connections.get(port_name, [])
+                child_bits = child_port.get("bits", [])
+                direction = child_port.get("direction", "inout")
+                for index, (parent_bit, child_bit) in enumerate(zip(parent_bits, child_bits)):
+                    parent_candidates = parent_names.get(parent_bit, []) if isinstance(parent_bit, int) else []
+                    child_candidates = _bit_names(module).get(child_bit, []) if isinstance(child_bit, int) else []
+                    parent_net = parent_candidates[0] if parent_candidates else str(parent_bit)
+                    child_net = child_candidates[0] if child_candidates else str(child_bit)
+                    edges.append({
+                        "from": instance_path.rsplit(".", 1)[0] + "." + parent_net,
+                        "to": instance_path + "." + port_name,
+                        "instance": instance_path, "port": port_name,
+                        "direction": direction, "bit_index": index,
+                        "parent_bit": parent_bit, "child_bit": child_bit,
+                    })
+                node["ports"].append({
+                    "name": port_name, "direction": direction,
+                    "width": len(child_bits),
+                    "parent_net": (parent_names.get(parent_bits[0], [str(parent_bits[0])])[0]
+                                   if parent_bits and isinstance(parent_bits[0], int) else
+                                   (str(parent_bits[0]) if parent_bits else "")),
+                    "source": node["source"],
+                })
+        else:
+            for port_name, port in (module.get("ports") or {}).items():
+                node["ports"].append({
+                    "name": port_name, "direction": port.get("direction", "inout"),
+                    "width": len(port.get("bits", [])), "parent_net": port_name,
+                    "source": node["source"],
+                })
+
+        cells = module.get("cells") or {}
+        for cell_name, cell in sorted(cells.items()):
+            child_type = cell.get("type", "")
+            if child_type not in modules:
+                continue
+            child_path = instance_path + "." + cell_name
+            walk(child_type, child_path, module, cell)
+            if truncated:
+                return
+
+    walk(top, top)
+    return {
+        "top": top, "nodes": nodes, "edges": edges,
+        "instance_count": len(nodes), "connection_count": len(edges),
+        "truncated": truncated, "warnings": warnings,
+        "qualification": "Yosys elaborated hierarchy and port connections; not physical layout",
+    }
+
+
+def elaborate_with_yosys(project_root: str | Path, sources: list[str | Path], *,
+                         top: str, yosys: str = "yosys",
+                         timeout_seconds: int = 180) -> dict[str, Any]:
+    """Run Yosys read_verilog/hierarchy/proc/write_json without flattening."""
+    executable = shutil.which(yosys)
+    if not executable:
+        raise RuntimeError("Yosys executable not found. Install Yosys or set its executable path.")
+    root = Path(project_root).resolve()
+    if not sources:
+        raise ValueError("Select at least one SystemVerilog/Verilog source file")
+    resolved = []
+    for source in sources:
+        path = (root / source).resolve() if not Path(source).is_absolute() else Path(source).resolve()
+        if root not in path.parents and path != root:
+            raise ValueError(f"Source escapes project root: {source}")
+        if not path.is_file() or path.suffix.lower() not in {".sv", ".v"}:
+            raise ValueError(f"Not a readable Verilog/SystemVerilog source: {source}")
+        resolved.append(path)
+    output = root / ".wengold" / "rtl_hierarchy.json"
+    output.parent.mkdir(parents=True, exist_ok=True)
+    script = ["read_verilog -sv " + " ".join(json.dumps(str(p)) for p in resolved),
+              "hierarchy -check -top " + top,
+              "proc",
+              "write_json " + json.dumps(str(output))]
+    completed = subprocess.run(
+        [executable, "-Q", "-q", "-p", "; ".join(script)],
+        cwd=root, capture_output=True, text=True, timeout=timeout_seconds, check=False)
+    if completed.returncode:
+        detail = (completed.stderr or completed.stdout or "Yosys elaboration failed").strip()
+        raise RuntimeError(detail[-6000:])
+    try:
+        netlist = json.loads(output.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise RuntimeError(f"Yosys did not produce a valid hierarchy JSON: {exc}") from exc
+    graph = build_rtl_hierarchy(netlist, top=top)
+    graph["tool"] = "Yosys"
+    graph["source_files"] = [str(path.relative_to(root)) for path in resolved]
+    graph["yosys_log"] = (completed.stdout or "")[-4000:]
+    return graph
