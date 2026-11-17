@@ -9,6 +9,11 @@ from .wave_inspect import time_label
 from .wave_protocol import decode
 
 
+def invalidate_comparison_cache(state):
+    """Discard loaded traces and results when either selected source changes."""
+    state["a"] = state["b"] = state["diff"] = None
+
+
 def make_trace_tools(root, QtCore, QtGui, QtWidgets, alert, focus_sample):
     page = QtWidgets.QWidget()
     layout = QtWidgets.QVBoxLayout(page)
@@ -178,7 +183,7 @@ def make_trace_tools(root, QtCore, QtGui, QtWidgets, alert, focus_sample):
     def invalidate_compare(_=None):
         # A selector change invalidates the loaded captures even if a previous
         # alignment attempt failed and already cleared the visible diff.
-        state["a"] = state["b"] = None
+        invalidate_comparison_cache(state)
         clear_diff("File selection changed. Load the two traces to recompute the comparison.")
 
     def clear_diff(message):
