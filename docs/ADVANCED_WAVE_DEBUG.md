@@ -74,20 +74,23 @@ to verify prompting and evidence boundaries: a real local model remains
 workstation-dependent.
 
 
-## OpenTelemetry export
+## OpenTelemetry / Dynatrace export
 
-After analyzing a loaded VCD, use **Export OpenTelemetry bundle** in the
-Wave Debug panel. The saved JSON contains separate OTLP traces, metrics and
-logs payloads. A simulation is the parent trace; each diagnostic finding is a
-child span and a trace-correlated log record. The time unit from the VCD header
-is retained, and the raw simulator timestamp remains available in attributes.
+After analyzing a loaded VCD, use **Export OpenTelemetry bundle** to save the
+offline JSON-mapped telemetry model. Use **Send via Dynatrace OTLP** to perform
+an explicit binary Protobuf upload to the configured Dynatrace OTLP base URL.
+The UI requires a platform token, masks it, and clears it after the upload
+attempt. The JSON archive itself is not a Dynatrace wire payload.
 
-This is an offline export: WENGOLD does not upload the waveform or contact
-Dynatrace. The bundle can be routed through an OpenTelemetry Collector to
-Dynatrace or another OTLP backend. See [OTEL_TRAFFIC_DEBUG.md](OTEL_TRAFFIC_DEBUG.md)
-for the transaction adapter contract, timestamp mapping and limitations.
+A simulation is the parent trace; each diagnostic finding and each supplied
+decoder-produced bus transaction is a child span. Diagnostic logs carry the
+same Trace ID and finding Span ID. The VCD time unit and raw simulator
+timestamps are preserved. The backend display timeline is synthetic and
+must not be used for bus latency signoff.
 
-The generic telemetry model can emit spans for decoded transactions supplied
-by a protocol adapter. AXI/AHB/APB protocol decoders and direct Dynatrace
-upload are not part of this change; signal names alone are not sufficient to
-reconstruct a correct transaction.
+The telemetry exporter accepts transaction spans from a protocol adapter, but
+AXI/AHB/APB protocol decoders, automatic UVM transaction/log ingestion and
+continuous live streaming remain follow-on work. Signal names alone are not
+sufficient to reconstruct a correct transaction. See
+[OTEL_TRAFFIC_DEBUG.md](OTEL_TRAFFIC_DEBUG.md) for the transaction contract,
+Dynatrace endpoint/authentication setup, time mapping and limits.
