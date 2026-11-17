@@ -61,6 +61,32 @@ def make_wave_debug(QtCore, QtGui, QtWidgets, project_root, on_crossprobe=None,
     diff_row.addWidget(fail_browse)
     diff_row.addWidget(compare_button)
     layout.addLayout(diff_row)
+    align_row = QtWidgets.QHBoxLayout()
+    alignment_mode = QtWidgets.QComboBox()
+    alignment_mode.setObjectName("waveDiffAlignment")
+    alignment_mode.addItem("Absolute simulation time", "absolute")
+    alignment_mode.addItem("Align at reset release", "reset")
+    alignment_mode.addItem("Align by clock cycle + phase", "clock")
+    pass_reset = QtWidgets.QLineEdit()
+    pass_reset.setObjectName("waveDiffPassReset")
+    pass_reset.setPlaceholderText("PASS reset path, e.g. tb.rst_n")
+    fail_reset = QtWidgets.QLineEdit()
+    fail_reset.setObjectName("waveDiffFailReset")
+    fail_reset.setPlaceholderText("FAIL reset path (blank = PASS path)")
+    reset_active = QtWidgets.QComboBox()
+    reset_active.setObjectName("waveDiffResetActive")
+    reset_active.addItem("Reset active LOW", 0)
+    reset_active.addItem("Reset active HIGH", 1)
+    pass_clock = QtWidgets.QLineEdit()
+    pass_clock.setObjectName("waveDiffPassClock")
+    pass_clock.setPlaceholderText("PASS clock path (blank = detected)")
+    fail_clock = QtWidgets.QLineEdit()
+    fail_clock.setObjectName("waveDiffFailClock")
+    fail_clock.setPlaceholderText("FAIL clock path (blank = PASS path)")
+    for widget in (alignment_mode, pass_reset, fail_reset, reset_active,
+                   pass_clock, fail_clock):
+        align_row.addWidget(widget)
+    layout.addLayout(align_row)
     diff_summary = QtWidgets.QLabel("Differential comparison not run")
     diff_summary.setObjectName("waveDiffSummary")
     layout.addWidget(diff_summary)
@@ -72,6 +98,14 @@ def make_wave_debug(QtCore, QtGui, QtWidgets, project_root, on_crossprobe=None,
     diff_table.setMaximumHeight(155)
     diff_table.setEditTriggers(QtWidgets.QAbstractItemView.EditTrigger.NoEditTriggers)
     layout.addWidget(diff_table)
+    diff_timeline = QtWidgets.QTableWidget(0, 5)
+    diff_timeline.setObjectName("waveDiffTimeline")
+    diff_timeline.setHorizontalHeaderLabels(
+        ["Aligned time / cycle", "Signal", "PASS value", "FAIL value", "Difference type"])
+    diff_timeline.horizontalHeader().setStretchLastSection(True)
+    diff_timeline.setMaximumHeight(175)
+    diff_timeline.setEditTriggers(QtWidgets.QAbstractItemView.EditTrigger.NoEditTriggers)
+    layout.addWidget(diff_timeline)
     diff_state = {"report": None, "pass_wave": None, "fail_wave": None}
 
     def browse_vcd(field, caption):
@@ -94,32 +128,60 @@ def make_wave_debug(QtCore, QtGui, QtWidgets, project_root, on_crossprobe=None,
         try:
             p_wave = parse_vcd(Path(pfile).read_text(errors="replace"))
             f_wave = parse_vcd(Path(ffile).read_text(errors="replace"))
-            report = compare_waveforms(p_wave, f_wave)
+            mode = alignment_mode.currentData()
+            options = {"alignment": mode}
+            if mode == "reset":
+                options.update({
+                    "pass_reset_signal": pass_reset.text().strip(),
+                    "fail_reset_signal": fail_reset.text().strip() or pass_reset.text().strip(),
+                    "reset_active_level": reset_active.currentData()})
+            elif mode == "clock":
+                options.update({
+                    "pass_clock_signal": pass_clock.text().strip() or None,
+                    "fail_clock_signal": fail_clock.text().strip() or pass_clock.text().strip() or None})
+            report = compare_waveforms(p_wave, f_wave, **options)
         except (OSError, ValueError, TypeError) as exc:
             diff_summary.setText("Waveform comparison failed: " + str(exc))
             diff_table.setRowCount(0)
+            diff_timeline.setRowCount(0)
             return
         diff_state.update(report=report, pass_wave=p_wave, fail_wave=f_wave)
         diff_table.setRowCount(len(report["per_signal"]))
         for row, item in enumerate(report["per_signal"]):
             first = item["first_difference"]
-            values = (item["signal"], item["differences"], first["time_ns"],
+            values = (item["signal"], item["differences"], first["aligned_time"],
                       first["pass"], first["fail"])
             for col, value in enumerate(values):
                 diff_table.setItem(row, col, QtWidgets.QTableWidgetItem(str(value)))
+        diff_timeline.setRowCount(len(report["differences"]))
+        for row, item in enumerate(report["differences"]):
+            label = f"{item['aligned_time']} {item['time_unit']}"
+            values = (label, item["signal"], item["pass"], item["fail"], item["kind"])
+            for col, value in enumerate(values):
+                cell = QtWidgets.QTableWidgetItem(str(value))
+                if item["kind"] == "unknown_vs_known":
+                    cell.setBackground(QtGui.QColor("#704b20"))
+                elif item["kind"] == "width_mismatch":
+                    cell.setBackground(QtGui.QColor("#633b72"))
+                else:
+                    cell.setBackground(QtGui.QColor("#713b3b"))
+                diff_timeline.setItem(row, col, cell)
         first = report["first_divergence"]
         if first:
             diff_summary.setText(
-                f"FIRST DIVERGENCE: {first['signal']} at {first['time_ns']} ns · "
+                f"FIRST DIVERGENCE: {first['signal']} at "
+                f"{first['aligned_time']} {first['time_unit']} · "
                 f"PASS={first['pass']} · FAIL={first['fail']} · "
                 f"{report['total_differences']} differences across "
                 f"{len(report['per_signal'])} signals · "
                 f"{len(report['pass_only_signals'])} PASS-only / "
-                f"{len(report['fail_only_signals'])} FAIL-only signals")
+                f"{len(report['fail_only_signals'])} FAIL-only signals · "
+                f"alignment={report['alignment']['mode']}")
         else:
             diff_summary.setText(
                 f"No value differences on {report['common_signals']} common signals "
-                f"over {report['compared_timestamps']} aligned timestamps. "
+                f"over {report['compared_timestamps']} aligned timestamps "
+                f"({report['alignment']['mode']} alignment). "
                 f"PASS-only: {len(report['pass_only_signals'])}; "
                 f"FAIL-only: {len(report['fail_only_signals'])}.")
         findings_detail.setPlainText(json.dumps(report, indent=2))
@@ -135,16 +197,19 @@ def make_wave_debug(QtCore, QtGui, QtWidgets, project_root, on_crossprobe=None,
         # The currently loaded waveform remains the timeline reference. Jump
         # to its closest physical timestamp to the first divergence.
         if on_select_time and state["wave"] is not None:
-            target = item["first_difference"]["time_ns"]
-            scale = state["wave"].get("time_unit_ns") or 1
-            times = state["wave"].get("times", list(range(state["wave"].get("cycles", 0))))
-            try:
-                from decimal import Decimal
-                target_tick = Decimal(target) / Decimal(str(scale))
-                index = min(range(len(times)), key=lambda i: abs(Decimal(str(times[i])) - target_tick))
-                on_select_time(index)
-            except (ValueError, ZeroDivisionError):
-                pass
+            # Absolute-time cross-probing is exact. Reset/cycle-aligned overlays
+            # intentionally avoid jumping to a misleading raw-time sample.
+            if report["alignment"]["mode"] == "absolute":
+                target = item["first_difference"]["aligned_time"]
+                scale = state["wave"].get("time_unit_ns") or 1
+                times = state["wave"].get("times", list(range(state["wave"].get("cycles", 0))))
+                try:
+                    from decimal import Decimal
+                    target_tick = Decimal(target) / Decimal(str(scale))
+                    index = min(range(len(times)), key=lambda i: abs(Decimal(str(times[i])) - target_tick))
+                    on_select_time(index)
+                except (ValueError, ZeroDivisionError):
+                    pass
         findings_detail.setPlainText(json.dumps(item, indent=2))
 
     compare_button.clicked.connect(compare_pass_fail)
