@@ -581,3 +581,77 @@ def test_native_loads_fst_without_blocking_ui(native_window):
     assert button.isEnabled()
     assert tabs.waveCanvas.data["source_format"] == "fst"
     assert tabs.waveCanvas.data["times"] == [0, 5]
+
+
+
+def test_trace_selection_change_invalidates_after_bad_alignment(native_window):
+    import time
+    from PyQt6 import QtWidgets
+
+    root, app, window = native_window
+    waves = root / "waves"
+    waves.mkdir(exist_ok=True)
+
+    def write_trace(path, final_value):
+        path.write_text(
+            "$timescale 1ns $end\\n$scope module tb $end\\n"
+            "$var wire 1 ! q $end\\n$upscope $end\\n"
+            "$enddefinitions $end\\n#0 0!\\n#5 " + final_value + "!\\n"
+        )
+
+    write_trace(waves / "baseline.vcd", "0")
+    write_trace(waves / "candidate.vcd", "1")
+    write_trace(waves / "replacement.vcd", "0")
+
+    tabs = window.workspace
+    tabs.refreshEvidence()
+    window.show()
+    window._go_workspace("Trace Tools")
+    app.processEvents()
+
+    def widget(cls, name):
+        result = tabs.findChild(cls, name)
+        assert result is not None, name
+        return result
+
+    baseline = widget(QtWidgets.QComboBox, "traceBaseline")
+    candidate = widget(QtWidgets.QComboBox, "traceCandidate")
+    load = widget(QtWidgets.QPushButton, "traceCompare")
+    align = widget(QtWidgets.QPushButton, "traceAlign")
+    anchor = widget(QtWidgets.QLineEdit, "traceAnchorA")
+    summary = widget(QtWidgets.QLabel, "traceCompareSummary")
+
+    baseline.setCurrentText("waves/baseline.vcd")
+    candidate.setCurrentText("waves/candidate.vcd")
+    load.click()
+
+    deadline = time.monotonic() + 5
+    while not load.isEnabled() and time.monotonic() < deadline:
+        app.processEvents()
+        time.sleep(.01)
+    app.processEvents()
+    assert load.isEnabled()
+    assert "First divergence: tb.q at 5 ns" in summary.text()
+
+    # Fail alignment after loading; the old implementation retained both
+    # captures while clearing only the visible comparison result.
+    anchor.setText("999")
+    align.click()
+    assert "Alignment anchors must be observed timestamps" in summary.text()
+
+    # Changing a selector must invalidate the captures even though diff=None.
+    candidate.setCurrentText("waves/replacement.vcd")
+    anchor.clear()
+    align.click()
+    assert "File selection changed" in summary.text()
+    assert "First divergence:" not in summary.text()
+
+    # A fresh load must use the newly selected file, which is identical here.
+    load.click()
+    deadline = time.monotonic() + 5
+    while not load.isEnabled() and time.monotonic() < deadline:
+        app.processEvents()
+        time.sleep(.01)
+    app.processEvents()
+    assert load.isEnabled()
+    assert "First divergence:" not in summary.text()
