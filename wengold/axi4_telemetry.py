@@ -421,11 +421,18 @@ def decode_axi4(wave: Mapping[str, Any], *,
                 if wlast is None:
                     tx_issue(tx, "unknown_wlast", "AXI4 WLAST is unknown",
                              index, [sig("WLAST")], "WLAST is X/Z/unobserved on an accepted W beat")
-                elif (wlast == 1) != expected_last:
-                    rule = "early_wlast" if wlast == 1 else "missing_wlast"
-                    tx_issue(tx, rule, "AXI4 WLAST does not match AWLEN",
+                elif wlast == 1 and beat_index < tx["expected_beats"]:
+                    tx_issue(tx, "early_wlast", "AXI4 WLAST asserted before AWLEN beat count",
                              index, [sig("AWLEN"), sig("WLAST")],
-                             f"beat {beat_index}/{tx['expected_beats']}, WLAST={wlast}")
+                             f"beat {beat_index}/{tx['expected_beats']}, WLAST=1")
+                elif wlast == 0 and expected_last:
+                    tx_issue(tx, "missing_wlast", "AXI4 WLAST missing on AWLEN final beat",
+                             index, [sig("AWLEN"), sig("WLAST")],
+                             f"beat {beat_index}/{tx['expected_beats']}, WLAST=0")
+                elif wlast == 1 and beat_index > tx["expected_beats"]:
+                    tx_issue(tx, "late_wlast", "AXI4 WLAST asserted after AWLEN beat count",
+                             index, [sig("AWLEN"), sig("WLAST")],
+                             f"beat {beat_index}/{tx['expected_beats']}, WLAST=1")
                 if wlast == 1:
                     pending_aw.popleft()
                     awaiting_b[tx["id"]].append(tx)
@@ -520,11 +527,18 @@ def decode_axi4(wave: Mapping[str, Any], *,
                 if rlast is None:
                     tx_issue(tx, "unknown_rlast", "AXI4 RLAST is unknown",
                              index, [sig("RLAST")], "RLAST is X/Z/unobserved on an accepted R beat")
-                elif (rlast == 1) != expected_last:
-                    rule = "early_rlast" if rlast == 1 else "missing_rlast"
-                    tx_issue(tx, rule, "AXI4 RLAST does not match ARLEN",
+                elif rlast == 1 and beat_index < tx["expected_beats"]:
+                    tx_issue(tx, "early_rlast", "AXI4 RLAST asserted before ARLEN beat count",
                              index, [sig("ARLEN"), sig("RLAST")],
-                             f"beat {beat_index}/{tx['expected_beats']}, RLAST={rlast}")
+                             f"beat {beat_index}/{tx['expected_beats']}, RLAST=1")
+                elif rlast == 0 and expected_last:
+                    tx_issue(tx, "missing_rlast", "AXI4 RLAST missing on ARLEN final beat",
+                             index, [sig("ARLEN"), sig("RLAST")],
+                             f"beat {beat_index}/{tx['expected_beats']}, RLAST=0")
+                elif rlast == 1 and beat_index > tx["expected_beats"]:
+                    tx_issue(tx, "late_rlast", "AXI4 RLAST asserted after ARLEN beat count",
+                             index, [sig("ARLEN"), sig("RLAST")],
+                             f"beat {beat_index}/{tx['expected_beats']}, RLAST=1")
                 if rresp is None:
                     tx_issue(tx, "unknown_rresp", "AXI4 RRESP is unknown",
                              index, [sig("RRESP")], "RRESP is X/Z/unobserved")
