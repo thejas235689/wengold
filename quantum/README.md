@@ -12,7 +12,7 @@ python -m pip install -e '.[native]'
 python -m wengold.quantum_app
 ```
 
-QuEST is a native C/C++ dependency and is built separately; see [docs/quantum/architecture.md](../docs/quantum/architecture.md). Qiskit and Cirq are optional runtime dependencies. The editor and IR tests do not require a simulator backend.
+QuEST is a native C/C++ dependency and is built separately; see [quantum/native/README.md](native/README.md) for the pinned v4.2.0 bridge build and [docs/quantum/architecture.md](../docs/quantum/architecture.md) for the backend contract. Qiskit and Cirq are optional runtime dependencies. The editor and IR tests do not require a simulator backend.
 
 ## Initial scope
 
@@ -21,7 +21,7 @@ QuEST is a native C/C++ dependency and is built separately; see [docs/quantum/ar
 - Validation for qubit bounds, duplicate IDs, gate arity and parameter shape.
 - Lazy backend registry and normalized execution result.
 - Qiskit and Cirq adapters when their packages are installed, including statevector and sampled measurement paths with normalized bit ordering.
-- QuEST adapter contract with explicit unsupported status until a compatible native binding is configured.
+- Optional QuEST v4 statevector adapter through the WENGOLD pybind11 bridge; terminal measurements are sampled in Python. It remains unavailable until the native extension is compiled.
 - Minimal native Qt circuit editor and standalone launcher.
 
 ## Project persistence
