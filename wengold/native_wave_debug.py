@@ -396,6 +396,21 @@ def make_wave_debug(QtCore, QtGui, QtWidgets, project_root, on_crossprobe=None,
         }, indent=2))
         page.axi4DecodeResult = result
 
+    def select_transaction():
+        row = traffic_table.currentRow()
+        traffic = state["traffic"]
+        if traffic is None or row < 0 or row >= len(traffic["transactions"]):
+            return
+        tx = traffic["transactions"][row]
+        logical = "AWVALID" if tx.get("operation") == "write" else "ARVALID"
+        signal_name = traffic.get("signal_map", {}).get(logical)
+        if signal_name and on_crossprobe:
+            on_crossprobe(signal_name)
+        start_index = tx.get("attributes", {}).get("start_sample_index")
+        if on_select_time and isinstance(start_index, int):
+            on_select_time(start_index)
+        findings_detail.setPlainText(json.dumps(tx, indent=2))
+
     def show_finding():
         row = finding_table.currentRow()
         rows = state["display_findings"]
@@ -419,6 +434,7 @@ def make_wave_debug(QtCore, QtGui, QtWidgets, project_root, on_crossprobe=None,
     rtl_table.itemSelectionChanged.connect(lambda: select_signal(rtl_table))
     tb_table.itemSelectionChanged.connect(lambda: select_signal(tb_table))
     finding_table.itemSelectionChanged.connect(show_finding)
+    traffic_table.itemSelectionChanged.connect(select_transaction)
     run.clicked.connect(analyze)
     axi_decode_button.clicked.connect(decode_axi4_action)
     export_otel_button.clicked.connect(export_otel)
@@ -447,7 +463,9 @@ def make_wave_debug(QtCore, QtGui, QtWidgets, project_root, on_crossprobe=None,
         state["busy"] = True
         explain.setEnabled(False)
         ai_text.setPlainText("Calling selected LOCAL model with bounded waveform evidence…")
-        args = (state["report"], backend.currentText(), endpoint.text().strip(),
+        ai_report = dict(state["report"])
+        ai_report["findings"] = list(state["display_findings"])
+        args = (ai_report, backend.currentText(), endpoint.text().strip(),
                 model.text().strip())
         thread = QtCore.QThread(page)
         worker = AiWorker(args)
