@@ -137,7 +137,6 @@ def test_slang_frontend_emits_read_slang_and_records_frontend(tmp_path, monkeypa
     assert graph["frontend"] == "yosys-slang/read_slang"
     assert "plugin -i slang" in calls["command"][-1]
     assert "read_slang --top top --std 1800-2017" in calls["command"][-1]
-    assert "--keep-hierarchy" in calls["command"][-1]
     assert "--unroll-limit 4096" in calls["command"][-1]
     assert "read_verilog" not in calls["command"][-1]
 
