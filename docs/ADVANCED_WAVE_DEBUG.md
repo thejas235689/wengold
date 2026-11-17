@@ -72,3 +72,97 @@ These tests include real VCD samples with RTL unknowns, TB scoreboard
 mismatches, missing handshakes and a clean capture. AI tests use a stub
 to verify prompting and evidence boundaries: a real local model remains
 workstation-dependent.
+
+
+## AXI4 traffic decode
+
+The Wave Debug panel now includes an AXI4 prefix/clock selector and a
+**Decode AXI4 traffic** action. It reconstructs full AXI4 write/read transactions
+at rising ACLK edges, uses VALID && READY for handshakes, applies AXI4 AW-to-W
+ordering, matches B responses by BID and R beats by RID, and checks AWLEN/WLAST and ARLEN/RLAST. While a VALID is stalled, it checks
+that the channel payload (address/ID/length, data/strobes/LAST, response and
+captured USER fields) remains stable. It also measures channel stalls and
+reports unknown controls/payloads, payload changes, VALID drops before READY,
+orphan beats, response errors, reset-aborted transactions and incomplete
+capture-end requests.
+
+Completed AXI4 transactions appear in a table; selecting one cross-probes its
+address-valid signal and start sample. AXI4 findings join the shared evidence
+table and are included in local AI hypotheses and OpenTelemetry export. AXI4
+stall cycles and maximum stall lengths are exported as protocol metrics.
+
+The decoder needs the full AXI4 channel signals and a clocked capture. The
+default interface prefix is tb.dut.axi; change it to match the VCD hierarchy.
+This is a full AXI4 decoder, not AXI4-Lite, AHB or APB. AVALID wait without
+READY is a measured backpressure interval, not proof of a DUT bug by itself.
+
+## OpenTelemetry / Dynatrace export
+
+After analyzing a loaded VCD, use **Export OpenTelemetry bundle** to save the
+offline JSON-mapped telemetry model. Use **Send via Dynatrace OTLP** to perform
+an explicit binary Protobuf upload to the configured Dynatrace OTLP base URL.
+The UI requires a platform token, masks it, and clears it after the upload
+attempt. The JSON archive itself is not a Dynatrace wire payload.
+
+A simulation is the parent trace; each diagnostic finding and each supplied
+decoder-produced bus transaction is a child span. Diagnostic logs carry the
+same Trace ID and finding Span ID. The VCD time unit and raw simulator
+timestamps are preserved. The backend display timeline is synthetic and
+must not be used for bus latency signoff.
+
+The telemetry exporter accepts transaction spans from a protocol adapter, but
+AXI/AHB/APB protocol decoders, automatic UVM transaction/log ingestion and
+continuous live streaming remain follow-on work. Signal names alone are not
+sufficient to reconstruct a correct transaction. See
+[OTEL_TRAFFIC_DEBUG.md](OTEL_TRAFFIC_DEBUG.md) for the transaction contract,
+Dynatrace endpoint/authentication setup, time mapping and limits.
+
+## PASS versus FAIL differential waveform comparison
+
+Use **Wave Debug → Browse PASS… / Browse FAIL… → Compare PASS vs FAIL** to
+compare a known-good VCD against a failing regression VCD. The comparison:
+- Matches signals by exact fully-qualified hierarchy path and reports PASS-only
+  and FAIL-only signals separately.
+- Converts both VCD timescales to physical nanoseconds and compares the union
+  of change timestamps over the common capture interval using VCD
+  hold-last-value semantics.
+- Identifies the first divergent signal and timestamp, PASS and FAIL values,
+  per-signal difference counts, unknown-versus-known mismatches and width
+  mismatches.
+- Lets you select a differing signal to cross-probe the RTL and jump to the
+  closest corresponding time in the currently loaded Waveforms timeline.
+- Caps the detailed difference list to protect the UI while preserving the
+  total difference count and marking truncated reports.
+
+The two captures must overlap in absolute VCD time. This first implementation
+does not automatically align traces to reset release, transaction IDs, or
+clock edges; use matching simulator start times and dump scopes. Signals with
+different hierarchy names are not automatically guessed as equivalent.
+X and Z are represented as unknown by the current parser. A divergence is a
+debugging lead, not proof of root cause.
+
+Focused tests:
+`python3 -m pytest -q tests/test_wave_diff.py tests/test_wave_debug.py tests/test_wave.py`
+
+## Reset-release and clock-cycle alignment
+
+The PASS/FAIL differential panel now offers three alignment modes:
+
+- **Absolute simulation time**: compare on physical nanoseconds (original mode).
+- **Align at reset release**: provide the PASS and FAIL reset signal paths and active level (active-low by default). Both traces are shifted so the first observed active-to-inactive transition is time zero. Samples before release are excluded.
+- **Align by clock cycle + phase**: select or auto-detect each capture's clock. Rising edges define cycle boundaries; timestamps between edges are mapped to normalized cycle + phase coordinates. This supports different clock periods while retaining intra-cycle ordering.
+
+The panel also renders a difference timeline with aligned time/cycle, signal name,
+PASS value, FAIL value and difference type. Selecting a per-signal row cross-probes
+the RTL. For reset- and clock-aligned comparisons, the cross-probe does not jump
+the original absolute-time Waveforms cursor because the aligned coordinate is not
+the raw timestamp; the overlay remains the source of truth for that comparison.
+
+Clock alignment requires at least two rising edges in each capture and assumes
+corresponding rising edges represent corresponding cycle boundaries. It does not
+infer clock-domain crossings, transaction equivalence, or reset polarity. Use
+matching reset/clock paths where possible and review the raw captures before
+treating a mismatch as a DUT bug.
+
+Focused tests:
+`python3 -m pytest -q tests/test_wave_diff.py`

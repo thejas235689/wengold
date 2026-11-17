@@ -5,25 +5,47 @@ and no invented data:
 
 * **A formal counterexample.** The engines already produce one — a concrete trace
   of input and state values per cycle, computed while searching for a violation
-  of a property. That trace *is* a waveform, and it is the one that matters:
-  it is the cycle in which the property failed.
+  of a property. That trace *is* a waveform, and it is the cycle in which the
+  property failed.
 * **A VCD file.** A simulator's dump, parsed here. Point the IDE at one with
-  `--vcd` and it is drawn the same way.
+  --vcd and it is drawn the same way.
 
-Both normalise to the same shape, so the renderer has one input:
-
-    {"source": str, "clock": str | None, "fail_at": int | None,
-     "cycles": int,
-     "signals": [{"name": str, "width": int, "values": [...]}, ...]}
-
-`values[i]` is the value of that signal at cycle `i`; `None` means unknown.
+Both normalise to the same shape. VCD time units are retained so telemetry
+export can map simulation ticks without guessing the simulator timescale.
 """
 from __future__ import annotations
 
 import re
+from decimal import Decimal
 from pathlib import Path
 
 __all__ = ["from_trace", "parse_vcd", "from_vcd", "from_formal"]
+
+_TIME_UNITS_NS = {
+    "s": Decimal("1000000000"),
+    "ms": Decimal("1000000"),
+    "us": Decimal("1000"),
+    "ns": Decimal("1"),
+    "ps": Decimal("0.001"),
+    "fs": Decimal("0.000001"),
+}
+_TIMESCALE = re.compile(
+    r"\$timescale\s+(\d+)\s*(s|ms|us|ns|ps|fs)\s+\$end",
+    re.IGNORECASE,
+)
+
+
+def _timescale_info(text: str) -> dict:
+    match = _TIMESCALE.search(text)
+    if not match:
+        return {"timescale": None, "time_unit_ns": None, "time_unit_label": "tick"}
+    magnitude, unit = match.groups()
+    unit = unit.lower()
+    return {
+        "timescale": f"{magnitude}{unit}",
+        "time_unit_ns": str(Decimal(magnitude) * _TIME_UNITS_NS[unit]),
+        "time_unit_label": unit,
+    }
 
 
 def _widths_of(rtl_text: str) -> dict[str, int]:
@@ -37,11 +59,11 @@ def _widths_of(rtl_text: str) -> dict[str, int]:
 def from_trace(trace: list, widths: dict[str, int] | None = None,
                clock: str | None = None, source: str = "formal counterexample",
                fail_at: int | None = None) -> dict:
-    """Normalise an engine trace into a waveform.
+    """Normalise an engine trace into the waveform shape.
 
-    The engines emit the initial state, then one `{"inputs":…, "state":…}` per
-    cycle. The state already carries the inputs merged in, so the state alone
-    gives every signal at every cycle.
+    Formal trace positions are logical cycles, not physical time. Their unit is
+    explicitly labelled cycle so a downstream exporter cannot mistake them
+    for measured nanoseconds.
     """
     widths = widths or {}
     cycles: list[dict] = []
@@ -54,14 +76,14 @@ def from_trace(trace: list, widths: dict[str, int] | None = None,
             cycles.append({})
     if not cycles:
         return {"source": source, "clock": clock, "fail_at": None, "cycles": 0,
-                "signals": []}
+                "signals": [], "timescale": "1cycle", "time_unit_ns": "1",
+                "time_unit_label": "cycle"}
 
     names: list[str] = []
     for c in cycles:
         for k in c:
             if k not in names:
                 names.append(k)
-    # clock first, then inputs and state alphabetically — a stable, readable order
     names.sort(key=lambda n: (n != clock, n))
     signals = [{"name": n,
                 "width": int(widths.get(n, 1)),
@@ -69,7 +91,9 @@ def from_trace(trace: list, widths: dict[str, int] | None = None,
                for n in names]
     return {"source": source, "clock": clock,
             "fail_at": fail_at if fail_at is not None else len(cycles) - 1,
-            "cycles": len(cycles), "signals": signals}
+            "cycles": len(cycles), "signals": signals,
+            "timescale": "1cycle", "time_unit_ns": "1",
+            "time_unit_label": "cycle"}
 
 
 # ---- VCD -------------------------------------------------------------------
@@ -81,9 +105,7 @@ _UPSCOPE = re.compile(r"\$upscope\s*\$end")
 
 def parse_vcd(text: str, limit: int = 4000) -> dict:
     """Parse a VCD dump into the waveform shape."""
-    # Track the scope stack. A dump of `tb` and its children declares the same
-    # net twice (`tb.q` and `tb.u.q`); keying on the leaf name alone reported two
-    # signals both called `q`, which is indistinguishable in the waveform.
+    timing = _timescale_info(text)
     ids: dict[str, tuple[str, int]] = {}
     scope: list[str] = []
     for line in text.splitlines():
@@ -103,14 +125,11 @@ def parse_vcd(text: str, limit: int = 4000) -> dict:
                 scope.pop()
     body = text.split("$enddefinitions", 1)
     if len(body) < 2:
-        return {"source": "vcd", "clock": None, "fail_at": None, "cycles": 0,
-                "signals": []}
+        return {"source": "vcd", "clock": None, "fail_at": None,
+                "cycles": 0, "signals": [], **timing}
 
-    # A VCD lists the value changes *after* their `#time` marker, so a snapshot
-    # taken when the marker is read is the previous cycle's. Record the values
-    # when the NEXT marker arrives instead.
-    current: dict[str, int] = {}
-    history: list[tuple[int, dict[str, int]]] = []
+    current: dict[str, int | None] = {}
+    history: list[tuple[int, dict[str, int | None]]] = []
     pending: int | None = None
     for line in body[1].splitlines():
         line = line.strip()
@@ -141,35 +160,23 @@ def parse_vcd(text: str, limit: int = 4000) -> dict:
     if pending is not None:
         history.append((pending, dict(current)))
     if not history:
-        return {"source": "vcd", "clock": None, "fail_at": None, "cycles": 0,
-                "signals": []}
+        return {"source": "vcd", "clock": None, "fail_at": None,
+                "cycles": 0, "signals": [], **timing}
     history = history[:limit]
-
-    def value_at(ident: str, t: int) -> int | None:
-        last = None
-        for tt, snap in history:
-            if tt > t:
-                break
-            if ident in snap:
-                last = snap[ident]
-        return last
 
     names = [ids[i][0] for i in ids]
     clock = next((n for n in names if re.search(r"(?i)clk|clock", n)), None)
     if clock is None:
-        clock = next((n for n in names if re.search(r"(?i)clk|clock", n.split(".")[-1])),
-                     None)
+        clock = next((n for n in names
+                      if re.search(r"(?i)clk|clock", n.split(".")[-1])), None)
     signals = []
     for ident, (name, width) in ids.items():
-        # Each history entry already contains the cumulative signal state.
-        # The old value_at() rescanned history for every sample (quadratic in
-        # sample count), freezing larger VCD debugging sessions.
         values = [snapshot.get(ident) for _t, snapshot in history]
         signals.append({"name": name, "width": width, "values": values})
     signals.sort(key=lambda s: (s["name"] != clock, s["name"]))
     return {"source": "vcd", "clock": clock, "fail_at": None,
             "cycles": len(history), "signals": signals,
-            "times": [t for t, _ in history]}
+            "times": [t for t, _ in history], **timing}
 
 
 def from_vcd(path: str | Path) -> dict:

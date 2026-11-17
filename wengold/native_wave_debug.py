@@ -9,6 +9,9 @@ import json
 import os
 
 from .wave_debug import diagnose, explain_with_local_ai
+from .axi4_telemetry import decode_axi4
+from .otel_telemetry import (build_otlp_bundle, write_otlp_bundle,
+                             send_dynatrace_otlp)
 
 
 def make_wave_debug(QtCore, QtGui, QtWidgets, project_root, on_crossprobe=None,
@@ -35,6 +38,204 @@ def make_wave_debug(QtCore, QtGui, QtWidgets, project_root, on_crossprobe=None,
               QtWidgets.QLabel("Handshake samples"), window, run):
         roots.addWidget(w)
     layout.addLayout(roots)
+
+    # Differential PASS-vs-FAIL waveform comparison. The primary waveform is
+    # the loaded capture; a second VCD is explicitly selected as the failing run.
+    diff_row = QtWidgets.QHBoxLayout()
+    pass_path = QtWidgets.QLineEdit()
+    pass_path.setObjectName("wavePassVcdPath")
+    pass_path.setPlaceholderText("PASS VCD (known-good reference)")
+    fail_path = QtWidgets.QLineEdit()
+    fail_path.setObjectName("waveFailVcdPath")
+    fail_path.setPlaceholderText("FAIL VCD (failing regression)")
+    pass_browse = QtWidgets.QPushButton("Browse PASS…")
+    pass_browse.setObjectName("waveBrowsePassVcd")
+    fail_browse = QtWidgets.QPushButton("Browse FAIL…")
+    fail_browse.setObjectName("waveBrowseFailVcd")
+    compare_button = QtWidgets.QPushButton("Compare PASS vs FAIL")
+    compare_button.setObjectName("waveComparePassFail")
+    compare_button.setEnabled(True)
+    diff_row.addWidget(pass_path, 2)
+    diff_row.addWidget(pass_browse)
+    diff_row.addWidget(fail_path, 2)
+    diff_row.addWidget(fail_browse)
+    diff_row.addWidget(compare_button)
+    layout.addLayout(diff_row)
+    align_row = QtWidgets.QHBoxLayout()
+    alignment_mode = QtWidgets.QComboBox()
+    alignment_mode.setObjectName("waveDiffAlignment")
+    alignment_mode.addItem("Absolute simulation time", "absolute")
+    alignment_mode.addItem("Align at reset release", "reset")
+    alignment_mode.addItem("Align by clock cycle + phase", "clock")
+    pass_reset = QtWidgets.QLineEdit()
+    pass_reset.setObjectName("waveDiffPassReset")
+    pass_reset.setPlaceholderText("PASS reset path, e.g. tb.rst_n")
+    fail_reset = QtWidgets.QLineEdit()
+    fail_reset.setObjectName("waveDiffFailReset")
+    fail_reset.setPlaceholderText("FAIL reset path (blank = PASS path)")
+    reset_active = QtWidgets.QComboBox()
+    reset_active.setObjectName("waveDiffResetActive")
+    reset_active.addItem("Reset active LOW", 0)
+    reset_active.addItem("Reset active HIGH", 1)
+    pass_clock = QtWidgets.QLineEdit()
+    pass_clock.setObjectName("waveDiffPassClock")
+    pass_clock.setPlaceholderText("PASS clock path (blank = detected)")
+    fail_clock = QtWidgets.QLineEdit()
+    fail_clock.setObjectName("waveDiffFailClock")
+    fail_clock.setPlaceholderText("FAIL clock path (blank = PASS path)")
+    for widget in (alignment_mode, pass_reset, fail_reset, reset_active,
+                   pass_clock, fail_clock):
+        align_row.addWidget(widget)
+    layout.addLayout(align_row)
+    diff_summary = QtWidgets.QLabel("Differential comparison not run")
+    diff_summary.setObjectName("waveDiffSummary")
+    layout.addWidget(diff_summary)
+    diff_table = QtWidgets.QTableWidget(0, 5)
+    diff_table.setObjectName("waveDiffSignals")
+    diff_table.setHorizontalHeaderLabels(
+        ["Signal", "Differences", "First aligned time", "PASS value", "FAIL value"])
+    diff_table.horizontalHeader().setStretchLastSection(True)
+    diff_table.setMaximumHeight(155)
+    diff_table.setEditTriggers(QtWidgets.QAbstractItemView.EditTrigger.NoEditTriggers)
+    layout.addWidget(diff_table)
+    diff_timeline = QtWidgets.QTableWidget(0, 5)
+    diff_timeline.setObjectName("waveDiffTimeline")
+    diff_timeline.setHorizontalHeaderLabels(
+        ["Aligned time / cycle", "Signal", "PASS value", "FAIL value", "Difference type"])
+    diff_timeline.horizontalHeader().setStretchLastSection(True)
+    diff_timeline.setMaximumHeight(175)
+    diff_timeline.setEditTriggers(QtWidgets.QAbstractItemView.EditTrigger.NoEditTriggers)
+    layout.addWidget(diff_timeline)
+    diff_state = {"report": None, "pass_wave": None, "fail_wave": None}
+
+    def browse_vcd(field, caption):
+        filename, _ = QtWidgets.QFileDialog.getOpenFileName(
+            page, caption, "", "VCD waveform (*.vcd);;All files (*)")
+        if filename:
+            field.setText(filename)
+
+    pass_browse.clicked.connect(lambda: browse_vcd(pass_path, "Select passing VCD"))
+    fail_browse.clicked.connect(lambda: browse_vcd(fail_path, "Select failing VCD"))
+
+    def compare_pass_fail():
+        from pathlib import Path
+        from .wave import parse_vcd
+        from .wave_diff import compare_waveforms
+        pfile, ffile = pass_path.text().strip(), fail_path.text().strip()
+        if not pfile or not ffile:
+            diff_summary.setText("Select both a PASS VCD and a FAIL VCD.")
+            return
+        try:
+            p_wave = parse_vcd(Path(pfile).read_text(errors="replace"))
+            f_wave = parse_vcd(Path(ffile).read_text(errors="replace"))
+            mode = alignment_mode.currentData()
+            options = {"alignment": mode}
+            if mode == "reset":
+                options.update({
+                    "pass_reset_signal": pass_reset.text().strip(),
+                    "fail_reset_signal": fail_reset.text().strip() or pass_reset.text().strip(),
+                    "reset_active_level": reset_active.currentData()})
+            elif mode == "clock":
+                options.update({
+                    "pass_clock_signal": pass_clock.text().strip() or None,
+                    "fail_clock_signal": fail_clock.text().strip() or pass_clock.text().strip() or None})
+            report = compare_waveforms(p_wave, f_wave, **options)
+        except (OSError, ValueError, TypeError) as exc:
+            diff_summary.setText("Waveform comparison failed: " + str(exc))
+            diff_table.setRowCount(0)
+            diff_timeline.setRowCount(0)
+            return
+        diff_state.update(report=report, pass_wave=p_wave, fail_wave=f_wave)
+        diff_table.setRowCount(len(report["per_signal"]))
+        for row, item in enumerate(report["per_signal"]):
+            first = item["first_difference"]
+            values = (item["signal"], item["differences"], first["aligned_time"],
+                      first["pass"], first["fail"])
+            for col, value in enumerate(values):
+                diff_table.setItem(row, col, QtWidgets.QTableWidgetItem(str(value)))
+        diff_timeline.setRowCount(len(report["differences"]))
+        for row, item in enumerate(report["differences"]):
+            label = f"{item['aligned_time']} {item['time_unit']}"
+            values = (label, item["signal"], item["pass"], item["fail"], item["kind"])
+            for col, value in enumerate(values):
+                cell = QtWidgets.QTableWidgetItem(str(value))
+                if item["kind"] == "unknown_vs_known":
+                    cell.setBackground(QtGui.QColor("#704b20"))
+                elif item["kind"] == "width_mismatch":
+                    cell.setBackground(QtGui.QColor("#633b72"))
+                else:
+                    cell.setBackground(QtGui.QColor("#713b3b"))
+                diff_timeline.setItem(row, col, cell)
+        first = report["first_divergence"]
+        if first:
+            diff_summary.setText(
+                f"FIRST DIVERGENCE: {first['signal']} at "
+                f"{first['aligned_time']} {first['time_unit']} · "
+                f"PASS={first['pass']} · FAIL={first['fail']} · "
+                f"{report['total_differences']} differences across "
+                f"{len(report['per_signal'])} signals · "
+                f"{len(report['pass_only_signals'])} PASS-only / "
+                f"{len(report['fail_only_signals'])} FAIL-only signals · "
+                f"alignment={report['alignment']['mode']}")
+        else:
+            diff_summary.setText(
+                f"No value differences on {report['common_signals']} common signals "
+                f"over {report['compared_timestamps']} aligned timestamps "
+                f"({report['alignment']['mode']} alignment). "
+                f"PASS-only: {len(report['pass_only_signals'])}; "
+                f"FAIL-only: {len(report['fail_only_signals'])}.")
+        findings_detail.setPlainText(json.dumps(report, indent=2))
+
+    def select_diff_signal():
+        row = diff_table.currentRow()
+        report = diff_state["report"]
+        if report is None or row < 0 or row >= len(report["per_signal"]):
+            return
+        item = report["per_signal"][row]
+        if on_crossprobe:
+            on_crossprobe(item["signal"])
+        # The currently loaded waveform remains the timeline reference. Jump
+        # to its closest physical timestamp to the first divergence.
+        if on_select_time and state["wave"] is not None:
+            # Absolute-time cross-probing is exact. Reset/cycle-aligned overlays
+            # intentionally avoid jumping to a misleading raw-time sample.
+            if report["alignment"]["mode"] == "absolute":
+                target = item["first_difference"]["aligned_time"]
+                scale = state["wave"].get("time_unit_ns") or 1
+                times = state["wave"].get("times", list(range(state["wave"].get("cycles", 0))))
+                try:
+                    from decimal import Decimal
+                    target_tick = Decimal(target) / Decimal(str(scale))
+                    index = min(range(len(times)), key=lambda i: abs(Decimal(str(times[i])) - target_tick))
+                    on_select_time(index)
+                except (ValueError, ZeroDivisionError):
+                    pass
+        findings_detail.setPlainText(json.dumps(item, indent=2))
+
+    compare_button.clicked.connect(compare_pass_fail)
+    diff_table.itemSelectionChanged.connect(select_diff_signal)
+
+    axi_row = QtWidgets.QHBoxLayout()
+    axi_prefix = QtWidgets.QLineEdit("tb.dut.axi")
+    axi_prefix.setObjectName("waveAxi4Prefix")
+    axi_prefix.setPlaceholderText("AXI4 interface prefix, for example tb.dut.m_axi")
+    axi_clock = QtWidgets.QLineEdit()
+    axi_clock.setObjectName("waveAxi4Clock")
+    axi_clock.setPlaceholderText("ACLK full signal path (blank = interface ACLK, then waveform clock)")
+    axi_stall_threshold = QtWidgets.QSpinBox()
+    axi_stall_threshold.setObjectName("waveAxi4StallThreshold")
+    axi_stall_threshold.setRange(1, 1000)
+    axi_stall_threshold.setValue(8)
+    axi_decode_button = QtWidgets.QPushButton("Decode AXI4 traffic")
+    axi_decode_button.setObjectName("waveDecodeAxi4")
+    axi_decode_button.setEnabled(False)
+    axi_row.addWidget(QtWidgets.QLabel("AXI4 prefix"))
+    axi_row.addWidget(axi_prefix, 2)
+    axi_row.addWidget(axi_clock, 2)
+    axi_row.addWidget(QtWidgets.QLabel("Stall cycles"))
+    axi_row.addWidget(axi_stall_threshold)
+    axi_row.addWidget(axi_decode_button)
+    layout.addLayout(axi_row)
 
     views = QtWidgets.QSplitter(QtCore.Qt.Orientation.Horizontal)
     rtl_panel = QtWidgets.QWidget()
@@ -65,11 +266,53 @@ def make_wave_debug(QtCore, QtGui, QtWidgets, project_root, on_crossprobe=None,
     finding_table.setEditTriggers(QtWidgets.QAbstractItemView.EditTrigger.NoEditTriggers)
     layout.addWidget(finding_table, 2)
 
+    traffic_summary = QtWidgets.QLabel("AXI4 decoder has not run")
+    traffic_summary.setObjectName("waveAxi4Summary")
+    layout.addWidget(traffic_summary)
+    traffic_table = QtWidgets.QTableWidget(0, 7)
+    traffic_table.setObjectName("waveAxi4Transactions")
+    traffic_table.setHorizontalHeaderLabels(
+        ["Direction", "ID", "Address", "Beats", "Response", "Status", "Start → End"])
+    traffic_table.horizontalHeader().setStretchLastSection(True)
+    traffic_table.setMaximumHeight(145)
+    traffic_table.setEditTriggers(QtWidgets.QAbstractItemView.EditTrigger.NoEditTriggers)
+    layout.addWidget(traffic_table)
+
     findings_detail = QtWidgets.QPlainTextEdit()
     findings_detail.setObjectName("waveEvidenceDetail")
     findings_detail.setMaximumHeight(115)
     findings_detail.setReadOnly(True)
     layout.addWidget(findings_detail)
+
+    otel_row = QtWidgets.QHBoxLayout()
+    export_otel_button = QtWidgets.QPushButton("Export OpenTelemetry bundle")
+    export_otel_button.setObjectName("waveExportOtel")
+    export_otel_button.setEnabled(False)
+    otel_hint = QtWidgets.QLabel("Offline OTLP-mapped JSON archive (not a Dynatrace upload)")
+    otel_row.addWidget(export_otel_button)
+    otel_row.addWidget(otel_hint, 1)
+    layout.addLayout(otel_row)
+
+    dynatrace_row = QtWidgets.QHBoxLayout()
+    dynatrace_endpoint = QtWidgets.QLineEdit(
+        os.environ.get("WENGOLD_DYNATRACE_OTLP_ENDPOINT", ""))
+    dynatrace_endpoint.setObjectName("waveDynatraceEndpoint")
+    dynatrace_endpoint.setPlaceholderText(
+        "https://<environment-id>.live.dynatrace.com/api/v2/otlp")
+    dynatrace_token = QtWidgets.QLineEdit(
+        os.environ.get("WENGOLD_DYNATRACE_PLATFORM_TOKEN",
+                   os.environ.get("WENGOLD_DYNATRACE_API_TOKEN", "")))
+    dynatrace_token.setObjectName("waveDynatraceToken")
+    dynatrace_token.setEchoMode(QtWidgets.QLineEdit.EchoMode.Password)
+    dynatrace_token.setPlaceholderText("Dynatrace platform token (openpipeline:traces/metrics/logs:ingest)")
+    send_dynatrace_button = QtWidgets.QPushButton("Send via Dynatrace OTLP")
+    send_dynatrace_button.setObjectName("waveSendDynatrace")
+    send_dynatrace_button.setEnabled(False)
+    dynatrace_row.addWidget(QtWidgets.QLabel("Dynatrace OTLP base"))
+    dynatrace_row.addWidget(dynatrace_endpoint, 2)
+    dynatrace_row.addWidget(dynatrace_token, 2)
+    dynatrace_row.addWidget(send_dynatrace_button)
+    layout.addLayout(dynatrace_row)
 
     ai_row = QtWidgets.QHBoxLayout()
     backend = QtWidgets.QComboBox()
@@ -93,7 +336,7 @@ def make_wave_debug(QtCore, QtGui, QtWidgets, project_root, on_crossprobe=None,
     ai_text.setPlaceholderText("No AI output until you explicitly request local inference.")
     ai_text.setMaximumHeight(135)
     layout.addWidget(ai_text)
-    state = {"wave": None, "report": None, "busy": False, "worker": None, "thread": None}
+    state = {"wave": None, "report": None, "traffic": None, "display_findings": [], "busy": False, "otel_busy": False, "worker": None, "thread": None, "otel_worker": None, "otel_thread": None}
     page.debugState = state
 
     def update_table(table, group):
@@ -104,6 +347,44 @@ def make_wave_debug(QtCore, QtGui, QtWidgets, project_root, on_crossprobe=None,
 
     def chosen_roots(field):
         return tuple(x.strip() for x in field.text().split(",") if x.strip())
+
+    def refresh_findings():
+        base = list((state["report"] or {}).get("findings", []))
+        traffic = list((state["traffic"] or {}).get("findings", []))
+        rows = base + traffic
+        state["display_findings"] = rows
+        finding_table.setRowCount(len(rows))
+        for i, finding in enumerate(rows):
+            for c, value in enumerate((finding.get("severity", ""),
+                                       finding.get("domain", ""),
+                                       finding.get("time", ""),
+                                       finding.get("rule", ""),
+                                       finding.get("title", ""))):
+                finding_table.setItem(i, c, QtWidgets.QTableWidgetItem(str(value)))
+        return rows
+
+    def telemetry_report_and_bundle():
+        report = state["report"]
+        wave_data = state["wave"]
+        if report is None or wave_data is None:
+            raise ValueError("Analyze a loaded waveform before exporting telemetry")
+        combined = dict(report)
+        combined["findings"] = list(report.get("findings", []))
+        traffic = state["traffic"]
+        transactions = []
+        traffic_metrics = None
+        if traffic is not None:
+            combined["findings"].extend(traffic.get("findings", []))
+            transactions = traffic.get("transactions", [])
+            traffic_metrics = traffic.get("metrics", {})
+        bundle = build_otlp_bundle(
+            combined,
+            transactions=transactions,
+            traffic_metrics=traffic_metrics,
+            run_id=wave_data.get("run_id"),
+            time_unit_ns=wave_data.get("time_unit_ns") or 1,
+            time_unit_label=wave_data.get("time_unit_label") or "tick")
+        return combined, bundle
 
     def analyze():
         data = state["wave"]
@@ -118,29 +399,206 @@ def make_wave_debug(QtCore, QtGui, QtWidgets, project_root, on_crossprobe=None,
             findings_detail.setPlainText("Diagnostic configuration error: " + str(exc))
             return
         state["report"] = report
+        state["traffic"] = None
+        page.axi4DecodeResult = None
+        traffic_table.setRowCount(0)
+        traffic_summary.setText("AXI4 decoder has not run")
         update_table(rtl_table, report["groups"]["rtl"])
         update_table(tb_table, report["groups"]["testbench"])
-        rows = report["findings"]
-        finding_table.setRowCount(len(rows))
-        for i, finding in enumerate(rows):
-            for c, value in enumerate((finding["severity"], finding["domain"],
-                                       finding["time"], finding["rule"],
-                                       finding["title"])):
-                finding_table.setItem(i, c, QtWidgets.QTableWidgetItem(str(value)))
+        rows = refresh_findings()
         findings_detail.setPlainText(
             json.dumps({"summary": report["summary"], "limits": report["limits"]},
                        indent=2))
         ai_text.clear()
+        export_otel_button.setEnabled(True)
+        send_dynatrace_button.setEnabled(True)
+        axi_decode_button.setEnabled(True)
         page.summaryText = ("Observed %d signals, %d evidence candidates; "
                             "root cause NOT proven." %
                             (sum(len(v) for v in report["groups"].values()), len(rows)))
 
+    def export_otel():
+        report = state["report"]
+        if report is None or state["wave"] is None:
+            findings_detail.setPlainText("Analyze a loaded waveform before exporting telemetry.")
+            return
+        filename, _selected = QtWidgets.QFileDialog.getSaveFileName(
+            page, "Export OpenTelemetry bundle",
+            "wengold-otel-bundle.json", "JSON bundle (*.json)")
+        if not filename:
+            return
+        try:
+            combined, bundle = telemetry_report_and_bundle()
+            target = write_otlp_bundle(filename, bundle)
+            findings_detail.setPlainText(
+                "OpenTelemetry bundle exported.\n"
+                f"File: {target}\n"
+                f"Trace ID: {bundle['metadata']['trace_id']}\n"
+                f"Findings: {len(combined.get('findings', []))}\n"
+                f"AXI4 transactions: {len(state['traffic'].get('transactions', [])) if state['traffic'] else 0}\n"
+                "The JSON contains separate OTLP traces, metrics and logs payloads. "
+                "No data was sent to an external service.")
+        except (OSError, TypeError, ValueError) as exc:
+            findings_detail.setPlainText(f"OpenTelemetry export failed: {exc}")
+
+    class OtelUploadWorker(QtCore.QObject):
+        succeeded = QtCore.pyqtSignal(object)
+        failed = QtCore.pyqtSignal(str)
+
+        def __init__(self, arguments):
+            super().__init__()
+            self.arguments = arguments
+
+        @QtCore.pyqtSlot()
+        def run(self):
+            try:
+                self.succeeded.emit(send_dynatrace_otlp(*self.arguments))
+            except Exception as exc:
+                detail = f"{type(exc).__name__}: {exc}"
+                sent = getattr(exc, "sent_signals", ())
+                if sent:
+                    detail += "\nEarlier signal requests accepted: " + ", ".join(sent)
+                self.failed.emit(detail)
+
+    def send_to_dynatrace():
+        report = state["report"]
+        wave_data = state["wave"]
+        endpoint_value = dynatrace_endpoint.text().strip()
+        token_value = dynatrace_token.text().strip()
+        if report is None or wave_data is None:
+            findings_detail.setPlainText(
+                "Analyze a loaded VCD before sending telemetry.")
+            return
+        if not endpoint_value or not token_value:
+            findings_detail.setPlainText(
+                "Enter the Dynatrace OTLP base URL and a Dynatrace platform token. "
+                "The token is kept in this session only and is not saved.")
+            return
+        if state["otel_busy"]:
+            return
+        try:
+            combined, bundle = telemetry_report_and_bundle()
+        except (TypeError, ValueError) as exc:
+            findings_detail.setPlainText(f"Telemetry preparation failed: {exc}")
+            return
+        state["otel_busy"] = True
+        send_dynatrace_button.setEnabled(False)
+        export_otel_button.setEnabled(False)
+        findings_detail.setPlainText(
+            "Sending OTLP Protobuf traces, metrics and logs to Dynatrace…")
+        thread = QtCore.QThread(page)
+        worker = OtelUploadWorker((bundle, endpoint_value, token_value))
+        worker.moveToThread(thread)
+        state["otel_thread"], state["otel_worker"] = thread, worker
+
+        def upload_done():
+            state["otel_busy"] = False
+            # Drop the worker's reference to the token and clear the masked UI
+            # field once this explicit upload attempt finishes.
+            worker.arguments = ()
+            dynatrace_token.clear()
+            state["otel_worker"] = None
+            state["otel_thread"] = None
+            send_dynatrace_button.setEnabled(state["report"] is not None)
+            export_otel_button.setEnabled(state["report"] is not None)
+            thread.quit()
+
+        def upload_success(result):
+            findings_detail.setPlainText(
+                "Dynatrace OTLP export accepted by the HTTP endpoints.\n"
+                f"Endpoint: {result['endpoint_host']}\n"
+                f"Signals sent: {', '.join(result['signals_sent'])}\n"
+                "This confirms HTTP ingestion responses, not that a dashboard "
+                "or downstream processing rule is configured.")
+            upload_done()
+
+        def upload_failed(message):
+            findings_detail.setPlainText(
+                "Dynatrace OTLP export failed.\n" + message +
+                "\nIf one or more earlier signals were sent, inspect the "
+                "message before retrying to avoid duplicate telemetry.")
+            upload_done()
+
+        worker.succeeded.connect(upload_success)
+        worker.failed.connect(upload_failed)
+        thread.started.connect(worker.run)
+        thread.finished.connect(worker.deleteLater)
+        thread.finished.connect(thread.deleteLater)
+        thread.start()
+
+    send_dynatrace_button.clicked.connect(send_to_dynatrace)
+
+    def decode_axi4_action():
+        data = state["wave"]
+        state["traffic"] = None
+        page.axi4DecodeResult = None
+        traffic_table.setRowCount(0)
+        traffic_summary.setText("AXI4 decode failed or has not run")
+        refresh_findings()
+        if data is None:
+            findings_detail.setPlainText("Load a real waveform before decoding AXI4.")
+            return
+        try:
+            result = decode_axi4(
+                data,
+                prefix=axi_prefix.text().strip() or None,
+                clock=axi_clock.text().strip() or None,
+                max_stall_cycles=axi_stall_threshold.value())
+        except (TypeError, ValueError) as exc:
+            findings_detail.setPlainText("AXI4 decode configuration error: " + str(exc))
+            return
+        state["traffic"] = result
+        rows = result["transactions"]
+        traffic_table.setRowCount(len(rows))
+        for i, tx in enumerate(rows):
+            values = (
+                tx.get("operation", "").upper(),
+                tx.get("transaction_id", ""),
+                tx.get("address") or "UNKNOWN",
+                f"{tx.get('beats', 0)}/{tx.get('expected_beats', 0)}",
+                tx.get("response", "—"),
+                tx.get("status", ""),
+                f"{tx.get('start_time')} → {tx.get('end_time')}",
+            )
+            for c, value in enumerate(values):
+                traffic_table.setItem(i, c, QtWidgets.QTableWidgetItem(str(value)))
+        metrics = result["metrics"]
+        traffic_summary.setText(
+            f"AXI4: {len(rows)} completed transaction(s) · "
+            f"{metrics['protocol_errors']} protocol error(s) · "
+            f"{metrics['stall_cycles_total']} total stall cycle(s) · "
+            f"{metrics['rising_edges']} sampled rising edges")
+        refresh_findings()
+        findings_detail.setPlainText(json.dumps({
+            "status": result["status"],
+            "signal_map": result["signal_map"],
+            "metrics": result["metrics"],
+            "findings": result["findings"],
+            "limits": result["limits"],
+        }, indent=2))
+        page.axi4DecodeResult = result
+
+    def select_transaction():
+        row = traffic_table.currentRow()
+        traffic = state["traffic"]
+        if traffic is None or row < 0 or row >= len(traffic["transactions"]):
+            return
+        tx = traffic["transactions"][row]
+        logical = "AWVALID" if tx.get("operation") == "write" else "ARVALID"
+        signal_name = traffic.get("signal_map", {}).get(logical)
+        if signal_name and on_crossprobe:
+            on_crossprobe(signal_name)
+        start_index = tx.get("attributes", {}).get("start_sample_index")
+        if on_select_time and isinstance(start_index, int):
+            on_select_time(start_index)
+        findings_detail.setPlainText(json.dumps(tx, indent=2))
+
     def show_finding():
         row = finding_table.currentRow()
-        report = state["report"]
-        if not report or row < 0 or row >= len(report["findings"]):
+        rows = state["display_findings"]
+        if row < 0 or row >= len(rows):
             return
-        finding = report["findings"][row]
+        finding = rows[row]
         findings_detail.setPlainText(json.dumps(finding, indent=2))
         if on_crossprobe and finding["signals"]:
             on_crossprobe(finding["signals"][0])
@@ -158,7 +616,10 @@ def make_wave_debug(QtCore, QtGui, QtWidgets, project_root, on_crossprobe=None,
     rtl_table.itemSelectionChanged.connect(lambda: select_signal(rtl_table))
     tb_table.itemSelectionChanged.connect(lambda: select_signal(tb_table))
     finding_table.itemSelectionChanged.connect(show_finding)
+    traffic_table.itemSelectionChanged.connect(select_transaction)
     run.clicked.connect(analyze)
+    axi_decode_button.clicked.connect(decode_axi4_action)
+    export_otel_button.clicked.connect(export_otel)
 
     class AiWorker(QtCore.QObject):
         succeeded = QtCore.pyqtSignal(object)
@@ -184,7 +645,9 @@ def make_wave_debug(QtCore, QtGui, QtWidgets, project_root, on_crossprobe=None,
         state["busy"] = True
         explain.setEnabled(False)
         ai_text.setPlainText("Calling selected LOCAL model with bounded waveform evidence…")
-        args = (state["report"], backend.currentText(), endpoint.text().strip(),
+        ai_report = dict(state["report"])
+        ai_report["findings"] = list(state["display_findings"])
+        args = (ai_report, backend.currentText(), endpoint.text().strip(),
                 model.text().strip())
         thread = QtCore.QThread(page)
         worker = AiWorker(args)
@@ -219,5 +682,10 @@ def make_wave_debug(QtCore, QtGui, QtWidgets, project_root, on_crossprobe=None,
     page.tbSignals = tb_table
     page.findingTable = finding_table
     page.aiFindings = ai_text
+    page.axiPrefix = axi_prefix
+    page.axiClock = axi_clock
+    page.axiDecodeButton = axi_decode_button
+    page.axiTransactions = traffic_table
+    page.axiTrafficSummary = traffic_summary
     page.rootEvidence = findings_detail
     return page
