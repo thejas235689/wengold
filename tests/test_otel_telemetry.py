@@ -251,3 +251,29 @@ def test_dynatrace_export_reports_partial_delivery_without_exposing_token(monkey
     assert err.value.sent_signals == ("traces",)
     assert "very-secret" not in str(err.value)
     assert len(calls) == 2
+
+
+
+def test_default_backend_timeline_is_capped_inside_dynatrace_window(monkeypatch):
+    import wengold.otel_telemetry as telemetry
+
+    fixed_now = 90_000_000_000_000
+    monkeypatch.setattr(telemetry.time, "time_ns", lambda: fixed_now)
+    long_report = {
+        "source": "long-regression.vcd",
+        "times": [0, 7_200_000_000_000],
+        "samples": 2,
+        "summary": {},
+        "findings": [],
+    }
+    bundle = telemetry.build_otlp_bundle(
+        long_report, run_id="long-run", time_unit_ns="1", time_unit_label="ns")
+    root = bundle["traces"]["resourceSpans"][0]["scopeSpans"][0]["spans"][0]
+    start = int(root["startTimeUnixNano"])
+    end = int(root["endTimeUnixNano"])
+    assert start == fixed_now - 55 * 60 * 1_000_000_000
+    assert fixed_now <= end <= fixed_now + 1
+    assert float(bundle["metadata"]["otel_timeline_scale_factor"]) < 1.0
+    # The raw VCD value remains available; only the external display window shrinks.
+    assert bundle["metadata"]["simulation_time_origin"] == "0"
+    assert bundle["metadata"]["simulation_time_unit_ns"] == "1"
