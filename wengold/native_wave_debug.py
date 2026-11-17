@@ -224,6 +224,7 @@ def make_wave_debug(QtCore, QtGui, QtWidgets, project_root, on_crossprobe=None,
             return
         state["report"] = report
         state["traffic"] = None
+        page.axi4DecodeResult = None
         traffic_table.setRowCount(0)
         traffic_summary.setText("AXI4 decoder has not run")
         update_table(rtl_table, report["groups"]["rtl"])
@@ -353,6 +354,11 @@ def make_wave_debug(QtCore, QtGui, QtWidgets, project_root, on_crossprobe=None,
 
     def decode_axi4_action():
         data = state["wave"]
+        state["traffic"] = None
+        page.axi4DecodeResult = None
+        traffic_table.setRowCount(0)
+        traffic_summary.setText("AXI4 decode failed or has not run")
+        refresh_findings()
         if data is None:
             findings_detail.setPlainText("Load a real waveform before decoding AXI4.")
             return
