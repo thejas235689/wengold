@@ -209,3 +209,44 @@ def test_axi4_late_rlast_is_reported_against_arlen():
     assert "missing_rlast" in rules
     assert "read_burst_overrun" in rules
     assert "late_rlast" in rules
+
+
+
+def test_axi4_payload_must_remain_stable_until_ready_handshake():
+    wave = make_wave(3, {
+        0: {"AWVALID": 1, "AWREADY": 0, "AWID": 2,
+            "AWADDR": 0x1000, "AWLEN": 0},
+        1: {"AWVALID": 1, "AWREADY": 0, "AWID": 2,
+            "AWADDR": 0x2000, "AWLEN": 0},
+        2: {"AWVALID": 1, "AWREADY": 1, "AWID": 2,
+            "AWADDR": 0x2000, "AWLEN": 0},
+    })
+    result = decode_axi4(wave, signal_map=signal_map_for(wave))
+    finding = next(f for f in result["findings"]
+                   if f["rule"] == "payload_changed_while_stalled")
+    assert finding["details"]["channel"] == "AW"
+    assert "tb.dut.axi.awaddr" in finding["signals"]
+
+
+def test_axi4_valid_must_not_drop_before_ready():
+    wave = make_wave(2, {
+        0: {"AWVALID": 1, "AWREADY": 0, "AWID": 1,
+            "AWADDR": 0x10, "AWLEN": 0},
+        1: {"AWVALID": 0, "AWREADY": 0},
+    })
+    result = decode_axi4(wave, signal_map=signal_map_for(wave))
+    assert any(f["rule"] == "valid_dropped_before_ready"
+               for f in result["findings"])
+
+
+def test_axi4_unknown_payload_during_stall_is_reported():
+    wave = make_wave(2, {
+        0: {"AWVALID": 1, "AWREADY": 0, "AWID": 1,
+            "AWADDR": None, "AWLEN": 0},
+        1: {"AWVALID": 1, "AWREADY": 0, "AWID": 1,
+            "AWADDR": None, "AWLEN": 0},
+    })
+    result = decode_axi4(wave, signal_map=signal_map_for(wave))
+    finding = next(f for f in result["findings"]
+                   if f["rule"] == "unknown_payload_while_stalled")
+    assert "AWADDR" in finding["details"]["fields"]
