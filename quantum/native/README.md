@@ -27,7 +27,7 @@ its Qureg before finalizing the environment.
 
 ## Supported contract
 
-The initial bridge implements statevector execution for I/H/X/Y/Z/S/SDG/T/TDG,
+The bridge currently caps requests at 24 qubits to avoid unbounded desktop memory allocation. It implements statevector execution for I/H/X/Y/Z/S/SDG/T/TDG,
 RX/RY/RZ, CX/CNOT, CZ, SWAP, CCX/Toffoli and CSWAP. S/T-family gates use
 phase-shift operators; their global phase convention is physically equivalent.
 Terminal measurements are sampled from the returned statevector in Python.
