@@ -250,3 +250,44 @@ def test_slang_ast_cli_exports_elaborated_json(tmp_path, monkeypatch):
     assert graph["frontend"] == "Slang CLI elaborated AST JSON"
     assert "--ast-json-source-info" in calls["command"]
     assert calls["command"][calls["command"].index("--max-loop-analysis-steps") + 1] == "0"
+
+
+def test_crossprobe_uses_only_exact_parent_net_alias_when_child_port_is_not_dumped():
+    from wengold.rtl_hierarchy import crossprobe_hierarchy_to_vcd
+    graph = {
+        "top": "top",
+        "nodes": [{"id": "top", "module": "top", "ports": []},
+                  {"id": "top.u_sub", "module": "sub", "ports": [
+                      {"name": "data_i", "direction": "input", "width": 32}]}],
+        "edges": [{"instance": "top.u_sub", "port": "data_i",
+                   "from": "top.data_bus", "to": "top.u_sub.data_i",
+                   "parent_symbol": "data_bus", "expression_kind": "NamedValue"}],
+    }
+    wave = {"signals": [{"name": "tb.dut.data_bus"}]}
+    result = crossprobe_hierarchy_to_vcd(
+        graph, wave, vcd_root="tb", dut_instance="dut")
+    assert result["direct_matches"] == 0
+    assert result["parent_net_alias_matches"] == 1
+    assert result["matched_ports"] == 1
+    assert result["unmatched_ports"] == 0
+    alias = result["parent_net_alias_records"][0]
+    assert alias["match_kind"] == "exact_parent_net_alias"
+    assert alias["matched_vcd_path"] == "tb.dut.data_bus"
+
+
+def test_crossprobe_does_not_guess_parent_alias_without_exact_vcd_signal():
+    from wengold.rtl_hierarchy import crossprobe_hierarchy_to_vcd
+    graph = {
+        "top": "top",
+        "nodes": [{"id": "top.u_sub", "module": "sub", "ports": [
+            {"name": "data_i", "direction": "input", "width": 32}]}],
+        "edges": [{"instance": "top.u_sub", "port": "data_i",
+                   "from": "top.data_bus", "to": "top.u_sub.data_i",
+                   "parent_symbol": "data_bus", "expression_kind": "NamedValue"}],
+    }
+    result = crossprobe_hierarchy_to_vcd(
+        graph, {"signals": [{"name": "tb.dut.other_bus"}]},
+        vcd_root="tb", dut_instance="dut")
+    assert result["matched_ports"] == 0
+    assert result["unmatched_ports"] == 1
+    assert result["status"] == "no_exact_matches"
