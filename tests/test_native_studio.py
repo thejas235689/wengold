@@ -594,9 +594,9 @@ def test_trace_selection_change_invalidates_after_bad_alignment(native_window):
 
     def write_trace(path, final_value):
         path.write_text(
-            "$timescale 1ns $end\\n$scope module tb $end\\n"
-            "$var wire 1 ! q $end\\n$upscope $end\\n"
-            "$enddefinitions $end\\n#0 0!\\n#5 " + final_value + "!\\n"
+            "$timescale 1ns $end\n$scope module tb $end\n"
+            "$var wire 1 ! q $end\n$upscope $end\n"
+            "$enddefinitions $end\n#0 0!\n#5 " + final_value + "!\n"
         )
 
     write_trace(waves / "baseline.vcd", "0")
