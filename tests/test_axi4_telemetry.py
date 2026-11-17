@@ -169,6 +169,8 @@ def test_axi4_ambiguous_interface_requires_explicit_selection():
     wave = make_wave(1, {})
     duplicate = []
     for signal in wave["signals"]:
+        if signal["name"] == "tb.dut.aclk":
+            continue
         copied = dict(signal)
         copied["name"] = copied["name"].replace("tb.dut.axi.", "tb.dut.s_axi.")
         duplicate.append(copied)
