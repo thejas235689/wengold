@@ -1,6 +1,8 @@
 name: RISC-V Slang Hierarchy and VCD Integration
 
 on:
+  push:
+    branches: [feature/slang-riscv-elaboration-validation]
   pull_request:
     branches: [main]
     paths:
