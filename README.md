@@ -704,6 +704,16 @@ from wengold.kernel import invariants
 violations = invariants.fuzz(range(400))   # 0
 ```
 
+## Multi-RAG for RTL and verification drafts
+
+Preview project-local evidence with `wengold multi-rag` or supply a Multi-RAG
+manifest in Linux Silicon Studio's **Local AI** tab. Retrieval combines
+SystemVerilog structure, specification excerpts, register maps and reviewed
+diagram captions. Source locations and conflicting register facts remain
+visible. Optional slang compiler feedback helps revise a draft without
+claiming proof, simulation or signoff. See the
+[Multi-RAG guide and runnable example](docs/MULTI_RAG.md).
+
 ## CLI
 
 ```bash
@@ -737,7 +747,10 @@ WENGOLD drives the tools a verification team already uses, in three groups — s
 [`wengold/tools/registry.py`](wengold/tools/registry.py):
 
 **01 · Simulation, debug and testbench** — VCS, Xcelium, Questa, Verilator,
-Verdi, SimVision, Verisium, GTKWave, cocotb, UVM.
+Xezim, Verdi, SimVision, Verisium, GTKWave, cocotb, UVM.
+
+Use `wengold xezim` for self-checking RTL or Accellera UVM tests with the
+optional open-source simulator. See the [Xezim setup and smoke tests](docs/XEZIM.md).
 
 **02 · Formal, emulation and FPGA** — JasperGold, VC Formal, OneSpin, ZeBu,
 Palladium, Veloce, Vivado, Quartus, Yosys, vManager.

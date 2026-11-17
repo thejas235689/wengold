@@ -23,6 +23,13 @@ BLOCK = '''
 import sys
 BANNED = {"numpy", "pyslang", "z3", "PyQt6"}
 
+class Block:
+    def find_spec(self, fullname, path=None, target=None):
+        if fullname.split(".", 1)[0] in BANNED:
+            raise ModuleNotFoundError("blocked for this test", name=fullname)
+        return None
+
+sys.meta_path.insert(0, Block())
 # Use sys.modules sentinels rather than the removed find_module fallback.
 for name in BANNED:
     sys.modules[name] = None

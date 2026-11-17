@@ -29,7 +29,7 @@ def diagnostics(window, QtWidgets) -> dict:
             (present if obj is not None else missing).append(name)
         ui[category] = {"present": present, "missing": missing,
                         "controls_present": len(missing) == 0}
-    commands = ("iverilog", "vvp", "verilator", "yosys", "cargo",
+    commands = ("iverilog", "vvp", "verilator", "xezim", "yosys", "cargo",
                 "satya", "sta", "ngspice", "klayout")
     tools = {name: shutil.which(name) for name in commands}
     # Runtime readiness is NOT a certification of an actual passing run.
@@ -40,12 +40,13 @@ def diagnostics(window, QtWidgets) -> dict:
         },
         "uvm_simulation": {
             "status": "requires_external_simulator_and_uvm_library",
-            "action": "Run an approved UVM regression manifest and inspect generated evidence",
+            "action": "Run an approved UVM regression manifest or wengold xezim with a UVM library",
         },
         "rtl_simulation": {
-            "status": "tools_detected_not_executed" if tools["iverilog"] and tools["vvp"]
+            "status": "tools_detected_not_executed"
+                      if tools["xezim"] or (tools["iverilog"] and tools["vvp"])
                       else "simulator_missing",
-            "action": "Run the bundled counter4 simulation and inspect measured coverage",
+            "action": "Run the bundled counter4 simulation with Xezim or Icarus and inspect its log",
         },
         "generic_synthesis": {
             "status": "tool_detected_not_executed" if tools["yosys"] else "tool_missing",

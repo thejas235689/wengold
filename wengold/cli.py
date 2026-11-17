@@ -5,6 +5,7 @@ import argparse
 import json
 import os
 import sys
+from subprocess import TimeoutExpired
 from pathlib import Path
 
 SRC_EXT = {".sv", ".svh", ".v", ".vh", ".rdl", ".f", ".vhd", ".vhdl"}
@@ -614,6 +615,35 @@ def cmd_rootcause(args) -> int:
     return status
 
 
+def cmd_xezim(args) -> int:
+    from .tools.adapters.xezim import XezimAdapter
+    from .tools.outcome import ToolOutcome
+
+    root = Path(args.project).resolve()
+    try:
+        log_path = None
+        if args.log:
+            rel = Path(args.log)
+            log_path = (root / rel).resolve()
+            if (rel.is_absolute() or not log_path.is_relative_to(root)
+                    or log_path.suffix.lower() != ".log"):
+                raise ValueError("--log must be a project-relative .log file")
+        result = XezimAdapter(args.binary).run(
+            top=args.top, files=args.files, cwd=root, include_dirs=args.include,
+            defines=args.define, seed=args.seed, timeout=args.timeout,
+            pass_marker=args.pass_marker, uvm_dir=args.uvm_dir, uvm_test=args.uvm_test)
+        if log_path is not None:
+            log_path.parent.mkdir(parents=True, exist_ok=True)
+            log_path.write_text(result.log, encoding="utf-8")
+    except (ValueError, OSError) as exc:
+        print(f"wengold xezim: {exc}", file=sys.stderr)
+        return 2
+    print(json.dumps({**result.as_dict(), "log": result.log}, indent=2))
+    return {ToolOutcome.PASS: 0, ToolOutcome.FAIL: 1,
+            ToolOutcome.ERROR: 2, ToolOutcome.TOOL_MISSING: 2,
+            ToolOutcome.INCONCLUSIVE: 3, ToolOutcome.TIMEOUT: 3}[result.outcome]
+
+
 def cmd_tools(args) -> int:
     """Report the open-source toolchain, and install it when asked.
 
@@ -1181,6 +1211,48 @@ def cmd_demo(args) -> int:
     return 0
 
 
+def cmd_multi_rag(args) -> int:
+    from .multi_rag import MultiRAG
+    try:
+        result = MultiRAG.load(args.path, args.manifest).retrieve(args.query, limit=args.limit)
+    except (ValueError, OSError, RuntimeError, TimeoutExpired) as exc:
+        print(f"wengold: Multi-RAG: {exc}", file=sys.stderr)
+        return 2
+    print(json.dumps(result, indent=2, ensure_ascii=False))
+    return 0
+
+
+def cmd_sv_agent(args) -> int:
+    from .agent.llm import DEFAULT_OLLAMA, DEFAULT_OPENAI, from_env, preset
+    from .ide_server import Refused
+    from .qwen_cloud import QWEN_BACKEND, QWEN_MODEL, qwen_endpoint
+    from .sv_agents import run
+    try:
+        if args.backend == QWEN_BACKEND:
+            backend = QWEN_BACKEND
+            model = args.model or QWEN_MODEL
+            endpoint = args.endpoint or qwen_endpoint()
+        else:
+            configured = from_env()
+            model = args.model or (configured.model if configured else "dhir-2b")
+            if model == QWEN_MODEL or (configured and configured.backend == QWEN_BACKEND
+                                       and not args.model and not args.backend):
+                raise ValueError("Qwen4-Max requires explicit --backend qwencloud")
+            known = preset(model)
+            backend = (args.backend or (configured.backend if configured and not args.model else None)
+                       or (known.backend if known else "ollama"))
+            endpoint = args.endpoint or (
+                configured.endpoint if configured and not (args.model or args.backend)
+                else DEFAULT_OPENAI if backend == "openai" else DEFAULT_OLLAMA)
+        result = run(args.path, args.role, args.rtl, args.spec, args.evidence,
+                     args.task, backend, endpoint, model)
+    except (OSError, ValueError, RuntimeError, Refused) as exc:
+        print(f"wengold: sv-agent: {exc}", file=sys.stderr)
+        return 2
+    print(json.dumps(result, indent=2, ensure_ascii=False))
+    return 0
+
+
 def main(argv=None) -> int:
     from . import __version__ as _version
     parser = argparse.ArgumentParser(prog="wengold",
@@ -1191,6 +1263,27 @@ def main(argv=None) -> int:
     parser.add_argument("--version", action="version",
                         version=f"wengold {_version}")
     sub = parser.add_subparsers(dest="cmd", required=True)
+
+    p = sub.add_parser("multi-rag", help="inspect project-local retrieval context without a model")
+    p.add_argument("path", nargs="?", default=".", help="project root")
+    p.add_argument("--manifest", default="multi-rag.json", help="project-relative source manifest")
+    p.add_argument("--query", required=True, help="RTL, DV, specification, or assertion question")
+    p.add_argument("--limit", type=int, default=8, help="maximum number of excerpts (1–12)")
+    p.set_defaults(func=cmd_multi_rag)
+
+    from .sv_agents import ROLES
+    p = sub.add_parser("sv-agent", help="run one independent SystemVerilog agent")
+    p.add_argument("role", choices=tuple(ROLES))
+    p.add_argument("path", nargs="?", default=".", help="project root")
+    p.add_argument("--rtl", required=True, help="project-relative RTL file")
+    p.add_argument("--spec", default="", help="optional project-relative text specification")
+    p.add_argument("--evidence", default="", help="project-relative log or report")
+    p.add_argument("--task", default="", help="optional question for this run")
+    p.add_argument("--model", help="model ID (defaults to Dhīr 2B when unconfigured)")
+    p.add_argument("--backend", choices=("openai", "ollama", "qwencloud"),
+                   help="qwencloud sends selected inputs to Alibaba Cloud and requires opt-in")
+    p.add_argument("--endpoint", help="HTTP loopback model URL or HTTPS Model Studio base URL")
+    p.set_defaults(func=cmd_sv_agent)
 
     p = sub.add_parser("index", help="index a project into a dependency graph")
     p.add_argument("path", nargs="?", default=".")
@@ -1394,6 +1487,21 @@ def main(argv=None) -> int:
     p.add_argument("--change", action="append", default=[],
                    help="a node that changed (repeatable)")
     p.set_defaults(func=cmd_rootcause)
+
+    p = sub.add_parser("xezim", help="run RTL or UVM simulation with Xezim")
+    p.add_argument("files", nargs="+", help="ordered project-relative Verilog/SV files")
+    p.add_argument("--project", default=".", help="project root (default: current directory)")
+    p.add_argument("--top", required=True, help="testbench top module")
+    p.add_argument("-I", "--include", action="append", default=[], help="project-relative include directory")
+    p.add_argument("-D", "--define", action="append", default=[], help="macro NAME or NAME=VALUE")
+    p.add_argument("--uvm-dir", help="optional local Accellera UVM release root or src directory")
+    p.add_argument("--uvm-test", help="optional UVM_TESTNAME override")
+    p.add_argument("--pass-marker", help="exact successful self-check line, required for an RTL pass")
+    p.add_argument("--seed", type=int, default=1)
+    p.add_argument("--timeout", type=int, default=120, help="wall-time limit in seconds")
+    p.add_argument("--binary", default="xezim", help="Xezim executable name or path")
+    p.add_argument("--log", help="also write raw simulator output to a project-relative .log")
+    p.set_defaults(func=cmd_xezim)
 
     p = sub.add_parser("tools", help="what is installed, and install the "
                                      "open-source toolchain")
