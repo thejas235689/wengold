@@ -207,3 +207,74 @@ def elaborate_with_yosys(project_root: str | Path, sources: list[str | Path], *,
     graph["source_files"] = [str(path.relative_to(root)) for path in resolved]
     graph["yosys_log"] = (completed.stdout or "")[-4000:]
     return graph
+
+
+
+def load_riscv_core_sources(project_root: str | Path,
+                           python: str | None = None) -> list[str]:
+    """Read the RISC-V project's authoritative RTL list from sim/run.py."""
+    import sys
+    root = Path(project_root).resolve()
+    runner = root / "sim" / "run.py"
+    if not runner.is_file():
+        raise FileNotFoundError(f"RISC-V simulation source list not found: {runner}")
+    completed = subprocess.run(
+        [python or sys.executable, str(runner), "--list-rtl"],
+        cwd=root, capture_output=True, text=True, timeout=30, check=False)
+    if completed.returncode:
+        raise RuntimeError((completed.stderr or completed.stdout or
+                            "sim/run.py --list-rtl failed")[-4000:])
+    sources = [line.strip() for line in completed.stdout.splitlines()
+               if line.strip().endswith((".sv", ".v"))]
+    if not sources:
+        raise RuntimeError("RISC-V sim/run.py returned an empty RTL source list")
+    missing = [source for source in sources if not (root / source).is_file()]
+    if missing:
+        raise FileNotFoundError("RISC-V RTL list contains missing files: " +
+                                ", ".join(missing[:20]))
+    if "rtl/rv64_pkg.sv" not in sources or "rtl/riscv_core_top.sv" not in sources:
+        raise RuntimeError("RISC-V RTL list must include rv64_pkg.sv and riscv_core_top.sv")
+    if sources.index("rtl/rv64_pkg.sv") > sources.index("rtl/riscv_core_top.sv"):
+        raise RuntimeError("RISC-V package must precede dependent RTL files")
+    return sources
+
+
+def crossprobe_hierarchy_to_vcd(graph: dict[str, Any], wave: dict[str, Any], *,
+                                vcd_root: str, dut_instance: str = "u_core") -> dict[str, Any]:
+    """Map elaborated DUT ports to exact VCD hierarchical names.
+
+    Example: graph top riscv_core_top + instance u_fetch + port req_valid maps
+    to tb_core_top.u_core.u_fetch.req_valid when vcd_root=tb_core_top.
+    Names are matched exactly; no fuzzy signal-name guesses are used.
+    """
+    root = vcd_root.strip(".")
+    dut = dut_instance.strip(".")
+    if not root or not dut:
+        raise ValueError("Both VCD root and DUT instance prefix are required")
+    available = {item.get("name") for item in wave.get("signals", [])}
+    top = graph.get("top", "")
+    matches = []
+    missing = []
+    for node in graph.get("nodes", []):
+        instance = node.get("id", "")
+        if instance == top:
+            relative = ""
+        elif instance.startswith(top + "."):
+            relative = instance[len(top) + 1:]
+        else:
+            continue
+        base = ".".join(part for part in (root, dut, relative) if part)
+        for port in node.get("ports", []):
+            path = base + "." + port["name"]
+            record = {"instance": instance, "module": node.get("module"),
+                      "port": port["name"], "direction": port.get("direction"),
+                      "width": port.get("width"), "vcd_path": path}
+            (matches if path in available else missing).append(record)
+    return {
+        "vcd_root": root, "dut_instance": dut,
+        "matched_ports": len(matches), "unmatched_ports": len(missing),
+        "total_ports": len(matches) + len(missing),
+        "matches": matches, "unmatched": missing,
+        "status": "matched" if matches else "no_exact_matches",
+        "qualification": "Exact hierarchical-name match only; unmatched ports are not inferred",
+    }
