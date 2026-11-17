@@ -33,7 +33,7 @@ def main() -> int:
                         default="slang_ast")
     parser.add_argument("--slang", default="slang")
     parser.add_argument("--plugin", default="slang")
-    parser.add_argument("--unroll-limit", type=int, default=256,
+    parser.add_argument("--unroll-limit", type=int, default=4096,
                         help="maximum procedural loop iterations for Yosys-Slang")
     parser.add_argument("--vcd", type=Path)
     parser.add_argument("--vcd-root", default="tb_core_top")
