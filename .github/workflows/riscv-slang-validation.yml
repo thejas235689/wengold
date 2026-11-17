@@ -40,6 +40,27 @@ jobs:
           yosys -Q -p 'plugin -i slang; help read_slang' > slang-frontend.log
           grep -q 'read_slang' slang-frontend.log
           yosys --version
+      - name: Serialize full Slang elaborated AST (without synthesis loop unrolling)
+        run: |
+          mapfile -t RTL < <(python -c 'from wengold.rtl_hierarchy import load_riscv_core_sources; print("\\n".join(load_riscv_core_sources("rv64_core")))')
+          slang --ast-json slang_ast.json --max-loop-analysis-steps 0 "${RTL[@]/#/rv64_core/}"
+          python - <<'PY'
+          import json
+          doc = json.load(open("slang_ast.json"))
+          design = doc.get("design", {})
+          print("AST root:", design.get("kind"), "members:", len(design.get("members", [])))
+          def show(node, depth=0):
+              if isinstance(node, dict):
+                  if node.get("kind") in {"Instance", "InstanceBody", "Port"}:
+                      print("  " * depth, node.get("kind"), node.get("name"),
+                            "body=", (node.get("body") or {}).get("name"))
+                  for key, value in node.items():
+                      if key in {"members", "body"}:
+                          if isinstance(value, list):
+                              for item in value[:8]: show(item, depth + 1)
+                          elif isinstance(value, dict): show(value, depth + 1)
+          show(design)
+          PY
       - name: Elaborate the real RISC-V RTL with Slang
         run: |
           python tools/validate_riscv_core.py rv64_core --frontend slang \
@@ -90,4 +111,5 @@ jobs:
             riscv-wave-crossprobe.json
             riscv_core_top.vcd
             slang-frontend.log
+            slang_ast.json
           if-no-files-found: warn
