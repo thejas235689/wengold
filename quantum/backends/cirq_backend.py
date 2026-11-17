@@ -47,7 +47,7 @@ class CirqBackend(Backend):
             elif gate in {"CNOT", "CX"}:
                 operations.append(c.CNOT(controls[0], targets[0]))
             elif gate == "CCX":
-                operations.append(c.CCX(controls[0], controls[1], targets[0]))
+                operations.append(c.TOFFOLI(controls[0], controls[1], targets[0]))
             elif gate == "CZ":
                 operations.append(c.CZ(*targets))
             elif gate == "SWAP":
