@@ -103,8 +103,10 @@ def validate_circuit(circuit: Circuit) -> None:
 
         if gate in {"CNOT", "CX"} and (len(op.controls), len(op.targets)) != (1, 1):
             raise CircuitValidationError(f"{gate} requires exactly one control and one target")
-        if gate == "CCX" and (len(op.controls), len(op.targets)) != (2, 1):
-            raise CircuitValidationError("CCX requires exactly two controls and one target")
+        if gate in {"CCX", "TOFFOLI"} and (len(op.controls), len(op.targets)) != (2, 1):
+            raise CircuitValidationError(f"{gate} requires exactly two controls and one target")
+        if gate == "CSWAP" and (len(op.controls), len(op.targets)) != (1, 2):
+            raise CircuitValidationError("CSWAP requires exactly one control and two targets")
         if gate in {"CZ", "SWAP", "ISWAP", "RXX", "RYY", "RZZ"} and (
             len(op.controls) != 0 or len(op.targets) != 2
         ):
