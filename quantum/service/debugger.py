@@ -132,10 +132,56 @@ def build_debug_trace(
                 "is not supported by the statevector debugger"
             )
 
-    snapshots: list[DebugSnapshot] = []
-    prefixes: list[Operation] = []
     boundaries = [(None, "INITIAL")]
     boundaries.extend((op.id, op.gate.upper()) for op in circuit.operations)
+
+    # Prefer adapters that can expose all operation-boundary snapshots from
+    # one simulator execution. The prefix replay path remains the compatibility
+    # fallback for adapters without incremental support.
+    incremental = getattr(backend, "run_incremental", None)
+    if callable(incremental):
+        prefixes = [tuple(circuit.operations[:step]) for step in range(len(boundaries))]
+        keys = [_checkpoint_key(circuit, prefix, backend, seed) for prefix in prefixes]
+        cached_values = [_cache_get(key) for key in keys] if use_cache else [None] * len(keys)
+        if use_cache and all(value is not None for value in cached_values):
+            snapshots = [
+                DebugSnapshot(
+                    step=step, operation_id=boundaries[step][0], gate=boundaries[step][1],
+                    statevector=value[0], probabilities=dict(value[1]), execution_time_ms=None,
+                )
+                for step, value in enumerate(cached_values)
+            ]
+        else:
+            results = incremental(circuit, seed=seed)
+            if len(results) != len(boundaries):
+                raise QuantumDebugError(
+                    f"backend {getattr(backend, 'name', 'unknown')!r} returned "
+                    f"{len(results)} incremental snapshots; expected {len(boundaries)}"
+                )
+            snapshots = []
+            for step, (operation_id, gate) in enumerate(boundaries):
+                result = results[step]
+                if result.statevector is None:
+                    raise QuantumDebugError(
+                        f"backend {result.backend!r} did not return a statevector at step {step}"
+                    )
+                vector = tuple((float(pair[0]), float(pair[1])) for pair in result.statevector)
+                probabilities = dict(result.probabilities or {})
+                if use_cache:
+                    _cache_put(keys[step], vector, probabilities)
+                snapshots.append(DebugSnapshot(
+                    step=step, operation_id=operation_id, gate=gate,
+                    statevector=vector, probabilities=probabilities,
+                    execution_time_ms=result.execution_time_ms,
+                ))
+        return QuantumDebugTrace(
+            circuit_id=circuit.circuit_id,
+            backend=getattr(backend, "name", "unknown"),
+            snapshots=tuple(snapshots),
+        )
+
+    snapshots: list[DebugSnapshot] = []
+    prefixes: list[Operation] = []
 
     for step, (operation_id, gate) in enumerate(boundaries):
         if step:
