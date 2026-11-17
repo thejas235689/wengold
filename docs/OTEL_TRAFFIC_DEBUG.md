@@ -122,11 +122,12 @@ The UI token field expects a **Dynatrace platform token** and sends it as
 being sent. The token is masked in the UI, kept in memory for the active
 session, and never added to the export file or telemetry attributes.
 
-Alternatively, send WENGOLD telemetry to an OpenTelemetry Collector and let
-the Collector handle batching, retries, encryption, filtering and forwarding
-to Dynatrace. This is the preferred shape for sustained or large regressions:
-the Collector can centralize processing and reduce retry/batching logic inside
-WENGOLD. Keep credentials in the Collector's secret-management mechanism.
+For sustained or large regressions, the production architecture should route
+binary OTLP through an OpenTelemetry Collector for batching, retries,
+encryption, filtering and forwarding. The current Wave Debug UI sender targets
+Dynatrace directly; a configurable Collector endpoint and Collector pipeline
+are not yet wired into this branch. Keep future Collector credentials in its
+secret-management mechanism.
 
 ## Time, limits and evidence integrity
 
