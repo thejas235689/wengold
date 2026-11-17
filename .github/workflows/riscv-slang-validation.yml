@@ -1,0 +1,91 @@
+name: RISC-V Slang Hierarchy and VCD Integration
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'wengold/rtl_hierarchy.py'
+      - 'wengold/wave.py'
+      - 'tools/validate_riscv_core.py'
+      - 'tests/fixtures/riscv_core_wave_capture_tb.sv'
+      - 'docs/slang_riscv_validation.md'
+      - '.github/workflows/riscv-slang-validation.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  riscv-slang-vcd:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout Wengold
+        uses: actions/checkout@v4
+      - name: Checkout actual RV64 core RTL
+        uses: actions/checkout@v4
+        with:
+          repository: thejas235689/rv64_core
+          path: rv64_core
+      - name: Install Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install OSS CAD Suite with yosys-slang
+        uses: YosysHQ/setup-oss-cad-suite@v4
+      - name: Verify Slang Yosys frontend
+        run: |
+          yosys -Q -p 'plugin -i slang; help read_slang' > slang-frontend.log
+          grep -q 'read_slang' slang-frontend.log
+          yosys --version
+      - name: Elaborate the real RISC-V RTL with Slang
+        run: |
+          python tools/validate_riscv_core.py rv64_core --frontend slang \
+            --top riscv_core_top --output riscv-hierarchy.json
+          python - <<'PY'
+          import json
+          report = json.load(open("riscv-hierarchy.json"))
+          assert report["top"] == "riscv_core_top"
+          assert report["source_count"] >= 40, report["source_count"]
+          assert report["instance_count"] > 1, report["instance_count"]
+          assert report["port_bit_connection_count"] > 0
+          print("RTL hierarchy:", report["instance_count"], "instances;",
+                report["port_bit_connection_count"], "port-bit connections")
+          PY
+      - name: Compile and generate a real RTL VCD capture
+        run: |
+          mapfile -t RTL < <(python rv64_core/sim/run.py --list-rtl)
+          for source in "${RTL[@]}"; do test -f "rv64_core/$source"; done
+          iverilog -g2012 -s riscv_core_wave_capture_tb -o riscv-wave.vvp \
+            "${RTL[@]/#/rv64_core/}" \
+            rv64_core/tb/tb_core_top.sv \
+            tests/fixtures/riscv_core_wave_capture_tb.sv
+          vvp riscv-wave.vvp
+          test -s riscv_core_top.vcd
+          ls -lh riscv_core_top.vcd
+      - name: Validate exact RTL-to-VCD hierarchical cross-probes
+        run: |
+          python tools/validate_riscv_core.py rv64_core --frontend slang \
+            --top riscv_core_top --vcd riscv_core_top.vcd \
+            --vcd-root riscv_core_wave_capture_tb --dut-instance dut.u_core \
+            --output riscv-wave-crossprobe.json
+          python - <<'PY'
+          import json
+          report = json.load(open("riscv-wave-crossprobe.json"))
+          cross = report["crossprobe"]
+          assert cross["matched_ports"] > 0, cross
+          print("VCD signals:", report["waveform"]["signal_count"])
+          print("Exact port matches:", cross["matched_ports"], "/", cross["total_ports"])
+          print("Unmatched (not dumped/optimized):", cross["unmatched_ports"])
+          PY
+      - name: Upload elaboration and waveform evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: riscv-slang-vcd-validation
+          path: |
+            riscv-hierarchy.json
+            riscv-wave-crossprobe.json
+            riscv_core_top.vcd
+            slang-frontend.log
+          if-no-files-found: warn
