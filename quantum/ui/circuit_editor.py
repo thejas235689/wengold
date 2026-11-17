@@ -256,6 +256,20 @@ def build_editor(QtWidgets):
     step_controls.addWidget(next_button)
     debug_layout.addWidget(debug_summary)
     debug_layout.addLayout(step_controls)
+    comparison_controls = QtWidgets.QHBoxLayout()
+    comparison_baseline = QtWidgets.QSpinBox()
+    comparison_baseline.setObjectName("quantumCompareBaselineStep")
+    comparison_baseline.setRange(0, 0)
+    comparison_baseline.setPrefix("Reference step ")
+    compare_button = QtWidgets.QPushButton("Compare reference vs current")
+    compare_button.setObjectName("quantumCompareSnapshots")
+    compare_button.setEnabled(False)
+    comparison_result = QtWidgets.QLabel("Select a trace to compare two state snapshots.")
+    comparison_result.setObjectName("quantumComparisonResult")
+    comparison_controls.addWidget(comparison_baseline)
+    comparison_controls.addWidget(compare_button)
+    comparison_controls.addWidget(comparison_result, 1)
+    debug_layout.addLayout(comparison_controls)
     amplitude_table = QtWidgets.QTableWidget(0, 6)
     amplitude_table.setObjectName("quantumAmplitudeTable")
     amplitude_table.setHorizontalHeaderLabels(
@@ -315,6 +329,26 @@ def build_editor(QtWidgets):
         next_button.setEnabled(snapshot.step < trace.num_steps)
         tabs.setCurrentWidget(state_visualizer)
 
+    def compare_debug_steps():
+        trace = root.debug_trace
+        if trace is None:
+            return
+        from quantum.service.debugger import compare_statevectors
+        reference_step = comparison_baseline.value()
+        current_step = step_slider.value()
+        try:
+            comparison = compare_statevectors(
+                trace.snapshot(reference_step).statevector,
+                trace.snapshot(current_step).statevector,
+            )
+        except Exception as exc:
+            comparison_result.setText(f"Comparison failed: {exc}")
+            return
+        comparison_result.setText(
+            f"Fidelity {comparison.fidelity:.10f} · "
+            f"relative global phase {comparison.global_phase_radians:.6f} rad"
+        )
+
     def on_slider_changed(value):
         show_debug_step(value)
 
@@ -345,6 +379,10 @@ def build_editor(QtWidgets):
             step_slider.setValue(0)
             step_slider.blockSignals(False)
             step_slider.setEnabled(True)
+            comparison_baseline.setRange(0, trace.num_steps)
+            comparison_baseline.setValue(0)
+            compare_button.setEnabled(True)
+            comparison_result.setText("Choose a reference step and move the current step to compare.")
             show_debug_step(0)
             status_label.setText(
                 f"Debug trace ready · {trace.num_steps} gates · {len(trace.snapshots)} snapshots"
@@ -352,6 +390,7 @@ def build_editor(QtWidgets):
 
         def trace_failed(message):
             root.debug_trace = None
+            compare_button.setEnabled(False)
             canvas.set_debug_operation(None)
             debug_summary.setText("Trace unavailable.")
             status_label.setText(f"Debug trace failed: {message}")
@@ -416,6 +455,7 @@ def build_editor(QtWidgets):
     previous_button.clicked.connect(lambda: move_step(-1))
     next_button.clicked.connect(lambda: move_step(1))
     step_slider.valueChanged.connect(on_slider_changed)
+    compare_button.clicked.connect(compare_debug_steps)
 
     root.canvas = canvas
     root.to_circuit = canvas.to_circuit
@@ -432,4 +472,7 @@ def build_editor(QtWidgets):
     root.debug_previous_button = previous_button
     root.debug_next_button = next_button
     root.amplitude_table = amplitude_table
+    root.compare_button = compare_button
+    root.comparison_baseline = comparison_baseline
+    root.comparison_result = comparison_result
     return root
