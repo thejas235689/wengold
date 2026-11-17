@@ -68,8 +68,8 @@ void apply_gate(Qureg q, const Gate& item) {
 } // namespace
 
 std::vector<std::pair<double, double>> run_statevector(int num_qubits, const std::vector<Gate>& gates) {
-    if (num_qubits < 1 || num_qubits > 24)
-        throw std::invalid_argument("QuEST bridge currently accepts 1..24 qubits per request");
+    if (num_qubits < 1 || num_qubits > 20)
+        throw std::invalid_argument("QuEST bridge currently accepts 1..20 qubits per request");
     std::lock_guard<std::mutex> lock(quest_mutex);
     Environment env;
     Register reg(num_qubits);
