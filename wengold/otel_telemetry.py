@@ -120,6 +120,7 @@ def _sum_metric(name: str, unit: str, points: list[dict]) -> dict:
 
 def build_otlp_bundle(report: Mapping[str, Any], *,
                       transactions: Iterable[Mapping[str, Any]] = (),
+                      traffic_metrics: Mapping[str, Any] | None = None,
                       run_id: str | None = None,
                       run_start_unix_ns: int | None = None,
                       time_unit_ns: Any = 1,
@@ -132,6 +133,8 @@ def build_otlp_bundle(report: Mapping[str, Any], *,
             protocol, operation, transaction_id, start_time, end_time,
             address, response, beats, status and an optional attributes map.
             These records must come from a real protocol decoder/monitor.
+        traffic_metrics: Optional protocol metrics from a real decoder, such as
+            AXI4 accepted transfers, stall cycles, maximum stalls and protocol errors.
         run_id: Stable simulation identifier; generated when omitted.
         run_start_unix_ns: Optional explicit synthetic Unix-nanosecond anchor. If
             omitted, the simulation is placed immediately before export and the
@@ -353,6 +356,42 @@ def build_otlp_bundle(report: Mapping[str, Any], *,
                                   "wengold.protocol.name": protocol,
                                   "wengold.transaction.operation": operation}),
         }]))
+
+    for metric_name, metric_value in sorted((traffic_metrics or {}).items()):
+        key = str(metric_name).strip().lower().replace(" ", "_")
+        if not key or any(ch not in "abcdefghijklmnopqrstuvwxyz0123456789_." for ch in key):
+            raise ValueError(f"invalid traffic metric name: {metric_name!r}")
+        if isinstance(metric_value, bool) or not isinstance(metric_value, (int, float)):
+            raise ValueError(f"traffic metric {key} must be numeric")
+        if not Decimal(str(metric_value)).is_finite() or metric_value < 0:
+            raise ValueError(f"traffic metric {key} must be finite and non-negative")
+        point = {
+            "timeUnixNano": str(max(run_start_unix_ns + 1, run_end_ns)),
+            "attributes": _attrs({
+                "wengold.run.id": run_id,
+                "wengold.protocol.name": "axi4",
+                "wengold.traffic.metric": key,
+            }),
+        }
+        if key.endswith("_max_stall_cycles"):
+            point["asInt" if isinstance(metric_value, int) else "asDouble"] = str(metric_value) if isinstance(metric_value, int) else metric_value
+            metrics.append({
+                "name": f"wengold.traffic.axi4.{key}",
+                "unit": "{cycle}",
+                "gauge": {"dataPoints": [point]},
+            })
+        else:
+            point["startTimeUnixNano"] = str(run_start_unix_ns)
+            point["asInt" if isinstance(metric_value, int) else "asDouble"] = str(metric_value) if isinstance(metric_value, int) else metric_value
+            metrics.append({
+                "name": f"wengold.traffic.axi4.{key}",
+                "unit": "{count}",
+                "sum": {
+                    "aggregationTemporality": "AGGREGATION_TEMPORALITY_CUMULATIVE",
+                    "isMonotonic": True,
+                    "dataPoints": [point],
+                },
+            })
 
     resource_metrics = [{
         "resource": _resource(),
