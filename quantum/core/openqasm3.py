@@ -6,7 +6,9 @@ instead of silently dropping semantics.
 """
 from __future__ import annotations
 
+import ast
 import math
+import operator
 import re
 import uuid
 
@@ -18,20 +20,33 @@ _CREG = re.compile(r"^bit\[(\d+)\]\s+([A-Za-z_]\w*)\s*;$")
 _INDEX = r"([A-Za-z_]\w*)\[(\d+)\]"
 _PARAM = re.compile(r"^([A-Za-z_]\w*)\s*\((.+)\)\s+(.+)$")
 _CALL = re.compile(r"^([A-Za-z_]\w*)\s+(.+)$")
+_BINOPS = {ast.Add: operator.add, ast.Sub: operator.sub, ast.Mult: operator.mul, ast.Div: operator.truediv}
+_UNARY = {ast.UAdd: operator.pos, ast.USub: operator.neg}
+
+
+def _eval_angle_node(node):
+    if isinstance(node, ast.Expression):
+        return _eval_angle_node(node.body)
+    if isinstance(node, ast.Constant) and isinstance(node.value, (int, float)) and not isinstance(node.value, bool):
+        return node.value
+    if isinstance(node, ast.Name) and node.id == "pi":
+        return math.pi
+    if isinstance(node, ast.BinOp) and type(node.op) in _BINOPS:
+        return _BINOPS[type(node.op)](_eval_angle_node(node.left), _eval_angle_node(node.right))
+    if isinstance(node, ast.UnaryOp) and type(node.op) in _UNARY:
+        return _UNARY[type(node.op)](_eval_angle_node(node.operand))
+    raise CircuitValidationError("only numeric constants, pi, and + - * / are allowed in gate parameters")
 
 
 def _angle(expression: str) -> float:
-    """Evaluate a small arithmetic expression over numbers and pi only."""
-    expression = expression.strip().replace("π", "pi")
-    if not re.fullmatch(r"[0-9eE+\-*/(). pi]+", expression):
-        raise CircuitValidationError(f"unsupported OpenQASM parameter expression: {expression}")
+    """Evaluate a safe arithmetic expression over numbers and pi only."""
     try:
-        value = eval(expression, {"__builtins__": {}}, {"pi": math.pi})
-    except Exception as exc:
+        value = float(_eval_angle_node(ast.parse(expression.strip(), mode="eval")))
+    except (SyntaxError, ValueError, TypeError, ZeroDivisionError) as exc:
         raise CircuitValidationError(f"invalid OpenQASM parameter: {expression}") from exc
-    if not isinstance(value, (int, float)) or not math.isfinite(float(value)):
+    if not math.isfinite(value):
         raise CircuitValidationError(f"non-finite OpenQASM parameter: {expression}")
-    return float(value)
+    return value
 
 
 def _operand(token: str, register: str, size: int, line: int) -> int:
@@ -48,11 +63,8 @@ def import_openqasm3(source: str, *, circuit_id: str | None = None) -> Circuit:
     """Import the supported OpenQASM 3 subset into a validated circuit."""
     if not isinstance(source, str):
         raise TypeError("OpenQASM source must be text")
-    lines = []
-    for raw in source.splitlines():
-        line = raw.split("//", 1)[0].strip()
-        if line:
-            lines.append(line)
+    lines = [line for raw in source.splitlines()
+             if (line := raw.split("//", 1)[0].strip())]
     if not lines or not _HEADER.fullmatch(lines[0]):
         raise CircuitValidationError("OpenQASM 3 source must start with OPENQASM 3.0;")
 
@@ -64,10 +76,9 @@ def import_openqasm3(source: str, *, circuit_id: str | None = None) -> Circuit:
     rotations = {"rx", "ry", "rz"}
     two = {"cx": "CNOT", "cnot": "CNOT", "cz": "CZ", "swap": "SWAP"}
     three = {"ccx": "CCX", "cswap": "CSWAP"}
-    seen_header = False
 
     for line_no, line in enumerate(lines[1:], start=2):
-        if line.lower() == "include \"stdgates.inc\";":
+        if line.lower() == 'include "stdgates.inc";':
             continue
         match = _QREG.fullmatch(line)
         if match:
@@ -99,7 +110,7 @@ def import_openqasm3(source: str, *, circuit_id: str | None = None) -> Circuit:
             cbit = _operand(right.strip(), creg, nc, line_no)
             operations.append(Operation(operation_id, "MEASURE", (q,), classical_bits=(cbit,)))
             continue
-        assignment = re.fullmatch(rf"{_INDEX}\s*=\s*measure\s+({_INDEX})\s*;", line, re.I)
+        assignment = re.fullmatch(rf"{_INDEX}\s*=\s*measure\s+{_INDEX}\s*;", line, re.I)
         if assignment:
             if creg is None:
                 raise CircuitValidationError(f"line {line_no}: measurement requires a bit register")
@@ -167,10 +178,7 @@ def import_openqasm3(source: str, *, circuit_id: str | None = None) -> Circuit:
 def export_openqasm3(circuit: Circuit) -> str:
     """Export the supported WENGOLD IR subset; fail on unrepresentable operations."""
     validate_circuit(circuit)
-    if circuit.num_clbits:
-        declarations = [f"bit[{circuit.num_clbits}] c;"]
-    else:
-        declarations = []
+    declarations = [f"bit[{circuit.num_clbits}] c;"] if circuit.num_clbits else []
     lines = ["OPENQASM 3.0;", 'include "stdgates.inc";',
              f"qubit[{circuit.num_qubits}] q;"] + declarations
     simple = {"I": "id", "H": "h", "X": "x", "Y": "y", "Z": "z",
