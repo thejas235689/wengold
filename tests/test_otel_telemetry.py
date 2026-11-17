@@ -141,3 +141,113 @@ def test_bundle_writes_separate_otlp_payloads(tmp_path):
 def test_export_rejects_invalid_time_unit():
     with pytest.raises(ValueError, match="time_unit_ns must be positive"):
         build_otlp_bundle(REPORT, time_unit_ns=0)
+
+
+
+def test_dynatrace_export_sends_binary_otlp_protobuf(monkeypatch):
+    from opentelemetry.proto.collector.trace.v1.trace_service_pb2 import (
+        ExportTraceServiceRequest,
+    )
+    from opentelemetry.proto.collector.metrics.v1.metrics_service_pb2 import (
+        ExportMetricsServiceRequest,
+    )
+    from opentelemetry.proto.collector.logs.v1.logs_service_pb2 import (
+        ExportLogsServiceRequest,
+    )
+    from wengold.otel_telemetry import send_dynatrace_otlp
+
+    bundle = build_otlp_bundle(REPORT, run_id="dynatrace-export",
+                               run_start_unix_ns=5_000_000_000)
+    sent = []
+
+    class FakeResponse:
+        status = 200
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def read(self):
+            return b""
+
+        def getcode(self):
+            return self.status
+
+    def fake_urlopen(request, timeout):
+        sent.append((request, timeout))
+        return FakeResponse()
+
+    monkeypatch.setattr("urllib.request.urlopen", fake_urlopen)
+    result = send_dynatrace_otlp(
+        bundle,
+        "https://example.live.dynatrace.com/api/v2/otlp",
+        "secret-token-never-store",
+        timeout=7,
+    )
+
+    assert result["status"] == "exported"
+    assert result["signals_sent"] == ["traces", "metrics", "logs"]
+    assert [row[0].full_url for row in sent] == [
+        "https://example.live.dynatrace.com/api/v2/otlp/v1/traces",
+        "https://example.live.dynatrace.com/api/v2/otlp/v1/metrics",
+        "https://example.live.dynatrace.com/api/v2/otlp/v1/logs",
+    ]
+    assert all(row[1] == 7 for row in sent)
+    assert all(row[0].get_header("Content-type") == "application/x-protobuf"
+               for row in sent)
+    assert all(row[0].get_header("Authorization") == "Api-Token secret-token-never-store"
+               for row in sent)
+    assert ExportTraceServiceRequest.FromString(sent[0][0].data).resource_spans
+    assert ExportMetricsServiceRequest.FromString(sent[1][0].data).resource_metrics
+    assert ExportLogsServiceRequest.FromString(sent[2][0].data).resource_logs
+    assert "secret-token-never-store" not in json.dumps(result)
+
+
+def test_dynatrace_export_rejects_insecure_or_signal_specific_urls():
+    from wengold.otel_telemetry import send_dynatrace_otlp
+
+    bundle = build_otlp_bundle(REPORT, run_id="url-validation",
+                               run_start_unix_ns=5_000_000_000)
+    with pytest.raises(ValueError, match="HTTPS"):
+        send_dynatrace_otlp(bundle, "http://example.test/api/v2/otlp", "token")
+    with pytest.raises(ValueError, match="base URL"):
+        send_dynatrace_otlp(bundle, "https://example.test/api/v2/otlp/v1/traces", "token")
+
+
+def test_dynatrace_export_reports_partial_delivery_without_exposing_token(monkeypatch):
+    from urllib.error import HTTPError
+    from wengold.otel_telemetry import DynatraceExportError, send_dynatrace_otlp
+
+    bundle = build_otlp_bundle(REPORT, run_id="partial-export",
+                               run_start_unix_ns=5_000_000_000)
+    calls = []
+
+    class FakeResponse:
+        status = 200
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def read(self):
+            return b""
+
+        def getcode(self):
+            return self.status
+
+    def fake_urlopen(request, timeout):
+        calls.append(request.full_url)
+        if request.full_url.endswith("/v1/metrics"):
+            raise HTTPError(request.full_url, 401, "unauthorized", {}, None)
+        return FakeResponse()
+
+    monkeypatch.setattr("urllib.request.urlopen", fake_urlopen)
+    with pytest.raises(DynatraceExportError) as err:
+        send_dynatrace_otlp(bundle, "https://example.test/api/v2/otlp", "very-secret")
+    assert err.value.sent_signals == ("traces",)
+    assert "very-secret" not in str(err.value)
+    assert len(calls) == 2
