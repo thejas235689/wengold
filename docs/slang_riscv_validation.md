@@ -63,7 +63,7 @@ instance path must supply the correct `--vcd-root` and `--dut-instance`.
 
 The deterministic capture harness compiles the real RV64 RTL and
 `tb/tb_core_top.sv`, runs a short RV64 smoke program, and generates a fresh VCD.
-The latest validated capture contains **2,618 hierarchical VCD signal names**
+The latest validated capture contains **2,619 hierarchical VCD signal names**
 and maps **758 / 758 elaborated ports (100%)** by exact hierarchical path:
 **758 direct matches, 0 parent-net fallbacks, 0 unmatched**. This is a
 smoke-program capture, not a failing regression trace or a user-supplied
