@@ -67,6 +67,8 @@ jobs:
           # the least useful signal a project can produce.
           pip install "pytest>=8,<9" "z3-solver>=4.13,<6" "numpy>=1.26,<3" "PyYAML>=6,<7"
           pip install "pyslang==12.1.0" || echo "::warning::pyslang unavailable on ${{ matrix.os }}; front-end tests will skip"
+          # Exercise the optional binary OTLP exporter without making it a core dependency.
+          pip install "opentelemetry-proto>=1.30,<2"
           # the native desktop app; optional at runtime, so the suite skips its
           # tests if this ever fails, but installed here so CI covers it
           pip install "PyQt6>=6.6,<7" || echo "PyQt6 unavailable; native tests will skip"
