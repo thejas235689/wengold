@@ -116,3 +116,30 @@ continuous live streaming remain follow-on work. Signal names alone are not
 sufficient to reconstruct a correct transaction. See
 [OTEL_TRAFFIC_DEBUG.md](OTEL_TRAFFIC_DEBUG.md) for the transaction contract,
 Dynatrace endpoint/authentication setup, time mapping and limits.
+
+## PASS versus FAIL differential waveform comparison
+
+Use **Wave Debug → Browse PASS… / Browse FAIL… → Compare PASS vs FAIL** to
+compare a known-good VCD against a failing regression VCD. The comparison:
+- Matches signals by exact fully-qualified hierarchy path and reports PASS-only
+  and FAIL-only signals separately.
+- Converts both VCD timescales to physical nanoseconds and compares the union
+  of change timestamps over the common capture interval using VCD
+  hold-last-value semantics.
+- Identifies the first divergent signal and timestamp, PASS and FAIL values,
+  per-signal difference counts, unknown-versus-known mismatches and width
+  mismatches.
+- Lets you select a differing signal to cross-probe the RTL and jump to the
+  closest corresponding time in the currently loaded Waveforms timeline.
+- Caps the detailed difference list to protect the UI while preserving the
+  total difference count and marking truncated reports.
+
+The two captures must overlap in absolute VCD time. This first implementation
+does not automatically align traces to reset release, transaction IDs, or
+clock edges; use matching simulator start times and dump scopes. Signals with
+different hierarchy names are not automatically guessed as equivalent.
+X and Z are represented as unknown by the current parser. A divergence is a
+debugging lead, not proof of root cause.
+
+Focused tests:
+`python3 -m pytest -q tests/test_wave_diff.py tests/test_wave_debug.py tests/test_wave.py`
