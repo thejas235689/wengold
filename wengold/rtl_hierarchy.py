@@ -137,6 +137,7 @@ def build_rtl_hierarchy(netlist: dict[str, Any], *, top: str = "",
 def elaborate_with_yosys(project_root: str | Path, sources: list[str | Path], *,
                          top: str, yosys: str = "yosys", frontend: str = "yosys",
                          slang_plugin: str = "slang", sv_standard: str = "1800-2017",
+                         slang_unroll_limit: int = 256,
                          include_dirs: list[str | Path] | None = None,
                          defines: list[str] | None = None,
                          timeout_seconds: int = 300) -> dict[str, Any]:
@@ -147,6 +148,9 @@ def elaborate_with_yosys(project_root: str | Path, sources: list[str | Path], *,
         raise ValueError("Top module must be a simple Verilog/SystemVerilog identifier")
     if frontend == "slang" and sv_standard not in {"1800-2017", "1800-2023", "latest"}:
         raise ValueError("Unsupported Slang SystemVerilog standard")
+    if frontend == "slang" and (not isinstance(slang_unroll_limit, int)
+                                or slang_unroll_limit < 1 or slang_unroll_limit > 100000):
+        raise ValueError("slang_unroll_limit must be an integer from 1 to 100000")
     executable = shutil.which(yosys)
     if not executable:
         raise RuntimeError("Yosys executable not found. Install Yosys or set its executable path.")
@@ -179,7 +183,8 @@ def elaborate_with_yosys(project_root: str | Path, sources: list[str | Path], *,
     if frontend == "slang":
         # Load the plugin as its own Yosys command before invoking read_slang.
         script = ["plugin -i " + slang_plugin]
-        read_cmd = ["read_slang --top " + top + " --std " + sv_standard]
+        read_cmd = ["read_slang --top " + top + " --std " + sv_standard
+                    + " --unroll-limit " + str(slang_unroll_limit)]
         read_cmd.extend("-I " + str(path) for path in incdirs)
         read_cmd.extend(macro_args)
         read_cmd.extend(str(path) for path in resolved)
