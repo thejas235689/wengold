@@ -17,6 +17,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from wengold.rtl_hierarchy import (
     crossprobe_hierarchy_to_vcd,
+    elaborate_with_slang_ast,
     elaborate_with_yosys,
     load_riscv_core_sources,
 )
@@ -28,7 +29,9 @@ def main() -> int:
     parser.add_argument("project_root", type=Path)
     parser.add_argument("--top", default="riscv_core_top")
     parser.add_argument("--yosys", default="yosys")
-    parser.add_argument("--frontend", choices=("slang", "yosys"), default="slang")
+    parser.add_argument("--frontend", choices=("slang_ast", "slang", "yosys"),
+                        default="slang_ast")
+    parser.add_argument("--slang", default="slang")
     parser.add_argument("--plugin", default="slang")
     parser.add_argument("--vcd", type=Path)
     parser.add_argument("--vcd-root", default="tb_core_top")
@@ -38,11 +41,15 @@ def main() -> int:
 
     root = args.project_root.resolve()
     sources = load_riscv_core_sources(root)
-    graph = elaborate_with_yosys(
-        root, sources, top=args.top, yosys=args.yosys,
-        frontend=args.frontend, slang_plugin=args.plugin,
-        sv_standard="1800-2017",
-    )
+    if args.frontend == "slang_ast":
+        graph = elaborate_with_slang_ast(
+            root, sources, top=args.top, slang=args.slang)
+    else:
+        graph = elaborate_with_yosys(
+            root, sources, top=args.top, yosys=args.yosys,
+            frontend=args.frontend, slang_plugin=args.plugin,
+            sv_standard="1800-2017",
+        )
     report = {
         "project": str(root),
         "top": graph["top"],
