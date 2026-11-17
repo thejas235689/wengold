@@ -60,7 +60,7 @@ jobs:
       - name: Validate Yosys-Slang synthesis-oriented frontend
         run: |
           python tools/validate_riscv_core.py rv64_core --frontend slang \
-            --unroll-limit 256 --top riscv_core_top \
+            --unroll-limit 4096 --top riscv_core_top \
             --output riscv-yosys-slang-hierarchy.json
           python - <<'PY'
           import json
