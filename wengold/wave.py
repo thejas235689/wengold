@@ -38,12 +38,13 @@ _TIMESCALE = re.compile(
 def _timescale_info(text: str) -> dict:
     match = _TIMESCALE.search(text)
     if not match:
-        return {"timescale": None, "time_unit_ns": None}
+        return {"timescale": None, "time_unit_ns": None, "time_unit_label": "tick"}
     magnitude, unit = match.groups()
     unit = unit.lower()
     return {
         "timescale": f"{magnitude}{unit}",
         "time_unit_ns": str(Decimal(magnitude) * _TIME_UNITS_NS[unit]),
+        "time_unit_label": unit,
     }
 
 
