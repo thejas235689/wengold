@@ -5,7 +5,7 @@ Qt is imported lazily so the CLI remains usable without PyQt6.
 """
 from __future__ import annotations
 
-from .studio_workspace import source, save_source, list_evidence, waveform, formal_report
+from .studio_workspace import source, save_source, list_evidence, formal_report
 from .studio_jobs import StudioJobs, crossprobe
 
 
@@ -128,133 +128,81 @@ def make_studio_tabs(state, QtCore, QtGui, QtWidgets, parent=None):
     tabs.addTab(implementation, "Synthesis / PPA")
     tabs.implementation = implementation
 
-    # Waveforms: real VCD samples with click-to-crossprobe and no fake signals.
-    wave_page, wave_layout = column()
-    wave_picker = QtWidgets.QComboBox()
-    wave_picker.setObjectName("waveFilePicker")
-    wave_open = QtWidgets.QPushButton("Load VCD")
-    wave_refresh = QtWidgets.QPushButton("Refresh files")
-    toolbar(wave_layout, wave_picker, wave_open, wave_refresh)
-    wave_table = QtWidgets.QTableWidget(0, 3)
-    wave_table.setObjectName("waveformTable")
-    wave_table.setHorizontalHeaderLabels(["Signal", "Width", "Samples"])
-    wave_table.horizontalHeader().setStretchLastSection(True)
-    wave_table.setEditTriggers(QtWidgets.QAbstractItemView.EditTrigger.NoEditTriggers)
-    wave_layout.addWidget(wave_table)
-    from .native_waveplot import build_wave_canvas
-    wave_canvas = build_wave_canvas(QtCore, QtGui, QtWidgets)
-    wave_scroll = QtWidgets.QScrollArea()
-    wave_scroll.setObjectName("waveformTimeline")
-    wave_scroll.setWidgetResizable(False)
-    wave_scroll.setWidget(wave_canvas)
-    wave_layout.insertWidget(wave_layout.count() - 1, wave_scroll, 2)
-    zoom_row = QtWidgets.QHBoxLayout()
-    zoom_label = QtWidgets.QLabel("Zoom 1.0×")
-    zoom_in = QtWidgets.QPushButton("Zoom +")
-    zoom_out = QtWidgets.QPushButton("Zoom −")
-    zoom_row.addWidget(zoom_label)
-    zoom_row.addWidget(zoom_out)
-    zoom_row.addWidget(zoom_in)
-    zoom_row.addStretch(1)
-    wave_layout.insertLayout(wave_layout.count() - 1, zoom_row)
-    zoom_in.clicked.connect(lambda: update_zoom(wave_canvas.zoom * 1.5))
-    zoom_out.clicked.connect(lambda: update_zoom(wave_canvas.zoom / 1.5))
+    # Waveforms and automatic findings share the same observed samples.
+    from .native_wave_view import make_wave_view
+    from .native_wave_debug import make_wave_debug
 
-    def update_zoom(value):
-        wave_canvas.set_zoom(value)
-        zoom_label.setText(f"Zoom {wave_canvas.zoom:.1f}×")
-
-    probe = QtWidgets.QPlainTextEdit()
-    probe.setObjectName("rtlCrossProbe")
-    probe.setReadOnly(True)
-    probe.setMaximumHeight(145)
-    wave_layout.addWidget(probe)
-    active_wave = {"data": None}
-
-    def refresh_evidence():
-        try:
-            inventory = list_evidence(root)
-            wave_picker.clear()
-            wave_picker.addItems(inventory["waveforms"])
-            formal_picker_reports.clear()
-            formal_picker_reports.addItems(inventory["formal_reports"])
-            alert("Evidence files refreshed")
-        except Exception as exc:
-            alert(f"Evidence discovery failed: {exc}", True)
-
-    def load_wave():
-        if not wave_picker.currentText():
-            alert("No VCD files found in project evidence directories", True)
-            return
-        try:
-            data = waveform(root, wave_picker.currentText())
-            active_wave["data"] = data
-            wave_canvas.set_data(data)
-            wave_debug.loadWave(data)
-            wave_table.setRowCount(len(data["signals"]))
-            for index, signal in enumerate(data["signals"]):
-                samples = signal["values"]
-                rendered = " | ".join(
-                    "X" if value is None else format(value, "x")
-                    for value in samples[:28])
-                if len(samples) > 28:
-                    rendered += " …"
-                for c, value in enumerate((signal["name"], str(signal["width"]), rendered)):
-                    wave_table.setItem(index, c, QtWidgets.QTableWidgetItem(value))
-            alert(f"{data['cycles']} actual sampled timestamps from {wave_picker.currentText()}")
-        except Exception as exc:
-            alert(f"Waveform load failed: {exc}", True)
-
-    def select_signal(row, _col):
-        data = active_wave["data"]
-        if data is None or row >= len(data["signals"]):
-            return
-        signal = data["signals"][row]["name"]
+    def probe_signal(signal):
         try:
             matches = crossprobe(root, files, signal)
             lines = [f"{v['file']}:{v['line']}  {v['text'].strip()}"
                      for v in matches["matches"]]
-            probe.setPlainText(
-                f"{signal} — lexical matches; hierarchy not resolved\n" +
-                ("\n".join(lines) if lines else "No RTL token match"))
-            if matches["matches"]:
-                first = matches["matches"][0]
-                edit_picker.setCurrentText(first["file"])
+            return (f"{signal} — lexical matches; hierarchy not resolved\n"
+                    + ("\n".join(lines) if lines else "No RTL token match"),
+                    matches["matches"])
         except Exception as exc:
-            probe.setPlainText(str(exc))
+            return str(exc), []
 
-    wave_table.cellClicked.connect(select_signal)
-    def probe_selected_signal(signal_name):
-        data = active_wave["data"]
-        if not data:
-            return
-        for index, signal in enumerate(data["signals"]):
-            if signal["name"] == signal_name:
-                select_signal(index, 0)
-                wave_table.selectRow(index)
+    def activate_tab(title):
+        # Navigate by title because the desktop shell wraps pages in scroll areas.
+        for i in range(tabs.count()):
+            if tabs.tabText(i) == title:
+                tabs.setCurrentIndex(i)
                 break
 
-    wave_canvas.signalSelected.connect(probe_selected_signal)
-    wave_open.clicked.connect(load_wave)
-    wave_refresh.clicked.connect(refresh_evidence)
-    tabs.addTab(wave_page, "Waveforms")
-    from .native_wave_debug import make_wave_debug
+    def open_wave_source(rel, line):
+        if edit_state["file"] != rel:
+            load_editor(rel)
+        if edit_state["file"] != rel:
+            return
+        # The line match was computed against disk, not an unsaved editor buffer.
+        if edit_state["dirty"]:
+            activate_tab("RTL Editor")
+            alert("Save source and reselect the signal before opening a disk line match", True)
+            return
+        block = editor.document().findBlockByNumber(line - 1)
+        if block.isValid():
+            editor.setTextCursor(QtGui.QTextCursor(block))
+            editor.centerCursor()
+        activate_tab("RTL Editor")
 
-    def crossprobe_debug_signal(signal_name):
-        # Preserve waveform viewer ownership and its project-constrained RTL probe.
-        probe_selected_signal(signal_name)
+    wave_page = make_wave_view(root, QtCore, QtGui, QtWidgets, alert,
+                              probe_signal, open_wave_source)
+    tabs.addTab(wave_page, "Waveforms")
 
     def focus_wave_sample(index):
-        if not isinstance(index, int) or index < 0:
-            return
-        canvas_x = wave_canvas.label_width + int(index * wave_canvas.slot_width * wave_canvas.zoom)
-        wave_scroll.horizontalScrollBar().setValue(max(0, canvas_x - 240))
-        tabs.setCurrentWidget(wave_page)
+        activate_tab("Waveforms")
+        wave_page.focusSample(index)
 
     wave_debug = make_wave_debug(QtCore, QtGui, QtWidgets, root,
-                                 crossprobe_debug_signal, focus_wave_sample)
+                                 wave_page.selectSignal, focus_wave_sample)
     tabs.addTab(wave_debug, "Wave Debug")
     tabs.waveDebug = wave_debug
+    from .native_trace_tools import make_trace_tools
+    trace_tools = make_trace_tools(root, QtCore, QtGui, QtWidgets, alert, focus_wave_sample)
+    tabs.addTab(trace_tools, "Trace Tools")
+
+    def trace_loaded(data):
+        wave_debug.loadWave(data)
+        trace_tools.setTrace(data)
+
+    wave_page.traceLoaded = trace_loaded
+    wave_page.refreshFiles = lambda: refresh_evidence()
+
+    def refresh_evidence():
+        try:
+            inventory = list_evidence(root)
+            traces = sorted(inventory["waveforms"] + inventory["fst_waveforms"])
+            wave_page.setFiles(traces)
+            trace_tools.setFiles(traces)
+            previous_report = formal_picker_reports.currentText()
+            formal_picker_reports.clear()
+            formal_picker_reports.addItems(inventory["formal_reports"])
+            if previous_report in inventory["formal_reports"]:
+                formal_picker_reports.setCurrentText(previous_report)
+            alert("Evidence files refreshed")
+        except Exception as exc:
+            alert(f"Evidence discovery failed: {exc}", True)
 
     # Formal execution: source selection and bounded safety property.
     formal_page, formal_layout = column()
@@ -510,8 +458,8 @@ def make_studio_tabs(state, QtCore, QtGui, QtWidgets, parent=None):
     tabs.refreshJobs = refresh_jobs
     tabs.loadSource = load_editor
     tabs.sourceEditor = editor
-    tabs.waveTable = wave_table
-    tabs.waveCanvas = wave_canvas
+    tabs.waveTable = wave_page.waveTable
+    tabs.waveCanvas = wave_page.waveCanvas
     tabs.formalViewer = formal_result
     tabs.jobTable = job_table
     tabs.agentViewer = agent_trace

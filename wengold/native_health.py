@@ -15,6 +15,7 @@ def diagnostics(window, QtWidgets) -> dict:
         "rtl_editor": ("openRtlButton", "saveRtlButton"),
         "synthesis": ("implSource", "implRunSynthesis", "implPpaEvidence"),
         "waveforms": ("waveFilePicker", "waveformTable", "waveRootCauseCandidates"),
+        "trace_tools": ("traceCompareTable", "traceLaneTimeline", "traceProtocolTransactions"),
         "formal": ("formalSourcePicker",),
         "local_ai": ("aiBackend", "aiConnect", "aiGenerate", "aiEvidence"),
         "dv_workflow": ("dvSpec", "dvRtl", "dvIntakeButton", "dvPlanButton", "dvTestConnection", "dvCoverageButton"),
@@ -30,7 +31,7 @@ def diagnostics(window, QtWidgets) -> dict:
         ui[category] = {"present": present, "missing": missing,
                         "controls_present": len(missing) == 0}
     commands = ("iverilog", "vvp", "verilator", "xezim", "yosys", "cargo",
-                "satya", "sta", "ngspice", "klayout")
+                "satya", "sta", "ngspice", "klayout", "fst2vcd")
     tools = {name: shutil.which(name) for name in commands}
     # Runtime readiness is NOT a certification of an actual passing run.
     gates = {

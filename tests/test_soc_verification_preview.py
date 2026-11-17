@@ -60,3 +60,35 @@ def test_replay_relocated_snapshots_and_detect_tampering(tmp_path):
     log.write_text(log.read_text() + "\ntampered\n")
     with pytest.raises(ValueError, match="original transcript hash mismatch"):
         preview.replay(saved, "baseline")
+
+
+@pytest.mark.skipif(not shutil.which("xezim"), reason="requires Xezim 0.11.6")
+def test_live_dropped_dma_write_exports_observed_readback(tmp_path):
+    import subprocess
+
+    from wengold.studio_workspace import waveform
+    from wengold.wave_inspect import wave_drom
+
+    example = SCRIPT.parent
+    shutil.copytree(example / "rtl", tmp_path / "rtl")
+    shutil.copy(example / "subsystem_tb.sv", tmp_path)
+    (tmp_path / "waves").mkdir()
+    files = sorted(path.relative_to(tmp_path).as_posix()
+                   for path in (tmp_path / "rtl").glob("*.sv"))
+    run = subprocess.run(["xezim", "--wave", "-D", "WENGOLD_DEBUG_VCD", "-D", "DROP_WRITE",
+                          "-s", "subsystem_tb", *files, "subsystem_tb.sv"],
+                         cwd=tmp_path, capture_output=True, text=True, timeout=30, check=False)
+    transcript = run.stdout + run.stderr
+    assert run.returncode != 0
+    assert "WENGOLD_VCD_TICK:112" in transcript
+    assert "FAIL:REQ-DATA:10" in transcript
+    trace = waveform(tmp_path, "waves/dma-debug.vcd")
+    assert trace["timescale"] == "1ns"
+    signals = {s["name"]: s for s in trace["signals"]}
+    report = wave_drom(trace, [signals["subsystem_tb.rd"], signals["subsystem_tb.value"]],
+                       trace["times"].index(110), trace["times"].index(112))
+    assert report["wengold"]["ticks_per_slot"] == 1
+    assert report["signal"] == [
+        {"name": "subsystem_tb.rd", "wave": "==.", "data": ["0x4", "0x5"]},
+        {"name": "subsystem_tb.value", "wave": "==.", "data": ["0x39", "0x00"]},
+    ]

@@ -1,4 +1,13 @@
+`ifdef WENGOLD_DEBUG_VCD
+`timescale 1ns/1ns
+`endif
 module subsystem_tb;
+`ifdef WENGOLD_DEBUG_VCD
+  initial begin
+    $dumpfile("waves/dma-debug.vcd");
+    $dumpvars(0, subsystem_tb);
+  end
+`endif
   logic clk = 0, rst_n = 0, start = 0, cpu = 0, stall = 0;
   logic ready, irq, dma, gd, gc;
   logic [3:0] rd = 0;
@@ -49,7 +58,12 @@ module subsystem_tb;
   task automatic check_memory(input logic [3:0] a, input logic [7:0] want);
     rd = a;
     #1;
-    if (value !== want) $fatal(1, "FAIL:REQ-DATA:%0d", cycle);
+    if (value !== want) begin
+`ifdef WENGOLD_DEBUG_VCD
+      $display("WENGOLD_VCD_TICK:%0d", $time);
+`endif
+      $fatal(1, "FAIL:REQ-DATA:%0d", cycle);
+    end
   endtask
 
   initial begin

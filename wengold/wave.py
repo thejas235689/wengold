@@ -73,103 +73,126 @@ def from_trace(trace: list, widths: dict[str, int] | None = None,
 
 
 # ---- VCD -------------------------------------------------------------------
-_VAR = re.compile(r"\$var\s+(\w+)\s+(\d+)\s+(\S+)\s+([^$]*?)\s*\$end")
-_SCALAR = re.compile(r"^([01xzXZ])(\S+)$")
-_SCOPE = re.compile(r"\$scope\s+\w+\s+(\S+)\s*\$end")
-_UPSCOPE = re.compile(r"\$upscope\s*\$end")
+_VCD_COMMAND = re.compile(r"\$(\w+)\b(.*?)\$end\b", re.S)
+_TIMESCALE = re.compile(r"(1|10|100)\s*(s|ms|us|ns|ps|fs)")
+_DIGITAL = {"event", "integer", "parameter", "reg", "supply0", "supply1",
+            "time", "tri", "triand", "trior", "trireg", "tri0", "tri1",
+            "wand", "wire", "wor", "logic", "bit"}
+_MAX_DIGITAL_WIDTH = 4096
 
 
-def parse_vcd(text: str, limit: int = 4000) -> dict:
-    """Parse a VCD dump into the waveform shape."""
-    # Track the scope stack. A dump of `tb` and its children declares the same
-    # net twice (`tb.q` and `tb.u.q`); keying on the leaf name alone reported two
-    # signals both called `q`, which is indistinguishable in the waveform.
-    ids: dict[str, tuple[str, int]] = {}
+def parse_vcd(text: str, limit: int = 4000, *, signal_limit: int | None = None) -> dict:
+    """Sample digital updates at real VCD timestamps, retaining four-state bits.
+
+    The legacy integer values remain None for X/Z so existing consumers still
+    work. The parallel logic_values array preserves individual X and Z bits.
+    The parser stops sampling at the bound instead of copying the full history.
+    """
+    header, marker, body = text.partition("$enddefinitions")
+    declarations = []
     scope: list[str] = []
-    for line in text.splitlines():
-        m = _VAR.search(line)
-        if m:
-            _kind, width, ident, name = m.groups()
-            leaf = name.strip().split()[0]
-            full = ".".join(scope + [leaf]) if scope else leaf
-            ids[ident] = (full, int(width))
-            continue
-        s = _SCOPE.search(line)
-        if s:
-            scope.append(s.group(1))
-            continue
-        if _UPSCOPE.search(line):
-            if scope:
-                scope.pop()
-    body = text.split("$enddefinitions", 1)
-    if len(body) < 2:
-        return {"source": "vcd", "clock": None, "fail_at": None, "cycles": 0,
-                "signals": []}
+    timescale = None
+    unsupported = 0
+    for command, args in _VCD_COMMAND.findall(header):
+        parts = args.split()
+        if command == "timescale":
+            scale = _TIMESCALE.fullmatch(args.strip())
+            if scale:
+                timescale = "".join(scale.groups())
+        elif command == "scope" and len(parts) >= 2:
+            scope.append(parts[1])
+        elif command == "upscope" and scope:
+            scope.pop()
+        elif command == "var" and len(parts) >= 4:
+            kind, width, ident, leaf = parts[:4]
+            if (kind not in _DIGITAL or not width.isascii() or not width.isdecimal()
+                    or len(width) > 6 or not 0 < int(width) <= _MAX_DIGITAL_WIDTH):
+                unsupported += 1
+                continue
+            # Distinguish separately declared bits with a shared reference name.
+            if len(parts) > 4 and parts[4].startswith("[") and ":" not in parts[4]:
+                leaf += parts[4]
+            declarations.append((ident, ".".join([*scope, leaf]), int(width)))
 
-    # A VCD lists the value changes *after* their `#time` marker, so a snapshot
-    # taken when the marker is read is the previous cycle's. Record the values
-    # when the NEXT marker arrives instead.
-    current: dict[str, int] = {}
-    history: list[tuple[int, dict[str, int]]] = []
-    pending: int | None = None
-    for line in body[1].splitlines():
-        line = line.strip()
-        if not line or line.startswith("$"):
-            continue
-        if line.startswith("#"):
-            try:
-                if pending is not None:
-                    history.append((pending, dict(current)))
-                pending = int(line[1:])
-            except ValueError:
-                pass
-            continue
-        if line[0] in "bB":
-            parts = line[1:].split()
-            if len(parts) == 2:
-                bits, ident = parts
-                try:
-                    current[ident] = (None if any(c in "xXzZ" for c in bits)
-                                      else int(bits, 2))
-                except ValueError:
-                    pass
-            continue
-        m = _SCALAR.match(line)
-        if m:
-            bit, ident = m.groups()
-            current[ident] = 1 if bit == "1" else 0 if bit == "0" else None
-    if pending is not None:
-        history.append((pending, dict(current)))
-    if not history:
-        return {"source": "vcd", "clock": None, "fail_at": None, "cycles": 0,
-                "signals": []}
-    history = history[:limit]
+    clock = next((name for _, name, _ in declarations
+                  if re.search(r"clk|clock", name.rsplit(".", 1)[-1], flags=re.I)), None)
+    declarations.sort(key=lambda item: (item[1] != clock, item[1]))
+    total_signals = len(declarations)
+    if signal_limit is not None:
+        declarations = declarations[:signal_limit]
+    if not marker:
+        declarations = []
 
-    def value_at(ident: str, t: int) -> int | None:
-        last = None
-        for tt, snap in history:
-            if tt > t:
+    widths = {ident: width for ident, _, width in declarations}
+    current: dict[str, tuple[int | None, str]] = {}
+    tracks = {ident: ([], []) for ident in widths}
+    times: list[int] = []
+    pending = None
+    truncated = False
+    last_sample_cost = 0
+    retained_logic = 0
+
+    def snapshot():
+        # Prevent compact VCD vector strings from inflating into unbounded memory.
+        nonlocal retained_logic
+        if len(times) >= limit or retained_logic + last_sample_cost > 16_000_000:
+            return False
+        times.append(pending)
+        retained_logic += last_sample_cost
+        for ident, (values, logic_values) in tracks.items():
+            value, logic = current.get(ident, (None, "x"))
+            values.append(value)
+            logic_values.append(logic)
+        return True
+
+    def set_value(ident, bits):
+        nonlocal pending, last_sample_cost
+        if ident not in widths or not re.fullmatch(r"[01xz]+", bits, flags=re.I):
+            return
+        width = widths[ident]
+        bits = bits.lower()
+        pad = bits[0] if bits[0] in "xz" else "0"
+        bits = bits[-width:].rjust(width, pad)
+        value = None if "x" in bits or "z" in bits else int(bits, 2)
+        last_sample_cost += len(bits) - len(current.get(ident, (None, ""))[1])
+        current[ident] = value, bits
+        if pending is None:
+            pending = 0
+
+    tokens = iter(match.group() for match in re.finditer(r"\S+", body))
+    dump_blocks = {"$dumpvars", "$dumpall", "$dumpon", "$dumpoff"}
+    for token in tokens:
+        if token.startswith("#") and token[1:].isascii() and token[1:].isdecimal():
+            timestamp = int(token[1:])
+            if pending is not None and timestamp < pending:
+                raise ValueError("VCD timestamps must not move backwards")
+            if pending is not None and timestamp != pending and not snapshot():
+                truncated = True
                 break
-            if ident in snap:
-                last = snap[ident]
-        return last
+            pending = timestamp
+        elif token.startswith("$"):
+            if token != "$end" and token not in dump_blocks:
+                for part in tokens:
+                    if part == "$end":
+                        break
+        elif token[0] in "bBrRsS":
+            # Real/string samples are not digital but still consume their ID.
+            ident = next(tokens, "")
+            if token[0] in "bB":
+                set_value(ident, token[1:])
+        elif token[0] in "01xzXZ":
+            set_value(token[1:], token[0])
+    if pending is not None and not truncated:
+        truncated = not snapshot()
 
-    names = [ids[i][0] for i in ids]
-    clock = next((n for n in names if re.search(r"(?i)clk|clock", n)), None)
-    if clock is None:
-        clock = next((n for n in names if re.search(r"(?i)clk|clock", n.split(".")[-1])),
-                     None)
-    signals = []
-    for ident, (name, width) in ids.items():
-        # Each history entry already contains the cumulative signal state.
-        # The old value_at() rescanned history for every sample (quadratic in
-        # sample count), freezing larger VCD debugging sessions.
-        values = [snapshot.get(ident) for _t, snapshot in history]
-        signals.append({"name": name, "width": width, "values": values})
-    signals.sort(key=lambda s: (s["name"] != clock, s["name"]))
+    signals = [{"name": name, "width": width,
+                "values": tracks[ident][0], "logic_values": tracks[ident][1]}
+               for ident, name, width in declarations]
     return {"source": "vcd", "clock": clock, "fail_at": None,
-            "cycles": len(history), "signals": signals,
-            "times": [t for t, _ in history]}
+            "cycles": len(times), "signals": signals, "times": times,
+            "timescale": timescale, "samples_truncated": truncated,
+            "signals_omitted": total_signals - len(signals),
+            "unsupported_signals": unsupported}
 
 
 def from_vcd(path: str | Path) -> dict:
