@@ -36,6 +36,15 @@ _CHANNELS = {
     "AR": ("ARVALID", "ARREADY"),
     "R": ("RVALID", "RREADY"),
 }
+_STABLE_PAYLOAD = {
+    "AW": ("AWADDR", "AWID", "AWLEN", "AWBURST", "AWSIZE",
+           "AWLOCK", "AWCACHE", "AWPROT", "AWQOS", "AWREGION"),
+    "W": ("WDATA", "WSTRB", "WLAST"),
+    "B": ("BID", "BRESP"),
+    "AR": ("ARADDR", "ARID", "ARLEN", "ARBURST", "ARSIZE",
+           "ARLOCK", "ARCACHE", "ARPROT", "ARQOS", "ARREGION"),
+    "R": ("RID", "RDATA", "RRESP", "RLAST"),
+}
 
 
 def _index_signals(wave: Mapping[str, Any]) -> dict[str, Mapping[str, Any]]:
@@ -281,6 +290,41 @@ def decode_axi4(wave: Mapping[str, Any], *,
     pending_reads: dict[int, deque] = defaultdict(deque)
     stalls: dict[str, dict] = {}
 
+    def check_stalled_payload(channel: str, current: dict, index: int) -> None:
+        changed = []
+        unknown = []
+        for field in _STABLE_PAYLOAD[channel]:
+            if field not in values:
+                continue
+            held = current["payload"].get(field)
+            observed = val(field, index)
+            if held is None or observed is None:
+                if field not in current["unknown_reported"]:
+                    unknown.append(field)
+                    current["unknown_reported"].add(field)
+            elif held != observed and field not in current["changes_reported"]:
+                changed.append(field)
+                current["changes_reported"].add(field)
+        if changed:
+            issue("payload_changed_while_stalled",
+                  f"AXI4 {channel} payload changed while VALID was stalled",
+                  index,
+                  [sig(_CHANNELS[channel][0]), sig(_CHANNELS[channel][1])]
+                  + [sig(field) for field in changed],
+                  f"{channel} payload changed before VALID && READY: "
+                  + ", ".join(changed),
+                  details={"channel": channel, "fields": changed,
+                           "stall_start_time": times[current["start_index"]]})
+        if unknown:
+            issue("unknown_payload_while_stalled",
+                  f"AXI4 {channel} payload contains unknown values while stalled",
+                  index,
+                  [sig(_CHANNELS[channel][0]), sig(_CHANNELS[channel][1])]
+                  + [sig(field) for field in unknown],
+                  f"{channel} payload is X/Z/unobserved while VALID && !READY: "
+                  + ", ".join(unknown),
+                  details={"channel": channel, "fields": unknown})
+
     def update_stall(channel: str, valid: int | None, ready: int | None,
                      index: int) -> None:
         current = stalls.get(channel)
@@ -297,14 +341,29 @@ def decode_axi4(wave: Mapping[str, Any], *,
             return
         if valid == 1 and ready == 0:
             if current is None:
-                current = {"start_index": index, "cycles": 0}
+                payload = {field: val(field, index)
+                           for field in _STABLE_PAYLOAD[channel]
+                           if field in values}
+                current = {
+                    "start_index": index,
+                    "cycles": 0,
+                    "payload": payload,
+                    "changes_reported": set(),
+                    "unknown_reported": set(),
+                }
                 stalls[channel] = current
+            else:
+                check_stalled_payload(channel, current, index)
             current["cycles"] += 1
             stall_cycles[channel] += 1
             stall_max[channel] = max(stall_max[channel], current["cycles"])
             return
         if current is not None:
             duration = current["cycles"]
+            if valid == 1 and ready == 1:
+                # The payload on the handshake edge must still match the value
+                # held throughout the preceding VALID && !READY interval.
+                check_stalled_payload(channel, current, index)
             if valid == 0:
                 issue("valid_dropped_before_ready",
                       f"{channel}VALID dropped before handshake",
