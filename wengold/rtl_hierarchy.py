@@ -184,7 +184,7 @@ def elaborate_with_yosys(project_root: str | Path, sources: list[str | Path], *,
         # Load the plugin as its own Yosys command before invoking read_slang.
         script = ["plugin -i " + slang_plugin]
         read_cmd = ["read_slang --top " + top + " --std " + sv_standard
-                    + " --unroll-limit " + str(slang_unroll_limit)]
+                    + " --keep-hierarchy --unroll-limit " + str(slang_unroll_limit)]
         read_cmd.extend("-I " + str(path) for path in incdirs)
         read_cmd.extend(macro_args)
         read_cmd.extend(str(path) for path in resolved)
