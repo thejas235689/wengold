@@ -13,6 +13,8 @@ def test_quantum_editor_builds_offscreen():
     assert widget.to_circuit().num_qubits == 3
     assert widget.run_button.text() == "Run simulation"
     assert widget.debug_button.text() == "Build debug trace"
+    assert widget.amplitude_table.columnCount() == 6
+    assert widget.amplitude_table.objectName() == "quantumAmplitudeTable"
     assert widget.backend_combo.count() == 3
     assert callable(widget.run_simulation)
     assert callable(widget.run_debug_trace)
