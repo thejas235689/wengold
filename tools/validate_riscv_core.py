@@ -33,6 +33,8 @@ def main() -> int:
                         default="slang_ast")
     parser.add_argument("--slang", default="slang")
     parser.add_argument("--plugin", default="slang")
+    parser.add_argument("--unroll-limit", type=int, default=256,
+                        help="maximum procedural loop iterations for Yosys-Slang")
     parser.add_argument("--vcd", type=Path)
     parser.add_argument("--vcd-root", default="tb_core_top")
     parser.add_argument("--dut-instance", default="u_core")
@@ -48,7 +50,7 @@ def main() -> int:
         graph = elaborate_with_yosys(
             root, sources, top=args.top, yosys=args.yosys,
             frontend=args.frontend, slang_plugin=args.plugin,
-            sv_standard="1800-2017",
+            sv_standard="1800-2017", slang_unroll_limit=args.unroll_limit,
         )
     report = {
         "project": str(root),
