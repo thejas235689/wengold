@@ -66,3 +66,11 @@ Base: Python >=3.11, existing WENGOLD native extra (PyQt6), NumPy. Quantum optio
 9. Native WENGOLD tab, standalone packaging, Rocky Linux and Ubuntu CI.
 
 Release gate: clean install, IR tests, GUI offscreen tests, Qiskit/Cirq smoke tests when extras are installed, QuEST bridge tests only when compiled, and no claims of backend parity without executed evidence.
+
+## Result and bit-order contract
+
+WENGOLD result bit strings use most-significant-to-least-significant display order: `q[n-1]...q[0]` for quantum basis-state probabilities and `c[n-1]...c[0]` for classical measurement strings. Backend adapters must translate native simulator indexing into this convention before returning results. Qiskit uses little-endian statevector indexing; Cirq's explicit `qubit_order` places the first listed qubit at the most-significant end, so the Cirq adapter reverses the formatted basis index. Measurement results are remapped through each IR operation's explicit `classical_bits` list.
+
+## Project file contract
+
+`.wqproj` is a JSON document with `format = wengold.quantum-project`, `project_version = 1`, project metadata, and the versioned circuit IR. `save_project` writes to a temporary file in the destination directory and atomically replaces the destination. `load_project` rejects unknown project or circuit schema versions instead of silently coercing them.
