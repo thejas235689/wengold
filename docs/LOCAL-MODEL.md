@@ -159,3 +159,103 @@ leaving it in a README nobody reads.
 The preset table, the routing, the refusal and the CLI output are tested. **Neither
 model has been run** — this was written where no 24B model fits. `doctor --llm` on
 your machine is the check that closes that.
+
+## Dhīr 2B for offline specification and log assistance
+
+Wengold includes an optional **Dhīr 2B** preset in **Local AI** and
+**DV Workflow**. It does not download weights, start a server, or change the
+default model. Download the
+[community Q4_K_M GGUF](https://huggingface.co/dassomnath/Dhir-2B-GGUF/blob/580edf584d5b4042ca3dd75814b1d29ab7b6d7d0/dhir-2b-Q4_K_M.gguf)
+of ZenteiQ's Apache-2.0 model once. The file is about 1.2 GiB. Inference
+also needs memory for context and runtime. See
+[ZenteiQ's local deployment notes](https://www.zenteiq.ai/research/blog/inferencing-dhir-on-edge-devices/).
+
+From the directory containing the downloaded file, with a recent llama.cpp:
+
+```sh
+llama-server -m dhir-2b-Q4_K_M.gguf --alias dhir-2b \
+  --host 127.0.0.1 --port 8080 --ctx-size 8192 --jinja
+```
+
+In Wengold, click **Use Dhīr 2B**, then **Test Inference** in **Local AI**.
+The default endpoint is `http://127.0.0.1:8080/v1`. If using a different
+server alias, enter the exact model ID shown by **Connect / Models**. CLI users
+can set `WENGOLD_LLM_MODEL=dhir-2b` and run `wengold doctor --llm`.
+
+Try a short requirement summary or use **DV Workflow → Root-Cause Debug**
+with a project-relative Xezim or Yosys log. Check the cited lines yourself.
+The output is a draft or a debug hypothesis. It does not alter simulation,
+coverage, proof results, or signoff.
+
+## Gemma 4 E4B via local Ollama
+
+Install a current [Ollama](https://ollama.com/download) release with Gemma 4
+support. Start Ollama if it is not already running, then download the model once:
+
+```sh
+ollama pull gemma4:e4b
+WENGOLD_LLM_MODEL=gemma4:e4b sh wengold.sh doctor --llm
+```
+
+Use **Use Gemma 4** in **Local AI**, **DV Workflow** (including all eight
+Independent Agents), or **Wave Debug**. The preset selects the Ollama backend
+at `http://127.0.0.1:11434` by default. In Local AI, **Test Inference** checks
+the connection with a short test prompt before you send project input. Use the
+exact downloaded tag if selecting a different Gemma 4 variant manually.
+Wengold does not download models automatically or change your default model.
+
+## Qwen4-Max via Alibaba Cloud Model Studio
+
+[`qwen4-max`](https://www.alibabacloud.com/help/en/model-studio/qwen4-max) is
+hosted by Alibaba Cloud. It is not the local Qwen Coder model and is not a
+fallback for local inference. Enable it only for work you can send off-device.
+Selecting and running it sends the task and relevant file excerpts, retrieved
+context, logs, or bounded waveform evidence to Alibaba Cloud.
+
+Set `DASHSCOPE_API_KEY` in the launch environment using your credential
+manager, then enable the backend explicitly with `WENGOLD_ALLOW_QWEN_CLOUD=1`.
+The default base URL is Singapore's shared Model Studio endpoint,
+`https://dashscope-intl.aliyuncs.com/compatible-mode/v1`.
+Set `WENGOLD_QWEN_URL` to your official workspace's OpenAI-compatible base URL
+if your API key is scoped to another region or workspace. Wengold accepts
+official Model Studio HTTPS hosts, does not follow redirects or use system
+proxies for model requests, and does not store the key in the project.
+
+Start Studio from that environment, click **Use Qwen4-Max (cloud)**, and use
+**Test Inference** in **Local AI** before sending any project context. You can
+also choose the model in **DV Workflow** or **Wave Debug**. These are text
+workflows even though the upstream models support other modalities.
+The browser IDE's local model flow and `doctor --llm` are unchanged.
+
+For the CLI, select the cloud backend explicitly and start with public
+example inputs:
+
+```sh
+WENGOLD_ALLOW_QWEN_CLOUD=1 sh wengold.sh sv-agent formal examples/soc_verification \
+  --backend qwencloud --rtl rtl/dma.sv --spec requirements.json \
+  --task 'Draft a completion-interrupt assertion and a reachability cover.'
+```
+
+## Independent SystemVerilog agents
+
+In **DV Workflow → Independent Agents**, select a role and explicit project
+inputs. Choose Gemma 4, Dhīr 2B, another instruction-following local model, or
+explicitly enable and select Qwen4-Max. Specification, RTL, UVM, Formal/SVA, Debug, Coverage,
+Integration and Signoff Review each run in a fresh model session. No other role
+must run first and no previous agent's output is sent automatically. The Studio
+keeps the latest result separately for each role in the current project session.
+
+For example, from the repository root with a local server running:
+
+```sh
+sh wengold.sh sv-agent formal examples/soc_verification \
+  --model gemma4:e4b --rtl rtl/dma.sv --spec requirements.json \
+  --task 'Draft a completion-interrupt assertion and a reachability cover.'
+```
+
+Debug, Coverage and Signoff Review require an explicitly selected
+project-relative log or JSON report. Each result has a run ID and input and
+output hashes. Large input files may be excerpted, which the result records.
+These roles generate read-only drafts or review notes. They do not edit RTL,
+run EDA, credit coverage, establish a proof, or grant signoff. Use the
+existing independent simulation and formal workflows to establish those results.

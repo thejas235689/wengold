@@ -5,8 +5,8 @@ artifact is always a draft. Compiler/simulator evidence is displayed separately.
 """
 from __future__ import annotations
 
-import os
-
+from .native_model import model_controls
+from .qwen_cloud import QWEN_BACKEND
 from .ai_prompts import PROFILES
 from .multi_rag import MultiRAG
 from .eda_flows import inspect_manifest, execute_manifest
@@ -21,30 +21,22 @@ def create_ai_tab(root, QtCore, QtGui, QtWidgets, parent=None):
     outer.setSpacing(8)
 
     row = QtWidgets.QHBoxLayout()
-    backend = QtWidgets.QComboBox()
-    backend.setObjectName("aiBackend")
-    backend.addItems(["ollama", "openai"])
-    endpoint = QtWidgets.QLineEdit(os.environ.get("WENGOLD_LLM_URL",
-                                                "http://127.0.0.1:11434"))
-    endpoint.setObjectName("aiEndpoint")
-    model = QtWidgets.QComboBox()
-    model.setObjectName("aiModel")
-    model.setEditable(True)
-    env_model = os.environ.get("WENGOLD_LLM_MODEL", "qwen2.5-coder:7b")
-    model.addItem(env_model)
+    backend, endpoint, model, presets = model_controls(
+        QtCore, QtWidgets, "ai", discoverable=True, dhir=True)
     discover = QtWidgets.QPushButton("Connect / Models")
     discover.setObjectName("aiConnect")
     roundtrip = QtWidgets.QPushButton("Test Inference")
     roundtrip.setObjectName("aiTestInference")
     row.addWidget(QtWidgets.QLabel("Backend"))
     row.addWidget(backend)
-    row.addWidget(QtWidgets.QLabel("Local server"))
+    row.addWidget(QtWidgets.QLabel("Model endpoint"))
     row.addWidget(endpoint, 2)
     row.addWidget(QtWidgets.QLabel("Model"))
     row.addWidget(model, 2)
     row.addWidget(discover)
     row.addWidget(roundtrip)
     outer.addLayout(row)
+    outer.addLayout(presets)
 
     mode = QtWidgets.QComboBox()
     mode.setObjectName("aiDiscipline")
@@ -128,7 +120,7 @@ def create_ai_tab(root, QtCore, QtGui, QtWidgets, parent=None):
     evidence.setReadOnly(True)
     evidence.setPlaceholderText("Tool evidence and connection status; no fabricated signoff.")
     outer.addWidget(evidence, 1)
-    status = QtWidgets.QLabel("Local AI disabled until a real model server responds")
+    status = QtWidgets.QLabel("No model inference has run")
     status.setObjectName("aiStatus")
     outer.addWidget(status)
 
@@ -184,12 +176,13 @@ def create_ai_tab(root, QtCore, QtGui, QtWidgets, parent=None):
 
     def perform(op, values):
         if state["busy"]:
-            status.setText("A local AI or tool check is still running")
+            status.setText("An AI or tool check is still running")
             return
         state["busy"] = True
         for btn in buttons:
             btn.setEnabled(False)
-        status.setText("Running " + op + " (real local execution)…")
+        cloud = op in ("roundtrip", "generate") and backend.currentText() == QWEN_BACKEND
+        status.setText("Running " + op + (" using Alibaba Cloud…" if cloud else " locally…"))
         thread = QtCore.QThread(page)
         worker = Worker(op, values)
         state["thread"], state["worker"] = thread, worker
@@ -245,13 +238,6 @@ def create_ai_tab(root, QtCore, QtGui, QtWidgets, parent=None):
         thread.finished.connect(thread.deleteLater)
         thread.start()
 
-    def choose_backend(selected):
-        if selected == "ollama":
-            endpoint.setText("http://127.0.0.1:11434")
-        else:
-            endpoint.setText("http://127.0.0.1:8080/v1")
-
-    backend.currentTextChanged.connect(choose_backend)
     discover.clicked.connect(lambda: perform("connect", (backend.currentText(),
                                                          endpoint.text().strip())))
     roundtrip.clicked.connect(lambda: perform(
