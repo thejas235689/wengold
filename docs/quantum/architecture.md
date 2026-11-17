@@ -32,7 +32,7 @@ The first version lives in `quantum/core/circuit_ir.py`. It uses zero-based logi
 
 - Qiskit adapter uses Qiskit and Aer sampling; Aer is an optional dependency and the adapter must remain isolated.
 - Cirq adapter implements the initial common unitary gate subset and sampling/statevector paths.
-- QuEST is native C/C++ software. This repository currently has an explicit disabled adapter, not a working QuEST binding. Build a WENGOLD-owned pybind11 bridge or documented subprocess protocol, pin the QuEST version/ABI, and add CPU CI before enabling it. GPU and MPI are later opt-in profiles.
+- QuEST is native C/C++ software. WENGOLD now has an optional pybind11 bridge pinned to the QuEST v4.2.0 API and a CPU CI build. The bridge executes the supported unitary gate subset and samples terminal measurements in Python. It remains unavailable on installations without the compiled extension. Mid-circuit measurement/reset, density matrices, noise and explicit GPU/MPI deployment controls remain unsupported by this adapter.
 - Capability discovery is runtime-based. Unsupported gates and missing dependencies must fail explicitly, never fabricate results.
 
 ## Verification rules
