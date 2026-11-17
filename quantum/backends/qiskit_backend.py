@@ -12,7 +12,7 @@ class QiskitBackend(Backend):
 
     def __init__(self):
         try:
-            from qiskit import QuantumCircuit
+            from qiskit import QuantumCircuit, transpile
             from qiskit_aer import AerSimulator
         except ImportError as exc:
             raise BackendUnavailable(
@@ -73,7 +73,7 @@ class QiskitBackend(Backend):
         simulator = self._sim_type(seed_simulator=seed)
         if not measured:
             qc.save_statevector()
-            compiled = __import__("qiskit").transpile(qc, simulator)
+            compiled = transpile(qc, simulator)
             result = simulator.run(compiled, shots=1).result()
             state = result.get_statevector(compiled)
             encoded = [[float(a.real), float(a.imag)] for a in state]
