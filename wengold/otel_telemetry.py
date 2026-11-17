@@ -20,7 +20,7 @@ from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from pathlib import Path
 from typing import Any, Iterable, Mapping
 
-__all__ = ["build_otlp_bundle", "write_otlp_bundle"]
+__all__ = ["build_otlp_bundle", "write_otlp_bundle", "send_dynatrace_otlp", "DynatraceExportError"]
 
 _SCOPE_NAME = "wengold.telemetry"
 _SCOPE_VERSION = "1.0.0"
@@ -133,7 +133,9 @@ def build_otlp_bundle(report: Mapping[str, Any], *,
             address, response, beats, status and an optional attributes map.
             These records must come from a real protocol decoder/monitor.
         run_id: Stable simulation identifier; generated when omitted.
-        run_start_unix_ns: Optional explicit synthetic Unix-nanosecond anchor. If omitted, the simulation is placed immediately before export and the display window is capped at 55 minutes for Dynatrace time acceptance.
+        run_start_unix_ns: Optional explicit synthetic Unix-nanosecond anchor. If
+            omitted, the simulation is placed immediately before export and the
+            display window is capped at 55 minutes for Dynatrace time acceptance.
         time_unit_ns: Nanoseconds per raw VCD timestamp tick. Pass the parsed
             VCD timescale value (for example Decimal("1") for 1 ns or
             Decimal("0.001") for 1 ps). If unknown, keep the default and set
