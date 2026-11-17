@@ -213,19 +213,30 @@ def elaborate_with_yosys(project_root: str | Path, sources: list[str | Path], *,
 def load_riscv_core_sources(project_root: str | Path,
                            python: str | None = None) -> list[str]:
     """Read the RISC-V project's authoritative RTL list from sim/run.py."""
-    import sys
+    import ast
     root = Path(project_root).resolve()
     runner = root / "sim" / "run.py"
     if not runner.is_file():
         raise FileNotFoundError(f"RISC-V simulation source list not found: {runner}")
-    completed = subprocess.run(
-        [python or sys.executable, str(runner), "--list-rtl"],
-        cwd=root, capture_output=True, text=True, timeout=30, check=False)
-    if completed.returncode:
-        raise RuntimeError((completed.stderr or completed.stdout or
-                            "sim/run.py --list-rtl failed")[-4000:])
-    sources = [line.strip() for line in completed.stdout.splitlines()
-               if line.strip().endswith((".sv", ".v"))]
+    try:
+        syntax = ast.parse(runner.read_text(encoding="utf-8"), filename=str(runner))
+    except (OSError, SyntaxError) as exc:
+        raise RuntimeError(f"Cannot parse RISC-V sim/run.py source list: {exc}") from exc
+    raw_sources = None
+    for statement in syntax.body:
+        if isinstance(statement, ast.Assign) and any(
+                isinstance(target, ast.Name) and target.id == "RTL_SRCS"
+                for target in statement.targets):
+            try:
+                raw_sources = ast.literal_eval(statement.value)
+            except (ValueError, TypeError) as exc:
+                raise RuntimeError("RTL_SRCS in sim/run.py must be a literal list") from exc
+            break
+    if not isinstance(raw_sources, list) or not raw_sources:
+        raise RuntimeError("Could not find a non-empty literal RTL_SRCS list in sim/run.py")
+    sources = [str(item).strip() for item in raw_sources]
+    if any(not item.endswith((".sv", ".v")) for item in sources):
+        raise RuntimeError("sim/run.py RTL_SRCS contains a non-Verilog source entry")
     if not sources:
         raise RuntimeError("RISC-V sim/run.py returned an empty RTL source list")
     missing = [source for source in sources if not (root / source).is_file()]
