@@ -1,0 +1,7 @@
+# Optional quantum runtime dependencies; install in an isolated WENGOLD environment.
+qiskit>=1.2
+qiskit-aer>=0.15
+cirq-core>=1.4
+scipy>=1.11
+matplotlib>=3.8
+pyqtgraph>=0.13
