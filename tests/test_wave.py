@@ -164,3 +164,20 @@ def test_the_ide_embeds_the_waveform(tmp_path):
     data = json.loads(re.search(r"const D = (\{.*?\});\n", html, re.S).group(1))
     assert data["wave"]["cycles"] == 2
     assert data["wave"]["signals"][0]["name"] == "q"
+
+
+def test_vcd_preserves_all_hierarchical_aliases_for_a_reused_identifier():
+    # Icarus can emit the same VCD identifier at multiple hierarchy scopes
+    # when the declarations are aliases of one elaborated net.
+    vcd = ("$scope module tb $end\n"
+           "$var wire 1 ! clk $end\n"
+           "$scope module dut $end\n"
+           "$var wire 1 ! clk $end\n"
+           "$upscope $end\n"
+           "$upscope $end\n"
+           "$enddefinitions $end\n"
+           "#0\n0!\n#5\n1!\n")
+    wave = parse_vcd(vcd)
+    got = {signal["name"]: signal["values"] for signal in wave["signals"]}
+    assert got == {"tb.clk": [0, 1], "tb.dut.clk": [0, 1]}
+    assert wave["clock"] == "tb.clk"
