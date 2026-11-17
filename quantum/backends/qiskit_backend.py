@@ -10,6 +10,7 @@ from quantum.core.circuit_ir import Circuit, validate_circuit
 
 class QiskitBackend(Backend):
     name = "qiskit"
+    cache_identity = "qiskit-aer-statevector-v1"
 
     def __init__(self):
         try:
