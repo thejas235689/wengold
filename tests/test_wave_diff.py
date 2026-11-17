@@ -28,7 +28,7 @@ def test_reports_first_divergence_and_per_signal_difference_counts():
                                wave([0, 5, 10, 15], [0, 1, 7, 7]))
     assert report["status"] == "different"
     assert report["first_divergence"]["signal"] == "tb.dut.count"
-    assert report["first_divergence"]["time_ns"] == "10"
+    assert report["first_divergence"]["aligned_time"] == "10"
     assert report["first_divergence"]["pass"] == 2
     assert report["first_divergence"]["fail"] == 7
     assert report["per_signal"][0]["differences"] == 2
@@ -38,7 +38,7 @@ def test_aligns_different_timescales_in_physical_nanoseconds():
     passed = wave([0, 5, 10], [0, 1, 2], scale="1")
     failed = wave([0, 5000, 10000], [0, 1, 9], scale="0.001")
     report = compare_waveforms(passed, failed)
-    assert report["first_divergence"]["time_ns"] == "10"
+    assert report["first_divergence"]["aligned_time"] == "10"
     assert report["first_divergence"]["pass"] == 2
     assert report["first_divergence"]["fail"] == 9
 
