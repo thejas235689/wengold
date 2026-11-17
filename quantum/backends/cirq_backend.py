@@ -61,7 +61,7 @@ class CirqBackend(Backend):
                 }[gate](float(params[0]))
                 operations.append(gate_obj.on(targets[0]))
             elif gate == "RESET":
-                operations.extend(c.reset(*targets))
+                operations.extend(c.reset(qubit) for qubit in targets)
             elif gate == "BARRIER":
                 # Cirq moments preserve operation order; barriers have no state effect.
                 continue
