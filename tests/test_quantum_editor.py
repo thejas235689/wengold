@@ -12,8 +12,15 @@ def test_quantum_editor_builds_offscreen():
     assert widget.findChild(QtWidgets.QGraphicsView) is not None
     assert widget.to_circuit().num_qubits == 3
     assert widget.run_button.text() == "Run simulation"
+    assert widget.debug_button.text() == "Build debug trace"
     assert widget.backend_combo.count() == 3
     assert callable(widget.run_simulation)
+    assert callable(widget.run_debug_trace)
+    assert widget.debug_slider.minimum() == 0
+    assert widget.debug_slider.maximum() == 0
+    assert not widget.debug_slider.isEnabled()
+    assert not widget.debug_previous_button.isEnabled()
+    assert not widget.debug_next_button.isEnabled()
 
     widget.canvas.operations.extend([
         {"id": "h0", "gate": "H", "qubits": [0], "column": 0},
@@ -29,5 +36,9 @@ def test_quantum_editor_builds_offscreen():
     cswap = widget.to_circuit().operations[-1]
     assert cswap.controls == (0,)
     assert cswap.targets == (1, 2)
+
+    widget.canvas.set_debug_operation("h0")
+    assert widget.canvas.debug_operation_id == "h0"
+    widget.canvas.set_debug_operation(None)
     widget.close()
     app.processEvents()
