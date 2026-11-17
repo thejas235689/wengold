@@ -28,6 +28,17 @@ QuEST is a native C/C++ dependency and is built separately; see [docs/quantum/ar
 
 Use `quantum.core.project.save_project(path, circuit, metadata=...)` and `load_project(path)` for atomic `.wqproj` persistence. Writes use a temporary file in the destination directory followed by `os.replace`; project and circuit schema versions are checked on load.
 
+## OpenQASM 3 interchange
+
+Use `import_openqasm3(source)` and `export_openqasm3(circuit)` from
+`quantum.core.openqasm3`. The strict supported subset includes indexed
+single-qubit gates, RX/RY/RZ numeric expressions using `pi`, CX/CNOT, CZ,
+SWAP, CCX, CSWAP, measurement, reset and barriers. Unsupported syntax such as
+custom gate declarations, control flow, whole-register broadcast operations,
+timing and opaque pragmas raises a validation error; it is never silently
+discarded. Operation IDs are regenerated on import because OpenQASM does not
+carry WENGOLD operation IDs.
+
 ## Verification boundary
 
 A successful simulation is not proof of circuit equivalence. Measurement-only runs do not expose a statevector. Cross-backend comparisons must account for global phase, endianness, supported gate sets, floating-point tolerances, and sampling uncertainty. No backend is labelled verified until actual tests execute in CI.
