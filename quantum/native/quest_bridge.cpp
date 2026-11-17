@@ -23,6 +23,13 @@ struct Environment {
     Environment& operator=(const Environment&) = delete;
 };
 
+Environment& get_environment() {
+    // QuEST owns process-global runtime state: initialize exactly once and
+    // finalize at process shutdown, not once per circuit invocation.
+    static Environment environment;
+    return environment;
+}
+
 struct Register {
     Qureg value;
     explicit Register(int n) : value(createQureg(n)) {}
@@ -71,7 +78,7 @@ std::vector<std::pair<double, double>> run_statevector(int num_qubits, const std
     if (num_qubits < 1 || num_qubits > 20)
         throw std::invalid_argument("QuEST bridge currently accepts 1..20 qubits per request");
     std::lock_guard<std::mutex> lock(quest_mutex);
-    Environment env;
+    (void) get_environment();
     Register reg(num_qubits);
     for (const auto& gate : gates) apply_gate(reg.value, gate);
 
