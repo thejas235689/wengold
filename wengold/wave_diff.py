@@ -196,14 +196,8 @@ def compare_waveforms(pass_wave: dict, fail_wave: dict, *,
             # For reset/absolute alignment, axis is an offset from original time.
             # Clock mode requires inverse mapping from normalized cycle to source
             # time, so use the nearest source timestamp in that cycle coordinate.
-            if alignment == "clock":
-                pi = min(range(len(paxis)), key=lambda i: abs(paxis[i] - t))
-                fi = min(range(len(faxis)), key=lambda i: abs(faxis[i] - t))
-                pv = psig.get("values", [])[pi] if pi < len(psig.get("values", [])) else None
-                fv = fsig.get("values", [])[fi] if fi < len(fsig.get("values", [])) else None
-            else:
-                pv = _sample_at(psig, pidx, paxis, t)
-                fv = _sample_at(fsig, fidx, faxis, t)
+            pv = _sample_at(psig, pidx, paxis, t)
+            fv = _sample_at(fsig, fidx, faxis, t)
             if pv == fv:
                 continue
             if pwidth != fwidth and count == 1 and t == start:
