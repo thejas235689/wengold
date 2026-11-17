@@ -49,6 +49,8 @@ def build_rtl_hierarchy(netlist: dict[str, Any], *, top: str = "",
     modules = netlist.get("modules") or {}
     if not modules:
         raise ValueError("Yosys JSON contains no modules")
+    if top and not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_$]*", top):
+        raise ValueError("Top module must be a simple Verilog/SystemVerilog identifier")
     if top not in modules:
         marked = [name for name, item in modules.items()
                   if str((item.get("attributes") or {}).get("top", "0")).strip("0") == "1"]
