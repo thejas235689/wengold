@@ -93,7 +93,7 @@ def make_wave_debug(QtCore, QtGui, QtWidgets, project_root, on_crossprobe=None,
     diff_table = QtWidgets.QTableWidget(0, 5)
     diff_table.setObjectName("waveDiffSignals")
     diff_table.setHorizontalHeaderLabels(
-        ["Signal", "Differences", "First time (ns)", "PASS value", "FAIL value"])
+        ["Signal", "Differences", "First aligned time", "PASS value", "FAIL value"])
     diff_table.horizontalHeader().setStretchLastSection(True)
     diff_table.setMaximumHeight(155)
     diff_table.setEditTriggers(QtWidgets.QAbstractItemView.EditTrigger.NoEditTriggers)
