@@ -1,12 +1,14 @@
-"""Gate-by-gate statevector replay for the Quantum Studio debugger.
+"""Gate-by-gate statevector replay with bounded, opt-in checkpoint caching.
 
-The first debugger milestone intentionally supports unitary-only circuits. It
-replays each prefix through the selected backend, producing state snapshots
-without pretending to support mid-circuit measurement or reset.
+The debugger supports unitary-only circuits. It replays prefixes and captures
+state snapshots; measurement/reset trajectories require a separate model.
 """
 from __future__ import annotations
 
+from collections import OrderedDict
 from dataclasses import dataclass
+import hashlib
+import threading
 from typing import Any
 
 from quantum.core.circuit_ir import Circuit, NON_UNITARY, Operation, validate_circuit
@@ -44,17 +46,83 @@ class QuantumDebugTrace:
         return self.snapshots[step]
 
 
+# Store only immutable numerical payloads. Bound memory use and serialize cache
+# access because Qt workers may build traces concurrently.
+_CACHE_MAX_ENTRIES = 512
+_CHECKPOINT_CACHE: OrderedDict[str, tuple[
+    tuple[tuple[float, float], ...], tuple[tuple[str, float], ...]
+]] = OrderedDict()
+_CACHE_LOCK = threading.RLock()
+_CACHE_HITS = 0
+_CACHE_MISSES = 0
+
+
+def clear_debug_checkpoint_cache() -> None:
+    """Clear all cached statevector checkpoints and reset cache counters."""
+    global _CACHE_HITS, _CACHE_MISSES
+    with _CACHE_LOCK:
+        _CHECKPOINT_CACHE.clear()
+        _CACHE_HITS = _CACHE_MISSES = 0
+
+
+def debug_checkpoint_cache_info() -> dict[str, int]:
+    """Return a stable snapshot of cache size, capacity, hits and misses."""
+    with _CACHE_LOCK:
+        return {
+            "size": len(_CHECKPOINT_CACHE),
+            "max_entries": _CACHE_MAX_ENTRIES,
+            "hits": _CACHE_HITS,
+            "misses": _CACHE_MISSES,
+        }
+
+
+def _checkpoint_key(circuit: Circuit, operations: tuple[Operation, ...],
+                    backend: Any, seed: int | None) -> str:
+    # Backend implementations can expose cache_identity when simulator options
+    # affect semantics. Otherwise isolate entries to this backend instance.
+    identity = getattr(backend, "cache_identity", None)
+    if identity is None:
+        identity = (type(backend).__module__, type(backend).__qualname__, id(backend))
+    payload = repr((
+        identity, getattr(backend, "name", "unknown"), seed,
+        circuit.num_qubits, circuit.num_clbits, circuit.schema_version,
+        operations, tuple(sorted((circuit.metadata or {}).items())),
+    )).encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()
+
+
+def _cache_get(key: str):
+    global _CACHE_HITS, _CACHE_MISSES
+    with _CACHE_LOCK:
+        value = _CHECKPOINT_CACHE.get(key)
+        if value is None:
+            _CACHE_MISSES += 1
+            return None
+        _CHECKPOINT_CACHE.move_to_end(key)
+        _CACHE_HITS += 1
+        return value
+
+
+def _cache_put(key: str, statevector, probabilities) -> None:
+    with _CACHE_LOCK:
+        _CHECKPOINT_CACHE[key] = (statevector, tuple(sorted(probabilities.items())))
+        _CHECKPOINT_CACHE.move_to_end(key)
+        while len(_CHECKPOINT_CACHE) > _CACHE_MAX_ENTRIES:
+            _CHECKPOINT_CACHE.popitem(last=False)
+
+
 def build_debug_trace(
     circuit: Circuit,
     backend: Any,
     *,
     seed: int | None = 7,
+    use_cache: bool = True,
 ) -> QuantumDebugTrace:
     """Replay each unitary prefix and capture its statevector.
 
-    The backend is called once for the initial state and once after every gate.
-    Measurement, reset, barrier and delay are rejected because a single
-    pure-state snapshot is not a faithful representation of those operations.
+    Checkpoints are cached by backend identity, seed, circuit dimensions,
+    metadata and exact operation prefix. Set use_cache=False for debugging
+    backend nondeterminism or bypassing potentially stateful simulator options.
     """
     validate_circuit(circuit)
     for operation in circuit.operations:
@@ -72,27 +140,40 @@ def build_debug_trace(
     for step, (operation_id, gate) in enumerate(boundaries):
         if step:
             prefixes.append(circuit.operations[step - 1])
-        prefix = Circuit(
-            circuit_id=f"{circuit.circuit_id}:debug:{step}",
-            num_qubits=circuit.num_qubits,
-            operations=tuple(prefixes),
-            num_clbits=circuit.num_clbits,
-            schema_version=circuit.schema_version,
-            metadata=dict(circuit.metadata),
-        )
-        result = backend.run(prefix, shots=1, seed=seed)
-        if result.statevector is None:
-            raise QuantumDebugError(
-                f"backend {result.backend!r} did not return a statevector at step {step}"
+        prefix = tuple(prefixes)
+        key = _checkpoint_key(circuit, prefix, backend, seed) if use_cache else None
+        cached = _cache_get(key) if key is not None else None
+        if cached is not None:
+            vector, cached_probabilities = cached
+            probabilities = dict(cached_probabilities)
+            execution_time_ms = None
+        else:
+            prefix_circuit = Circuit(
+                circuit_id=f"{circuit.circuit_id}:debug:{step}",
+                num_qubits=circuit.num_qubits,
+                operations=prefix,
+                num_clbits=circuit.num_clbits,
+                schema_version=circuit.schema_version,
+                metadata=dict(circuit.metadata),
             )
-        vector = tuple((float(pair[0]), float(pair[1])) for pair in result.statevector)
+            result = backend.run(prefix_circuit, shots=1, seed=seed)
+            if result.statevector is None:
+                raise QuantumDebugError(
+                    f"backend {result.backend!r} did not return a statevector at step {step}"
+                )
+            vector = tuple((float(pair[0]), float(pair[1])) for pair in result.statevector)
+            probabilities = dict(result.probabilities or {})
+            execution_time_ms = result.execution_time_ms
+            if key is not None:
+                _cache_put(key, vector, probabilities)
+
         snapshots.append(DebugSnapshot(
             step=step,
             operation_id=operation_id,
             gate=gate,
             statevector=vector,
-            probabilities=dict(result.probabilities),
-            execution_time_ms=result.execution_time_ms,
+            probabilities=probabilities,
+            execution_time_ms=execution_time_ms,
         ))
 
     return QuantumDebugTrace(
