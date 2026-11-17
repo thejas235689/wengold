@@ -6,7 +6,7 @@ from pathlib import Path
 import tempfile
 from typing import Any
 
-from .circuit_ir import Circuit, CircuitValidationError
+from .circuit_ir import Circuit, CircuitValidationError, validate_circuit
 
 
 PROJECT_FORMAT = "wengold.quantum-project"
@@ -14,6 +14,9 @@ PROJECT_VERSION = 1
 
 
 def save_project(path: str | os.PathLike[str], circuit: Circuit, *, metadata: dict[str, Any] | None = None) -> Path:
+    validate_circuit(circuit)
+    if metadata is not None and not isinstance(metadata, dict):
+        raise CircuitValidationError("project metadata must be an object")
     destination = Path(path).expanduser()
     destination.parent.mkdir(parents=True, exist_ok=True)
     document = {
@@ -45,6 +48,8 @@ def load_project(path: str | os.PathLike[str]) -> tuple[Circuit, dict[str, Any]]
         document = json.loads(source.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
         raise CircuitValidationError(f"cannot read quantum project {source}: {exc}") from exc
+    if not isinstance(document, dict):
+        raise CircuitValidationError("quantum project root must be an object")
     if document.get("format") != PROJECT_FORMAT:
         raise CircuitValidationError("not a WENGOLD quantum project")
     if document.get("project_version") != PROJECT_VERSION:
