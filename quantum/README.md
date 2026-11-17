@@ -22,7 +22,9 @@ QuEST is a native C/C++ dependency and is built separately; see [quantum/native/
 - Lazy backend registry and normalized execution result.
 - Qiskit and Cirq adapters when their packages are installed, including statevector and sampled measurement paths with normalized bit ordering.
 - Optional QuEST v4 statevector adapter through the WENGOLD pybind11 bridge; terminal measurements are sampled in Python. It remains unavailable until the native extension is compiled.
-- Minimal native Qt circuit editor and standalone launcher.
+- PyQt6 drag-and-drop editor with backend selector, shot control and QThread simulation execution.
+- Bloch-sphere reduced-state vectors, Q-sphere probability/relative-phase points and measurement histograms.
+- Optional QuEST v4.2.0 pybind11 CPU bridge (20-qubit desktop safety cap); terminal measurements only.
 
 ## Project persistence
 
@@ -38,6 +40,16 @@ custom gate declarations, control flow, whole-register broadcast operations,
 timing and opaque pragmas raises a validation error; it is never silently
 discarded. Operation IDs are regenerated on import because OpenQASM does not
 carry WENGOLD operation IDs.
+
+## Running and inspecting a circuit
+
+Launch with `python -m quantum_app`. Drag gates onto the circuit wires, choose
+Qiskit, Cirq or QuEST, set the shot count, and select **Run simulation**. Runs
+execute in a Qt worker thread. A statevector result updates the reduced-state
+Bloch spheres and Q-sphere; a sampled result updates the measurement histogram.
+The Q-sphere limits rendering to the 2,048 highest-probability populated basis
+states so large statevectors do not create an unbounded number of plot objects.
+The QuEST selector only works when the optional native extension is compiled.
 
 ## Verification boundary
 
