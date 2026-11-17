@@ -377,3 +377,173 @@ def write_otlp_bundle(path: str | Path, bundle: Mapping[str, Any]) -> Path:
         if temporary.exists():
             temporary.unlink()
     return target
+
+
+
+class DynatraceExportError(RuntimeError):
+    """An OTLP/HTTP export failed; the message never includes the API token."""
+
+    def __init__(self, message: str, sent_signals: tuple[str, ...] = ()):
+        super().__init__(message)
+        self.sent_signals = sent_signals
+
+
+def _protobuf_request(signal: str, payload: Mapping[str, Any]):
+    """Convert the OTLP JSON mapping into the official binary Protobuf request."""
+    try:
+        from google.protobuf.json_format import ParseDict
+        if signal == "traces":
+            from opentelemetry.proto.collector.trace.v1.trace_service_pb2 import (
+                ExportTraceServiceRequest,
+            )
+            return ParseDict(payload, ExportTraceServiceRequest())
+        if signal == "metrics":
+            from opentelemetry.proto.collector.metrics.v1.metrics_service_pb2 import (
+                ExportMetricsServiceRequest,
+            )
+            return ParseDict(payload, ExportMetricsServiceRequest())
+        if signal == "logs":
+            from opentelemetry.proto.collector.logs.v1.logs_service_pb2 import (
+                ExportLogsServiceRequest,
+            )
+            return ParseDict(payload, ExportLogsServiceRequest())
+    except ImportError as exc:
+        raise RuntimeError(
+            "Dynatrace export requires the optional OTel Protobuf dependency. "
+            "Install WENGOLD with: python3 -m pip install -e '.[otel]'"
+        ) from exc
+    raise ValueError(f"unsupported OTLP signal: {signal}")
+
+
+def _check_partial_success(signal: str, response_bytes: bytes) -> None:
+    """Raise when the OTLP service explicitly reports rejected data."""
+    if not response_bytes:
+        return
+    try:
+        if signal == "traces":
+            from opentelemetry.proto.collector.trace.v1.trace_service_pb2 import (
+                ExportTraceServiceResponse as Response,
+            )
+            rejected_field = "rejected_spans"
+        elif signal == "metrics":
+            from opentelemetry.proto.collector.metrics.v1.metrics_service_pb2 import (
+                ExportMetricsServiceResponse as Response,
+            )
+            rejected_field = "rejected_data_points"
+        else:
+            from opentelemetry.proto.collector.logs.v1.logs_service_pb2 import (
+                ExportLogsServiceResponse as Response,
+            )
+            rejected_field = "rejected_log_records"
+        response = Response()
+        response.ParseFromString(response_bytes)
+    except (ImportError, ValueError):
+        # Some endpoints return an empty body; a non-empty but unparseable body
+        # is not silently treated as an OTLP partial-success response.
+        return
+    if response.HasField("partial_success"):
+        partial = response.partial_success
+        rejected = getattr(partial, rejected_field, 0)
+        detail = (partial.error_message or "server reported partial success").strip()
+        if rejected or detail:
+            raise DynatraceExportError(
+                f"Dynatrace partially accepted {signal}: rejected={rejected}; {detail}"
+            )
+
+
+def send_dynatrace_otlp(bundle: Mapping[str, Any], endpoint: str, api_token: str,
+                        *, timeout: float = 15.0) -> dict:
+    """Send a WENGOLD bundle to Dynatrace using OTLP/HTTP binary Protobuf.
+
+    endpoint is the OTLP base URL, for example
+    https://<environment-id>.live.dynatrace.com/api/v2/otlp.
+    api_token is sent only in the Authorization header. It is never written
+    to disk, included in return values, or added to telemetry attributes.
+
+    Traces, metrics and logs are posted separately to their documented OTLP
+    paths. Direct upload is explicit and sequential; an error reports which
+    earlier signal requests were already accepted.
+    """
+    from urllib.error import HTTPError, URLError
+    from urllib.parse import urlsplit
+    from urllib.request import Request, urlopen
+
+    if not isinstance(bundle, Mapping):
+        raise TypeError("bundle must be a mapping")
+    if not isinstance(endpoint, str) or not endpoint.strip():
+        raise ValueError("Dynatrace OTLP endpoint is required")
+    if not isinstance(api_token, str) or not api_token.strip():
+        raise ValueError("Dynatrace API token is required")
+    if not 1 <= float(timeout) <= 120:
+        raise ValueError("timeout must be between 1 and 120 seconds")
+
+    base = endpoint.strip().rstrip("/")
+    parsed = urlsplit(base)
+    if (parsed.scheme != "https" or not parsed.hostname or parsed.username
+            or parsed.password or parsed.query or parsed.fragment):
+        raise ValueError(
+            "Dynatrace endpoint must be an HTTPS OTLP base URL without credentials, "
+            "query or fragment"
+        )
+    if parsed.path.rstrip("/").endswith(("/v1/traces", "/v1/metrics", "/v1/logs")):
+        raise ValueError("provide the OTLP base URL, not an individual signal path")
+
+    signal_models = (
+        ("traces", "resourceSpans"),
+        ("metrics", "resourceMetrics"),
+        ("logs", "resourceLogs"),
+    )
+    sent: list[str] = []
+    results: dict[str, dict[str, Any]] = {}
+    for signal, root_key in signal_models:
+        payload = bundle.get(signal)
+        if not isinstance(payload, Mapping):
+            raise ValueError(f"bundle is missing its {signal} OTLP model")
+        root_rows = payload.get(root_key, [])
+        if not root_rows and signal != "traces":
+            continue
+        request_message = _protobuf_request(signal, payload)
+        body = request_message.SerializeToString()
+        url = f"{base}/v1/{signal}"
+        request = Request(
+            url,
+            data=body,
+            headers={
+                "Authorization": f"Api-Token {api_token.strip()}",
+                "Content-Type": "application/x-protobuf",
+                "Accept": "application/x-protobuf",
+            },
+            method="POST",
+        )
+        try:
+            with urlopen(request, timeout=float(timeout)) as response:
+                status_code = int(getattr(response, "status", response.getcode()))
+                response_body = response.read()
+        except HTTPError as exc:
+            raise DynatraceExportError(
+                f"Dynatrace rejected {signal} with HTTP {exc.code}",
+                tuple(sent),
+            ) from None
+        except URLError as exc:
+            raise DynatraceExportError(
+                f"Could not reach Dynatrace for {signal}: {exc.reason}",
+                tuple(sent),
+            ) from None
+        if not 200 <= status_code < 300:
+            raise DynatraceExportError(
+                f"Dynatrace returned HTTP {status_code} for {signal}",
+                tuple(sent),
+            )
+        try:
+            _check_partial_success(signal, response_body)
+        except DynatraceExportError as exc:
+            raise DynatraceExportError(str(exc), tuple(sent)) from None
+        sent.append(signal)
+        results[signal] = {"status": status_code, "bytes": len(body)}
+
+    return {
+        "status": "exported",
+        "signals_sent": sent,
+        "results": results,
+        "endpoint_host": parsed.hostname,
+    }
