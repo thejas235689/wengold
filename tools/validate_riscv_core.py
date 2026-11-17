@@ -10,6 +10,10 @@ from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
+import sys
+
+# Executing this file by path puts tools/ (not the repository root) on sys.path.
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from wengold.rtl_hierarchy import (
     crossprobe_hierarchy_to_vcd,
