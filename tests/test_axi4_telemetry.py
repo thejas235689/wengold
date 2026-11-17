@@ -155,10 +155,14 @@ def test_axi4_missing_required_signal_is_a_clear_error():
 
 
 def test_axi4_interface_prefix_discovery_supports_flattened_names():
-    wave = make_wave(1, {}, prefix="tb.dut.m_axi")
+    wave = make_wave(1, {})
+    for signal in wave["signals"]:
+        if signal["name"] != "tb.dut.aclk":
+            leaf = signal["name"].rsplit(".", 1)[-1]
+            signal["name"] = "tb.dut.m_axi_" + leaf
     mapping = discover_axi4_signal_map(wave, prefix="tb.dut.m_axi")
-    assert mapping["AWVALID"] == "tb.dut.m_axi.awvalid"
-    assert mapping["RREADY"] == "tb.dut.m_axi.rready"
+    assert mapping["AWVALID"] == "tb.dut.m_axi_awvalid"
+    assert mapping["RREADY"] == "tb.dut.m_axi_rready"
 
 
 def test_axi4_ambiguous_interface_requires_explicit_selection():
@@ -171,3 +175,35 @@ def test_axi4_ambiguous_interface_requires_explicit_selection():
     wave["signals"].extend(duplicate)
     with pytest.raises(ValueError, match="ambiguous"):
         decode_axi4(wave)
+
+
+
+def test_axi4_late_wlast_and_burst_overrun_are_reported():
+    wave = make_wave(4, {
+        0: {"AWVALID": 1, "AWREADY": 1, "AWID": 4,
+            "AWADDR": 0x400, "AWLEN": 0},
+        1: {"WVALID": 1, "WREADY": 1, "WDATA": 0x1, "WLAST": 0},
+        2: {"WVALID": 1, "WREADY": 1, "WDATA": 0x2, "WLAST": 1},
+        3: {"BVALID": 1, "BREADY": 1, "BID": 4, "BRESP": 0},
+    })
+    result = decode_axi4(wave, signal_map=signal_map_for(wave))
+    rules = {f["rule"] for f in result["findings"]}
+    assert "missing_wlast" in rules
+    assert "write_burst_overrun" in rules
+    assert "late_wlast" in rules
+
+
+def test_axi4_late_rlast_is_reported_against_arlen():
+    wave = make_wave(4, {
+        0: {"ARVALID": 1, "ARREADY": 1, "ARID": 9,
+            "ARADDR": 0x900, "ARLEN": 0},
+        1: {"RVALID": 1, "RREADY": 1, "RID": 9,
+            "RDATA": 0x10, "RRESP": 0, "RLAST": 0},
+        2: {"RVALID": 1, "RREADY": 1, "RID": 9,
+            "RDATA": 0x11, "RRESP": 0, "RLAST": 1},
+    })
+    result = decode_axi4(wave, signal_map=signal_map_for(wave))
+    rules = {f["rule"] for f in result["findings"]}
+    assert "missing_rlast" in rules
+    assert "read_burst_overrun" in rules
+    assert "late_rlast" in rules
