@@ -74,7 +74,7 @@ PASS/FAIL comparison.
 - The graph is logical elaborated RTL connectivity, not placement, routing,
   parasitics, timing, or physical layout.
 - The standalone Slang AST path is the authoritative full-SV hierarchy path.
-  The optional Yosys-Slang check is configured with `--keep-hierarchy` and a
+  The optional Yosys-Slang check is configured with the default flattened netlist mode and a
   bounded `--unroll-limit 4096`; CI is still validating this heavier path.
   Passing that check would establish frontend/hierarchy compatibility only,
   not full technology-mapped synthesis, STA, or timing closure.
