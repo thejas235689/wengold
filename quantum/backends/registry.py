@@ -1,15 +1,40 @@
-"""Lazy discovery: importing WENGOLD never requires all simulator packages."""
+"""Lazy backend discovery; unavailable engines are never advertised as runnable."""
 from __future__ import annotations
+import importlib.util
+
 from .base import BackendUnavailable
 
+
+def _installed(module: str) -> bool:
+    try:
+        return importlib.util.find_spec(module) is not None
+    except (ImportError, ValueError):
+        return False
+
+
 def available_backends() -> dict[str, dict[str, object]]:
-    import importlib.util
+    qiskit_ready = _installed("qiskit") and _installed("qiskit_aer")
+    cirq_ready = _installed("cirq")
+    # The QuEST adapter is intentionally disabled until WENGOLD ships and tests
+    # its own ABI-pinned native bridge; a third-party package alone is not enough.
     return {
-        "qiskit": {"installed": importlib.util.find_spec("qiskit") is not None, "adapter": "QiskitBackend"},
-        "cirq": {"installed": importlib.util.find_spec("cirq") is not None, "adapter": "CirqBackend"},
-        "quest": {"installed": importlib.util.find_spec("pyquest") is not None, "adapter": "QuESTBackend",
-                  "note": "A compatible pyquest binding is required; native QuEST is not a Python package."},
+        "qiskit": {
+            "installed": qiskit_ready,
+            "missing_dependencies": [] if qiskit_ready else [
+                name for name, ok in (("qiskit", _installed("qiskit")),
+                                      ("qiskit-aer", _installed("qiskit_aer"))) if not ok
+            ],
+            "adapter": "QiskitBackend",
+        },
+        "cirq": {"installed": cirq_ready, "adapter": "CirqBackend"},
+        "quest": {
+            "installed": False,
+            "adapter": "QuESTBackend",
+            "status": "not_implemented",
+            "note": "Waiting for the WENGOLD ABI-pinned native C++ bridge and CI tests.",
+        },
     }
+
 
 def create_backend(name: str):
     key = name.lower()
