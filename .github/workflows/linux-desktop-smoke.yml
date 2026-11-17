@@ -3,7 +3,7 @@ name: Linux Native Desktop Smoke
 on:
   pull_request:
   push:
-    branches: [main]
+    branches: [main, feature/slang-riscv-elaboration-validation]
     paths:
       - 'wengold/native.py'
       - 'wengold/native_health.py'
