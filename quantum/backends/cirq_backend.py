@@ -22,7 +22,7 @@ class CirqBackend(Backend):
             "statevector": True, "sampling": True, "noise": False, "hardware": False,
             "supported_gates": [
                 "I", "H", "X", "Y", "Z", "S", "T", "RX", "RY", "RZ",
-                "CNOT", "CX", "CZ", "SWAP", "CCX", "MEASURE",
+                "CNOT", "CX", "CZ", "SWAP", "CCX", "TOFFOLI", "CSWAP", "MEASURE",
             ],
         }
 
@@ -46,8 +46,10 @@ class CirqBackend(Backend):
                 measurement_keys[key] = tuple(op.classical_bits)
             elif gate in {"CNOT", "CX"}:
                 operations.append(c.CNOT(controls[0], targets[0]))
-            elif gate == "CCX":
+            elif gate in {"CCX", "TOFFOLI"}:
                 operations.append(c.TOFFOLI(controls[0], controls[1], targets[0]))
+            elif gate == "CSWAP":
+                operations.append(c.CSWAP(controls[0], targets[0], targets[1]))
             elif gate == "CZ":
                 operations.append(c.CZ(*targets))
             elif gate == "SWAP":
