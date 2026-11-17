@@ -135,9 +135,18 @@ def build_rtl_hierarchy(netlist: dict[str, Any], *, top: str = "",
 
 
 def elaborate_with_yosys(project_root: str | Path, sources: list[str | Path], *,
-                         top: str, yosys: str = "yosys",
-                         timeout_seconds: int = 180) -> dict[str, Any]:
-    """Run Yosys read_verilog/hierarchy/proc/write_json without flattening."""
+                         top: str, yosys: str = "yosys", frontend: str = "slang",
+                         slang_plugin: str = "slang", sv_standard: str = "1800-2017",
+                         include_dirs: list[str | Path] | None = None,
+                         defines: list[str] | None = None,
+                         timeout_seconds: int = 300) -> dict[str, Any]:
+    """Elaborate hierarchy through yosys-slang or the legacy Yosys SV frontend."""
+    if frontend not in {"slang", "yosys"}:
+        raise ValueError("frontend must be 'slang' or 'yosys'")
+    if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_$]*", top):
+        raise ValueError("Top module must be a simple Verilog/SystemVerilog identifier")
+    if frontend == "slang" and sv_standard not in {"1800-2017", "1800-2023", "latest"}:
+        raise ValueError("Unsupported Slang SystemVerilog standard")
     executable = shutil.which(yosys)
     if not executable:
         raise RuntimeError("Yosys executable not found. Install Yosys or set its executable path.")
@@ -154,10 +163,33 @@ def elaborate_with_yosys(project_root: str | Path, sources: list[str | Path], *,
         resolved.append(path)
     output = root / ".wengold" / "rtl_hierarchy.json"
     output.parent.mkdir(parents=True, exist_ok=True)
-    script = ["read_verilog -sv " + " ".join(json.dumps(str(p)) for p in resolved),
-              "hierarchy -check -top " + top,
-              "proc",
-              "write_json " + json.dumps(str(output))]
+    incdirs = []
+    for directory in include_dirs or []:
+        path = (root / directory).resolve() if not Path(directory).is_absolute() else Path(directory).resolve()
+        if root not in path.parents and path != root:
+            raise ValueError(f"Include directory escapes project root: {directory}")
+        if not path.is_dir():
+            raise ValueError(f"Include directory does not exist: {directory}")
+        incdirs.append(path)
+    macro_args = []
+    for define in defines or []:
+        if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*(?:=[^\\s;]+)?", define):
+            raise ValueError(f"Invalid preprocessor define: {define}")
+        macro_args.append("-D" + define)
+    if frontend == "slang":
+        # read_slang comes from the yosys-slang plugin, bundled with OSS CAD Suite.
+        read_cmd = ["plugin -i " + slang_plugin,
+                    "read_slang --top " + top + " --std " + sv_standard]
+        read_cmd.extend("-I " + json.dumps(str(path)) for path in incdirs)
+        read_cmd.extend(macro_args)
+        read_cmd.extend(json.dumps(str(path)) for path in resolved)
+    else:
+        read_cmd = ["read_verilog -sv"]
+        read_cmd.extend("-I" + json.dumps(str(path)) for path in incdirs)
+        read_cmd.extend(macro_args)
+        read_cmd.extend(json.dumps(str(path)) for path in resolved)
+    script = [" ".join(read_cmd), "hierarchy -check -top " + top,
+              "proc", "write_json " + json.dumps(str(output))]
     completed = subprocess.run(
         [executable, "-Q", "-q", "-p", "; ".join(script)],
         cwd=root, capture_output=True, text=True, timeout=timeout_seconds, check=False)
@@ -170,6 +202,8 @@ def elaborate_with_yosys(project_root: str | Path, sources: list[str | Path], *,
         raise RuntimeError(f"Yosys did not produce a valid hierarchy JSON: {exc}") from exc
     graph = build_rtl_hierarchy(netlist, top=top)
     graph["tool"] = "Yosys"
+    graph["frontend"] = "yosys-slang/read_slang" if frontend == "slang" else "Yosys read_verilog -sv"
+    graph["sv_standard"] = sv_standard if frontend == "slang" else None
     graph["source_files"] = [str(path.relative_to(root)) for path in resolved]
     graph["yosys_log"] = (completed.stdout or "")[-4000:]
     return graph
