@@ -54,8 +54,12 @@ jobs:
           assert report["source_count"] >= 40, report["source_count"]
           assert report["instance_count"] > 1, report["instance_count"]
           assert report["connection_count"] > 0
+          diagnostics = str(report.get("diagnostics", ""))
+          assert "rv64_fetch.sv:113" not in diagnostics, diagnostics
+          assert "riscv_core_top.sv:354" not in diagnostics, diagnostics
           print("RTL hierarchy:", report["instance_count"], "instances;",
                 report["connection_count"], report["connection_unit"])
+          print("Slang diagnostics:", diagnostics or "none")
           PY
       - name: Validate Yosys-Slang synthesis-oriented frontend
         run: |
