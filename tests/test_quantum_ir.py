@@ -52,3 +52,15 @@ def test_quantum_math_checks():
     assert is_normalized(state)
     assert pure_state_fidelity(state, [-x for x in state]) == pytest.approx(1.0)
     assert unitary_residual([[0, 1], [1, 0]]) == pytest.approx(0.0)
+
+def test_quantum_project_save_load_is_atomic_and_roundtrips(tmp_path):
+    from quantum.core.project import save_project, load_project
+
+    circuit = Circuit("bell", 2, (
+        Operation("h0", "H", (0,)),
+        Operation("cx01", "CNOT", (1,), (0,)),
+    ))
+    path = save_project(tmp_path / "bell.wqproj", circuit, metadata={"authoring": "test"})
+    restored, metadata = load_project(path)
+    assert restored == circuit
+    assert metadata == {"authoring": "test"}
