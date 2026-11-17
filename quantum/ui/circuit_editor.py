@@ -155,6 +155,7 @@ def build_editor(QtWidgets):
             "Install the quantum extra to enable Bloch sphere and Q-sphere plots."
         ))
         state_visualizer.set_statevector = lambda state: None
+        state_visualizer.set_measurements = lambda counts: None
     tabs.addTab(state_visualizer, "State Visualizer")
     layout.addWidget(tabs, 1)
     root.canvas = canvas
