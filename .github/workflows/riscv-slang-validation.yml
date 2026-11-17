@@ -61,10 +61,17 @@ jobs:
                         if item.get("kind") == "Instance"]
             print("CHILD INSTANCE COUNT:", len(children))
             if children:
-              print("FIRST CHILD:", json.dumps(children[0], indent=2)[:6000])
+              child = children[0]
+              print("FIRST CHILD KEYS:", sorted(child.keys()))
+              print("FIRST CHILD CONNECTIONS:", json.dumps(child.get("connections"), indent=2)[:5000])
+              child_ports = [item for item in child.get("body", {}).get("members", [])
+                             if item.get("kind") == "Port"]
+              print("FIRST CHILD PORT SAMPLE:", json.dumps(child_ports[:3], indent=2))
             ports = [item for item in body.get("members", [])
                      if item.get("kind") == "Port"]
+            print("TOP PORT KEYS:", sorted(ports[0].keys()) if ports else [])
             print("TOP PORT SAMPLE:", json.dumps(ports[:3], indent=2))
+            print("TOP CONNECTIONS:", json.dumps(top.get("connections"), indent=2)[:2000])
           else:
             raise SystemExit("Slang AST JSON did not contain riscv_core_top")
           PY
