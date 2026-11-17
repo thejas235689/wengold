@@ -45,3 +45,16 @@ def test_cirq_bell_statevector_and_measurement():
     measured = backend.run(bell_circuit(measure=True), shots=1024, seed=7)
     assert set(measured.counts).issubset({"00", "11"})
     assert sum(measured.counts.values()) == 1024
+
+def test_statevector_qubit_zero_uses_rightmost_bit_in_both_backends():
+    circuit = Circuit("qubit-zero", 2, (Operation("x0", "X", (0,)),))
+    pytest.importorskip("qiskit")
+    pytest.importorskip("qiskit_aer")
+    from quantum.backends.qiskit_backend import QiskitBackend
+    qiskit_result = QiskitBackend().run(circuit, seed=3)
+    assert qiskit_result.probabilities["01"] == pytest.approx(1.0, abs=1e-8)
+
+    pytest.importorskip("cirq")
+    from quantum.backends.cirq_backend import CirqBackend
+    cirq_result = CirqBackend().run(circuit, seed=3)
+    assert cirq_result.probabilities["01"] == pytest.approx(1.0, abs=1e-8)
