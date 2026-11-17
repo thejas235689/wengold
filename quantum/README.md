@@ -35,7 +35,7 @@ Use `import_openqasm3(source)` and `export_openqasm3(circuit)` from `quantum.cor
 
 Launch with `python -m quantum_app`. Drag gates onto the circuit wires, choose Qiskit, Cirq or QuEST, set the shot count, and select **Run simulation**. Runs execute in a Qt worker thread. A statevector result updates the reduced-state Bloch spheres and Q-sphere; a sampled result updates the measurement histogram. The Q-sphere limits rendering to the 2,048 highest-probability populated basis states.
 
-## Gate-by-gate debug trace (developer API)
+## Gate-by-gate debug trace (GUI and developer API)
 
 ```python
 from quantum.backends import create_backend
@@ -47,7 +47,7 @@ for snapshot in trace.snapshots:
     print(snapshot.statevector, snapshot.probabilities)
 ```
 
-The initial implementation is deliberately **unitary-only**. It rejects measurement, reset, barrier and delay because pure-state snapshots do not faithfully represent their execution semantics. It replays each circuit prefix independently, so a trace costs one backend run per boundary; checkpoint caching and incremental simulator state are future optimizations. This is a debug trace engine, not yet a GUI time-travel debugger or a formal equivalence checker.
+In the editor, select **Build debug trace** to compute snapshots off the Qt UI thread. Use **Previous**, **Next** or the step slider to navigate; the active gate is outlined on the circuit and its snapshot is loaded into the State Visualizer. The panel reports operation ID, backend, execution time and probability L1 change from the prior step. Starting a new normal simulation clears the previous debug trace.\n\nThe initial implementation is deliberately **unitary-only**. It rejects measurement, reset, barrier and delay because pure-state snapshots do not faithfully represent their execution semantics. It replays each circuit prefix independently, so a trace costs one backend run per boundary; checkpoint caching and incremental simulator state are future optimizations. This is a debug trace engine, not yet a GUI time-travel debugger or a formal equivalence checker.
 
 ## Verification boundary
 
