@@ -145,6 +145,9 @@ def test_export_rejects_invalid_time_unit():
 
 
 def test_dynatrace_export_sends_binary_otlp_protobuf(monkeypatch):
+    pytest.importorskip("opentelemetry.proto.collector.trace.v1.trace_service_pb2")
+    pytest.importorskip("opentelemetry.proto.collector.metrics.v1.metrics_service_pb2")
+    pytest.importorskip("opentelemetry.proto.collector.logs.v1.logs_service_pb2")
     from opentelemetry.proto.collector.trace.v1.trace_service_pb2 import (
         ExportTraceServiceRequest,
     )
@@ -217,6 +220,9 @@ def test_dynatrace_export_rejects_insecure_or_signal_specific_urls():
 
 
 def test_dynatrace_export_reports_partial_delivery_without_exposing_token(monkeypatch):
+    pytest.importorskip("opentelemetry.proto.collector.trace.v1.trace_service_pb2")
+    pytest.importorskip("opentelemetry.proto.collector.metrics.v1.metrics_service_pb2")
+    pytest.importorskip("opentelemetry.proto.collector.logs.v1.logs_service_pb2")
     from urllib.error import HTTPError
     from wengold.otel_telemetry import DynatraceExportError, send_dynatrace_otlp
 
