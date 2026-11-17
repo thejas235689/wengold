@@ -79,8 +79,10 @@ workstation-dependent.
 The Wave Debug panel now includes an AXI4 prefix/clock selector and a
 **Decode AXI4 traffic** action. It reconstructs full AXI4 write/read transactions
 at rising ACLK edges, uses VALID && READY for handshakes, applies AXI4 AW-to-W
-ordering, matches B responses by BID and R beats by RID, and checks AWLEN/WLAST
-and ARLEN/RLAST. It also measures channel stalls and reports unknown controls,
+ordering, matches B responses by BID and R beats by RID, and checks AWLEN/WLAST and ARLEN/RLAST. While a VALID is stalled, it checks
+that the channel payload (address/ID/length, data/strobes/LAST, response and
+captured USER fields) remains stable. It also measures channel stalls and
+reports unknown controls/payloads, payload changes, VALID drops before READY,
 orphan beats, response errors, reset-aborted transactions and incomplete
 capture-end requests.
 
