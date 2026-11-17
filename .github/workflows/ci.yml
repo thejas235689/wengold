@@ -1,14 +1,9 @@
 name: CI
 
-# The repository has claimed a passing test count since v0.5 and nothing has ever
-# proved it on push. This workflow is the proof: every push and pull request runs
-# the full suite on the Python the project targets.
-#
-# It also pins the dependency that is easiest to be wrong about. Without
-# `z3-solver` the formal engine returns `unknown` instead of `proof`/`fail`, and
-# eight soundness tests fail in a way that looks like a broken kernel rather than a
-# missing package. Installing it explicitly means CI reports the real state.
-
+# Full suite runs on Linux and macOS. Windows has a focused portability smoke
+# suite for the waveform/AXI4/OTLP paths; the full suite depends on Linux EDA
+# binaries and POSIX-specific toolchain fixtures that are not installed on the
+# hosted Windows runner.
 on:
   push:
     branches: [main]
@@ -16,7 +11,6 @@ on:
     branches: [main]
   workflow_dispatch:
 
-# Cancel superseded push runs instead of accumulating a stale CI queue.
 concurrency:
   group: cross-platform-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -28,14 +22,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # one system was not a matrix: a macOS-only breakage or a 3.11 syntax
-        # regression could not be seen.
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        os: [ubuntu-latest, macos-latest]
         python-version: ["3.11", "3.12", "3.13"]
         exclude:
           - os: macos-latest
-            python-version: "3.13"
-          - os: windows-latest
             python-version: "3.13"
 
     defaults:
@@ -58,23 +48,10 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          # pyslang is the SystemVerilog front-end; z3 is the formal engine.
-          # Both are load-bearing: without them large parts of the suite fail for
-          # reasons that have nothing to do with the code under test.
-          #
-          # Pinned to the versions the suite was measured against. An unpinned
-          # pyslang is a moving API, and a green local run plus a red CI run is
-          # the least useful signal a project can produce.
           pip install "pytest>=8,<9" "z3-solver>=4.13,<6" "numpy>=1.26,<3" "PyYAML>=6,<7"
-          pip install "pyslang==12.1.0" || echo "::warning::pyslang unavailable on ${{ matrix.os }}; front-end tests will skip"
-          # Exercise the optional binary OTLP exporter without making it a core dependency.
+          pip install "pyslang==12.1.0" || echo "::warning::pyslang unavailable; front-end tests will skip"
           pip install "opentelemetry-proto>=1.30,<2"
-          # the native desktop app; optional at runtime, so the suite skips its
-          # tests if this ever fails, but installed here so CI covers it
           pip install "PyQt6>=6.6,<7" || echo "PyQt6 unavailable; native tests will skip"
-          # GHDL's LLVM backend refuses to start without `cc`. Runners usually have
-          # one; this makes sure the VHDL tests run either way, because a test that
-          # silently skips is a test that stops protecting anything.
           pip install "ziglang" || echo "ziglang unavailable; VHDL tests will skip"
 
       - name: Show what was installed
@@ -85,17 +62,12 @@ jobs:
 
       - name: Run the test suite
         env:
-          # Qt segfaults at exit without a display; the native tests set this
-          # themselves, but setting it here too means a test that imports Qt
-          # directly cannot crash the runner.
           QT_QPA_PLATFORM: offscreen
         run: |
           python -m pytest -q -p no:cacheprovider tests --tb=short -rf
 
       - name: Give GHDL a C compiler
         if: runner.os == 'Linux'
-        # neorv32 analyses 54 of 54 VHDL units once GHDL can start. Without `cc` it
-        # reports "installation problem" and reads as a broken toolchain.
         run: |
           if command -v cc >/dev/null 2>&1; then
             echo "cc already present: $(command -v cc)"
@@ -115,13 +87,6 @@ jobs:
           python -m pytest -q -p no:cacheprovider tests/test_vhdl.py -v
 
       - name: Render the native window offscreen
-        # Qt renders without a display, so the real desktop window can be built and
-        # screenshotted on a headless runner. This catches a window that fails to
-        # construct, and a picture proves the layout came out.
-        #
-        # Skips rather than fails when Qt is not installable on the runner: PyQt6 is
-        # an optional dependency, and a red CI over an optional extra says nothing
-        # about the code under test.
         env:
           QT_QPA_PLATFORM: offscreen
         run: |
@@ -133,7 +98,7 @@ jobs:
           python -c "
           import struct
           data = open('native.png','rb').read()
-          assert data[:8] == b'\x89PNG\r\n\x1a\n', 'not a PNG'
+          assert data[:8] == b'\\x89PNG\\r\\n\\x1a\\n', 'not a PNG'
           w, h = struct.unpack('>II', data[16:24])
           print(f'native window rendered {w}x{h}')
           assert w > 800 and h > 500, (w, h)
@@ -141,8 +106,6 @@ jobs:
 
       - name: Install and uninstall the Linux app
         if: runner.os == 'Linux'
-        # The installer is a shell script, so nothing above exercises it. This runs
-        # it for real into a throwaway HOME and then removes it again.
         run: |
           export HOME=/tmp/fakehome && mkdir -p "$HOME"
           sh linux/install.sh
@@ -176,7 +139,6 @@ jobs:
           if-no-files-found: warn
 
       - name: Upload the pytest log
-        # so a failure can be read without guessing, including from outside CI
         if: always() && runner.os == 'Linux'
         uses: actions/upload-artifact@v4
         with:
@@ -209,9 +171,30 @@ jobs:
           print('generated SVA parses cleanly')
           "
 
-  # ---------------------------------------------------------------------------
-  # The zero-install claim: Python 3.11+ and nothing else.
-  # ---------------------------------------------------------------------------
+  # Windows validates the new protocol decoder and telemetry serialization
+  # without pretending that Linux-only simulator/prover installations exist.
+  windows-smoke:
+    name: Windows portability / AXI4 + waveform + OTLP
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install focused test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install "pytest>=8,<9" "opentelemetry-proto>=1.30,<2"
+      - name: Test waveform parsing, AXI4 decoding, and OTLP export
+        env:
+          PYTHONUTF8: "1"
+        run: |
+          python -m pytest -q -p no:cacheprovider \
+            tests/test_wave.py \
+            tests/test_wave_debug.py \
+            tests/test_axi4_telemetry.py \
+            tests/test_otel_telemetry.py --tb=short
+
   no-dependencies:
     name: runs with no packages / ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
@@ -227,7 +210,6 @@ jobs:
       - name: Prove nothing third-party is installed
         shell: bash
         run: |
-          # If these are present the job would pass for the wrong reason.
           for m in pyslang z3 numpy PyQt6; do
             if python -c "import $m" 2>/dev/null; then
               echo "::error::$m is installed on a clean runner"
@@ -241,9 +223,6 @@ jobs:
           sh wengold.sh doctor
           sh wengold.sh index examples/soc_top
 
-  # ---------------------------------------------------------------------------
-  # The installer: write it, use it, uninstall it.
-  # ---------------------------------------------------------------------------
   install:
     name: install / ubuntu
     runs-on: ubuntu-latest
@@ -261,15 +240,11 @@ jobs:
         run: |
           export HOME="$RUNNER_TEMP/home"
           "$HOME/.local/bin/wengold" --version
-          # a subcommand must work through the launcher, not open a window
           "$HOME/.local/bin/wengold" cdc --help >/dev/null
       - name: The IDE server starts from the installed copy and answers
         shell: bash
         run: |
           export HOME="$RUNNER_TEMP/home"
-          # port 0 would bind a random port, so pin one and read the URL the
-          # server prints. A server that starts but does not answer is not
-          # working, and `|| true` here would hide exactly that.
           PYTHONUNBUFFERED=1 "$HOME/.local/bin/wengold" ide examples/soc_top --serve \
               --port 8731 --no-browser > "$RUNNER_TEMP/ide.log" 2>&1 &
           pid=$!
@@ -290,9 +265,6 @@ jobs:
           sh linux/uninstall.sh
           test ! -e "$HOME/.local/share/wengold" || { echo "::error::left behind"; exit 1; }
 
-  # ---------------------------------------------------------------------------
-  # An old interpreter must be refused with the fix named.
-  # ---------------------------------------------------------------------------
   old-python:
     name: refuses Python 3.9 clearly
     runs-on: ubuntu-latest
@@ -301,13 +273,10 @@ jobs:
       - name: Simulate a 3.9 interpreter
         shell: bash
         run: |
-          # wengold.sh tries 3.13, 3.12, 3.11 then python3, so shadowing only
-          # python3 leaves a good interpreter reachable and this passes for the
-          # wrong reason.
           shim="$RUNNER_TEMP/oldpy"; mkdir -p "$shim"
           real="$(command -v python3.12 || command -v python3)"
           for cand in python3.13 python3.12 python3.11 python3; do
-            printf '#!/bin/sh\ncase "$2" in\n  *"version_info >= (3,11)"*) exit 1 ;;\n  *"version_info[:2]"*) echo "3.9"; exit 0 ;;\nesac\nexec %s "$@"\n' "$real" > "$shim/$cand"
+            printf '#!/bin/sh\\ncase "$2" in\\n  *"version_info >= (3,11)"*) exit 1 ;;\\n  *"version_info[:2]"*) echo "3.9"; exit 0 ;;\\nesac\\nexec %s "$@"\\n' "$real" > "$shim/$cand"
             chmod +x "$shim/$cand"
           done
           set +e
