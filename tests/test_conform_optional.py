@@ -29,6 +29,10 @@ sys.meta_path.insert(0, Block())
 def test_conform_imports_without_pyslang():
     """Importing the module must work; only *parsing* may need pyslang."""
     code = BLOCK_PYSLANG + '''
+# Python 3.12 removed the legacy meta_path find_module() fallback.
+# Setting the optional package to None makes imports fail consistently on
+# every supported Python version, even when the distribution is installed.
+sys.modules["pyslang"] = None
 import wengold.generate.conform as c
 print("imported", c._HAVE_SLANG)
 '''
@@ -43,6 +47,9 @@ def test_parsing_without_pyslang_refuses_clearly():
     """It must refuse, not imitate the check with a regex — a regex would report
     conformance it had not established."""
     code = BLOCK_PYSLANG + '''
+    code = '''
+import sys
+sys.modules["pyslang"] = None
 from wengold.generate.conform import _parse
 try:
     _parse("module m; endmodule")
@@ -63,6 +70,9 @@ def test_vibe_does_not_traceback_without_pyslang(tmp_path):
     if not spec.exists():
         pytest.skip("no example spec")
     code = BLOCK_PYSLANG + '''
+    code = '''
+import sys
+sys.modules["pyslang"] = None
 sys.argv = ["wengold", "vibe", %r, "--out", %r]
 from wengold.cli import main
 raise SystemExit(main())

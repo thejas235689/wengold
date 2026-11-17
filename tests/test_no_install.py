@@ -30,6 +30,9 @@ class Block:
         return None
 
 sys.meta_path.insert(0, Block())
+# Use sys.modules sentinels rather than the removed find_module fallback.
+for name in BANNED:
+    sys.modules[name] = None
 '''
 
 

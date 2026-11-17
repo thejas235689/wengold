@@ -242,6 +242,32 @@ def make_studio_tabs(state, QtCore, QtGui, QtWidgets, parent=None):
         # Preserve waveform viewer ownership and its project-constrained RTL probe.
         probe_selected_signal(signal_name)
 
+    def open_rtl_source_location(source):
+        if not source or not source.get("file"):
+            return
+        from pathlib import Path
+        raw_path = Path(source["file"])
+        candidate = raw_path if raw_path.is_absolute() else (root / raw_path)
+        try:
+            rel = candidate.resolve().relative_to(root.resolve()).as_posix()
+        except ValueError:
+            alert("Yosys source location is outside the active project root: " + str(raw_path), True)
+            return
+        try:
+            load_editor(rel)
+            cursor = editor.textCursor()
+            cursor.movePosition(QtGui.QTextCursor.MoveOperation.Start)
+            cursor.movePosition(QtGui.QTextCursor.MoveOperation.Down,
+                                QtGui.QTextCursor.MoveMode.MoveAnchor,
+                                max(0, int(source.get("line", 1)) - 1))
+            editor.setTextCursor(cursor)
+            editor.centerCursor()
+            tabs.setCurrentWidget(edit_page)
+            edit_detail.setText(
+                f"Yosys elaborated source location: {rel}:{source.get('line', 1)}")
+        except Exception as exc:
+            alert("Could not open Yosys source location: " + str(exc), True)
+
     def focus_wave_sample(index):
         if not isinstance(index, int) or index < 0:
             return
@@ -250,7 +276,8 @@ def make_studio_tabs(state, QtCore, QtGui, QtWidgets, parent=None):
         tabs.setCurrentWidget(wave_page)
 
     wave_debug = make_wave_debug(QtCore, QtGui, QtWidgets, root,
-                                 crossprobe_debug_signal, focus_wave_sample)
+                                 crossprobe_debug_signal, focus_wave_sample,
+                                 open_rtl_source_location)
     tabs.addTab(wave_debug, "Wave Debug")
     tabs.waveDebug = wave_debug
 
@@ -398,6 +425,20 @@ def make_studio_tabs(state, QtCore, QtGui, QtWidgets, parent=None):
 
     agent_plan.clicked.connect(show_plan)
     tabs.addTab(agent_page, "Agents")
+
+    # Quantum Design Studio is loaded lazily and shares the standalone editor.
+    try:
+        from quantum.ui.circuit_editor import build_editor as build_quantum_editor
+        quantum_page = build_quantum_editor(QtWidgets)
+        tabs.addTab(quantum_page, "Quantum Studio")
+    except Exception as exc:
+        quantum_page = QtWidgets.QWidget()
+        quantum_layout = QtWidgets.QVBoxLayout(quantum_page)
+        quantum_notice = QtWidgets.QLabel(
+            "Quantum Studio could not initialize. Install the optional desktop dependencies.\\n" + str(exc))
+        quantum_notice.setWordWrap(True)
+        quantum_layout.addWidget(quantum_notice)
+        tabs.addTab(quantum_page, "Quantum Studio (Unavailable)")
 
     # Durable queue: multiple external worker processes can claim transactionally.
     from .studio_durable import DurableQueue
