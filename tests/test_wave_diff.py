@@ -77,3 +77,87 @@ def test_caps_reported_differences_without_losing_total_count():
     assert report["total_differences"] == 4
     assert report["reported_differences"] == 2
     assert report["truncated"] is True
+
+
+def test_reset_release_alignment_compares_from_release_not_capture_start():
+    passed = {
+        "cycles": 5, "times": [0, 5, 10, 15, 20], "time_unit_ns": "1",
+        "signals": [
+            {"name": "tb.rst_n", "width": 1, "values": [0, 0, 1, 1, 1]},
+            {"name": "tb.dut.state", "width": 2, "values": [0, 0, 1, 1, 2]},
+        ],
+    }
+    failed = {
+        "cycles": 6, "times": [0, 5, 10, 15, 20, 25], "time_unit_ns": "1",
+        "signals": [
+            {"name": "tb.rst_n", "width": 1, "values": [0, 0, 0, 1, 1, 1]},
+            {"name": "tb.dut.state", "width": 2, "values": [3, 3, 3, 1, 1, 2]},
+        ],
+    }
+    report = compare_waveforms(
+        passed, failed, alignment="reset",
+        pass_reset_signal="tb.rst_n", fail_reset_signal="tb.rst_n",
+        reset_active_level=0)
+    assert report["alignment"]["pass_reset_release_ns"] == "10"
+    assert report["alignment"]["fail_reset_release_ns"] == "15"
+    assert report["first_divergence"] is None
+
+
+def test_reset_alignment_finds_divergence_after_different_reset_durations():
+    passed = {
+        "cycles": 4, "times": [0, 5, 10, 15], "time_unit_ns": "1",
+        "signals": [
+            {"name": "tb.rst_n", "width": 1, "values": [0, 1, 1, 1]},
+            {"name": "tb.dut.state", "width": 2, "values": [0, 1, 2, 3]},
+        ],
+    }
+    failed = {
+        "cycles": 5, "times": [0, 5, 10, 15, 20], "time_unit_ns": "1",
+        "signals": [
+            {"name": "tb.rst_n", "width": 1, "values": [0, 0, 1, 1, 1]},
+            {"name": "tb.dut.state", "width": 2, "values": [0, 0, 1, 7, 7]},
+        ],
+    }
+    report = compare_waveforms(
+        passed, failed, alignment="reset",
+        pass_reset_signal="tb.rst_n", reset_active_level=0)
+    assert report["first_divergence"]["signal"] == "tb.dut.state"
+    assert report["first_divergence"]["aligned_time"] == "5"
+
+
+def test_clock_alignment_normalizes_different_clock_periods():
+    passed = {
+        "cycles": 9, "times": [0, 5, 10, 15, 20, 25, 30, 35, 40],
+        "time_unit_ns": "1",
+        "signals": [
+            {"name": "tb.clk", "width": 1, "values": [0, 1, 0, 1, 0, 1, 0, 1, 0]},
+            {"name": "tb.dut.state", "width": 2, "values": [0, 0, 0, 1, 1, 2, 2, 3, 3]},
+        ],
+    }
+    failed = {
+        "cycles": 9, "times": [0, 10, 20, 30, 40, 50, 60, 70, 80],
+        "time_unit_ns": "1",
+        "signals": [
+            {"name": "tb.clk", "width": 1, "values": [0, 1, 0, 1, 0, 1, 0, 1, 0]},
+            {"name": "tb.dut.state", "width": 2, "values": [0, 0, 0, 7, 7, 2, 2, 3, 3]},
+        ],
+    }
+    report = compare_waveforms(passed, failed, alignment="clock",
+                               pass_clock_signal="tb.clk",
+                               fail_clock_signal="tb.clk")
+    assert report["alignment"]["mode"] == "clock"
+    assert report["alignment"]["pass_clock"]["rising_edges"] == 4
+    assert report["alignment"]["fail_clock"]["rising_edges"] == 4
+    assert report["first_divergence"]["signal"] == "tb.dut.state"
+    assert report["first_divergence"]["aligned_time"] == "1"
+
+
+def test_reset_alignment_requires_a_visible_release_transition():
+    passed = {
+        "cycles": 2, "times": [0, 5], "time_unit_ns": "1",
+        "signals": [{"name": "tb.rst_n", "width": 1, "values": [1, 1]},
+                    {"name": "tb.dut.state", "width": 1, "values": [0, 1]}],
+    }
+    with pytest.raises(ValueError, match="reset release not found"):
+        compare_waveforms(passed, passed, alignment="reset",
+                          pass_reset_signal="tb.rst_n")
