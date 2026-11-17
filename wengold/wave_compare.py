@@ -14,6 +14,14 @@ def fs_per_tick(scale):
     return int(match[1]) * UNIT_FS[match[2]] if match else None
 
 
+def _normalized_logic_at(signal, index):
+    """Treat a scalar unknown sentinel as an unknown value across the whole bus."""
+    bits = logic_at(signal, index).lower()
+    if signal["width"] > 1 and bits in ("x", "z"):
+        return bits * signal["width"]
+    return bits
+
+
 def aligned_grid(left, right, anchor_a=None, anchor_b=None):
     if not left["times"] or not right["times"]:
         raise ValueError("Both traces need observed timestamps")
@@ -54,7 +62,7 @@ def compare(left, right, anchor_a=None, anchor_b=None, query=""):
             row["status"] = "Width differs"
         else:
             first = next((n for n, (i, j) in enumerate(zip(grid["a"], grid["b"]))
-                          if logic_at(a[name], i) != logic_at(b[name], j)), None)
+                          if _normalized_logic_at(a[name], i) != _normalized_logic_at(b[name], j)), None)
             row.update(first=first, status="Differs" if first is not None else "No difference in overlap")
         rows.append(row)
     return {**grid, "rows": rows}
