@@ -497,27 +497,72 @@ def crossprobe_hierarchy_to_vcd(graph: dict[str, Any], wave: dict[str, Any], *,
     available = {item.get("name") for item in wave.get("signals", [])}
     top = graph.get("top", "")
     matches = []
+    direct_matches = []
+    parent_alias_matches = []
     missing = []
+    # Slang describes a formal child port, while some simulators emit only the
+    # connected parent net in VCD (especially for aliased input/output ports).
+    # Permit that fallback only when the elaborated AST gives a concrete parent
+    # symbol and that exact hierarchical parent path exists in the VCD.
+    edges_by_port: dict[tuple[str, str], list[dict[str, Any]]] = {}
+    for edge in graph.get("edges", []):
+        edges_by_port.setdefault((edge.get("instance", ""), edge.get("port", "")), []).append(edge)
+
+    def vcd_path_for_hierarchy(hierarchy_path: str) -> str | None:
+        if hierarchy_path == top:
+            relative_path = ""
+        elif hierarchy_path.startswith(top + "."):
+            relative_path = hierarchy_path[len(top) + 1:]
+        else:
+            return None
+        return ".".join(part for part in (root, dut, relative_path) if part)
+
     for node in graph.get("nodes", []):
         instance = node.get("id", "")
-        if instance == top:
-            relative = ""
-        elif instance.startswith(top + "."):
-            relative = instance[len(top) + 1:]
-        else:
-            continue
-        base = ".".join(part for part in (root, dut, relative) if part)
         for port in node.get("ports", []):
-            path = base + "." + port["name"]
+            path = vcd_path_for_hierarchy(instance)
+            if path is None:
+                continue
+            path += "." + port["name"]
             record = {"instance": instance, "module": node.get("module"),
                       "port": port["name"], "direction": port.get("direction"),
                       "width": port.get("width"), "vcd_path": path}
-            (matches if path in available else missing).append(record)
+            if path in available:
+                record["match_kind"] = "direct_port"
+                direct_matches.append(record)
+                matches.append(record)
+                continue
+
+            alias_found = False
+            for edge in edges_by_port.get((instance, port["name"]), []):
+                parent_symbol = edge.get("parent_symbol")
+                parent_hierarchy = edge.get("from")
+                if not parent_symbol or not parent_hierarchy:
+                    continue
+                alias_path = vcd_path_for_hierarchy(parent_hierarchy)
+                if alias_path and alias_path in available:
+                    alias_record = dict(record)
+                    alias_record.update({
+                        "match_kind": "exact_parent_net_alias",
+                        "matched_vcd_path": alias_path,
+                        "parent_symbol": parent_symbol,
+                    })
+                    parent_alias_matches.append(alias_record)
+                    matches.append(alias_record)
+                    alias_found = True
+                    break
+            if not alias_found:
+                missing.append(record)
+
     return {
         "vcd_root": root, "dut_instance": dut,
-        "matched_ports": len(matches), "unmatched_ports": len(missing),
+        "matched_ports": len(matches), "direct_matches": len(direct_matches),
+        "parent_net_alias_matches": len(parent_alias_matches),
+        "unmatched_ports": len(missing),
         "total_ports": len(matches) + len(missing),
-        "matches": matches, "unmatched": missing,
+        "matches": matches, "direct_match_records": direct_matches,
+        "parent_net_alias_records": parent_alias_matches, "unmatched": missing,
         "status": "matched" if matches else "no_exact_matches",
-        "qualification": "Exact hierarchical-name match only; unmatched ports are not inferred",
+        "qualification": ("Direct hierarchical port matches plus exact parent-net aliases "
+                          "from Slang elaborated connections; no fuzzy name matching"),
     }
