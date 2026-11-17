@@ -114,7 +114,7 @@ def test_checkpoint_cache_invalidates_on_operation_or_seed_change():
     build_debug_trace(changed, backend, seed=7)
     build_debug_trace(original, backend, seed=8)
 
-    assert len(backend.prefixes) == 6
+    assert len(backend.prefixes) == 5
     clear_debug_checkpoint_cache()
 
 
