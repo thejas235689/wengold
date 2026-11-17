@@ -135,7 +135,7 @@ def build_rtl_hierarchy(netlist: dict[str, Any], *, top: str = "",
 
 
 def elaborate_with_yosys(project_root: str | Path, sources: list[str | Path], *,
-                         top: str, yosys: str = "yosys", frontend: str = "slang",
+                         top: str, yosys: str = "yosys", frontend: str = "yosys",
                          slang_plugin: str = "slang", sv_standard: str = "1800-2017",
                          include_dirs: list[str | Path] | None = None,
                          defines: list[str] | None = None,
