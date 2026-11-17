@@ -21,7 +21,7 @@ AXI4_REQUIRED = (
 )
 
 AXI4_OPTIONAL = (
-    "ARESETn", "AWBURST", "AWLOCK", "AWSIZE", "AWCACHE", "AWPROT",
+    "ACLK", "ARESETn", "AWBURST", "AWLOCK", "AWSIZE", "AWCACHE", "AWPROT",
     "AWQOS", "AWREGION", "AWUSER", "WSTRB", "WUSER", "BUSER",
     "ARBURST", "ARLOCK", "ARSIZE", "ARCACHE", "ARPROT", "ARQOS",
     "ARREGION", "ARUSER", "RUSER",
@@ -174,7 +174,7 @@ def decode_axi4(wave: Mapping[str, Any], *,
 
     names = _index_signals(wave)
     resolved = discover_axi4_signal_map(wave, prefix, signal_map)
-    clk_name = clock or wave.get("clock") or resolved.get("ACLK")
+    clk_name = clock or resolved.get("ACLK") or wave.get("clock")
     if not clk_name or clk_name not in names:
         raise ValueError(
             "AXI4 clock is not identified; pass clock='<full signal name>' "
