@@ -148,8 +148,82 @@ def test_advanced_wave_debug_separates_rtl_and_testbench(native_window):
     assert not debug.aiFindings.toPlainText()
     for name in ("waveDutScopes", "waveTbScopes", "waveHandshakeWindow",
                  "waveAnalyze", "waveRtlSignals", "waveTbSignals",
-                 "waveRootCauseCandidates", "waveEvidenceDetail", "waveExplainAi"):
+                 "waveRootCauseCandidates", "waveEvidenceDetail", "waveExplainAi",
+                 "waveAxi4Prefix", "waveAxi4Clock", "waveAxi4StallThreshold",
+                 "waveDecodeAxi4", "waveAxi4Summary", "waveAxi4Transactions"):
         assert debug.findChild(QtWidgets.QWidget, name)
+
+
+def test_advanced_wave_debug_decodes_axi4_and_exposes_transaction_lanes(native_window):
+    from PyQt6 import QtWidgets
+
+    root, app, window = native_window
+    (root / "waves").mkdir(exist_ok=True)
+    required = (
+        "AWVALID", "AWREADY", "AWADDR", "AWID", "AWLEN",
+        "WVALID", "WREADY", "WDATA", "WLAST",
+        "BVALID", "BREADY", "BID", "BRESP",
+        "ARVALID", "ARREADY", "ARADDR", "ARID", "ARLEN",
+        "RVALID", "RREADY", "RID", "RDATA", "RLAST", "RRESP",
+        "ARESETn", "AWBURST", "ARBURST",
+    )
+    symbols = {name: chr(33 + index) for index, name in enumerate(required)}
+    widths = {name: 64 if name in {"AWADDR", "ARADDR", "WDATA", "RDATA"} else 8
+              for name in required}
+    declarations = ["$timescale 1ns $end", "$scope module tb $end",
+                    "$scope module dut $end",
+                    "$var wire 1 ! aclk $end", "$scope module axi $end"]
+    for name in required:
+        declarations.append(
+            f"$var wire {widths[name]} {symbols[name]} {name.lower()} $end")
+    declarations.extend(["$upscope $end", "$upscope $end", "$upscope $end",
+                         "$enddefinitions $end"])
+    events = {
+        0: {"AWVALID": 1, "AWREADY": 1, "AWID": 3,
+            "AWADDR": 0x1000, "AWLEN": 0, "AWBURST": 1},
+        1: {"WVALID": 1, "WREADY": 1, "WDATA": 0x55, "WLAST": 1},
+        2: {"BVALID": 1, "BREADY": 1, "BID": 3, "BRESP": 0},
+    }
+    defaults = {name: 0 for name in required}
+    defaults["ARESETn"] = 1
+    lines = list(declarations)
+    for cycle in range(3):
+        values = dict(defaults)
+        values.update(events.get(cycle, {}))
+        low_time = cycle * 10
+        lines.append(f"#{low_time}")
+        lines.append("0!")
+        for name in required:
+            value = values[name]
+            if widths[name] == 1:
+                lines.append(f"{value}{symbols[name]}")
+            else:
+                lines.append(f"b{value:b} {symbols[name]}")
+        lines.append(f"#{low_time + 5}")
+        lines.append("1!")
+        for name in required:
+            value = values[name]
+            if widths[name] == 1:
+                lines.append(f"{value}{symbols[name]}")
+            else:
+                lines.append(f"b{value:b} {symbols[name]}")
+    (root / "waves" / "axi4.vcd").write_text("\n".join(lines) + "\n")
+
+    tabs = window.workspace
+    tabs.refreshEvidence()
+    tabs.findChild(QtWidgets.QComboBox, "waveFilePicker").setCurrentText("waves/axi4.vcd")
+    next(b for b in tabs.findChildren(QtWidgets.QPushButton)
+         if b.text() == "Load VCD").click()
+    debug = tabs.waveDebug
+    assert debug.axiDecodeButton.isEnabled()
+    assert debug.axiPrefix.text() == "tb.dut.axi"
+    debug.axiDecodeButton.click()
+    assert debug.axiTransactions.rowCount() == 1
+    assert debug.axi4DecodeResult["transactions"][0]["transaction_id"] == "3"
+    assert debug.axi4DecodeResult["transactions"][0]["beats"] == 1
+    assert "1 completed transaction" in debug.axiTrafficSummary.text()
+    assert any(f["rule"] == "axi4_aw_backpressure" for f in
+               debug.axi4DecodeResult["findings"]) is False
 
 
 def test_native_project_open_and_auto_discovery(native_window, tmp_path, monkeypatch):
