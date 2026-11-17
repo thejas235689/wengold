@@ -15,7 +15,7 @@ from .otel_telemetry import (build_otlp_bundle, write_otlp_bundle,
 
 
 def make_wave_debug(QtCore, QtGui, QtWidgets, project_root, on_crossprobe=None,
-                    on_select_time=None):
+                    on_select_time=None, on_source_probe=None):
     page = QtWidgets.QWidget()
     page.setObjectName("advancedWaveDebug")
     layout = QtWidgets.QVBoxLayout(page)
@@ -128,9 +128,10 @@ def make_wave_debug(QtCore, QtGui, QtWidgets, project_root, on_crossprobe=None,
     schematic_scene.setSceneRect(0, 0, 760, 190)
 
     def schematic_node(x, y, width, height, title, detail, fill):
-        rect = schematic_scene.addRoundedRect(
-            x, y, width, height, 9, 9,
-            QtGui.QPen(QtGui.QColor("#38bdf8"), 2),
+        rounded = QtGui.QPainterPath()
+        rounded.addRoundedRect(QtCore.QRectF(x, y, width, height), 9, 9)
+        rect = schematic_scene.addPath(
+            rounded, QtGui.QPen(QtGui.QColor("#38bdf8"), 2),
             QtGui.QBrush(QtGui.QColor(fill)))
         rect.setToolTip(title + "\n" + detail)
         text_item = schematic_scene.addText(title + "\n" + detail)
@@ -176,6 +177,200 @@ def make_wave_debug(QtCore, QtGui, QtWidgets, project_root, on_crossprobe=None,
 
     update_schematic()
     layout.addWidget(schematic_group)
+
+    # RTL-derived hierarchy view. The graph is generated from Yosys JSON and
+    # uses actual elaborated instance port connections, not guessed signal names.
+    hierarchy_group = QtWidgets.QGroupBox("RTL Hierarchy — Yosys elaboration")
+    hierarchy_group.setObjectName("waveRtlHierarchyGroup")
+    hierarchy_layout = QtWidgets.QVBoxLayout(hierarchy_group)
+    hierarchy_controls = QtWidgets.QHBoxLayout()
+    hierarchy_top = QtWidgets.QLineEdit()
+    hierarchy_top.setObjectName("waveHierarchyTop")
+    hierarchy_top.setPlaceholderText("Top module name (required)")
+    hierarchy_yosys = QtWidgets.QLineEdit("yosys")
+    hierarchy_yosys.setObjectName("waveHierarchyYosys")
+    hierarchy_yosys.setMaximumWidth(150)
+    hierarchy_wave_prefix = QtWidgets.QLineEdit()
+    hierarchy_wave_prefix.setObjectName("waveHierarchyWavePrefix")
+    hierarchy_wave_prefix.setPlaceholderText("VCD root prefix, e.g. tb.dut (optional)")
+    hierarchy_build = QtWidgets.QPushButton("Elaborate RTL hierarchy")
+    hierarchy_build.setObjectName("waveBuildRtlHierarchy")
+    hierarchy_controls.addWidget(QtWidgets.QLabel("Top"))
+    hierarchy_controls.addWidget(hierarchy_top, 2)
+    hierarchy_controls.addWidget(QtWidgets.QLabel("Yosys"))
+    hierarchy_controls.addWidget(hierarchy_yosys)
+    hierarchy_controls.addWidget(hierarchy_wave_prefix, 2)
+    hierarchy_controls.addWidget(hierarchy_build)
+    hierarchy_layout.addLayout(hierarchy_controls)
+    hierarchy_status = QtWidgets.QLabel(
+        "Select a top module and elaborate the project's .sv/.v sources. "
+        "Yosys must be installed.")
+    hierarchy_status.setObjectName("waveHierarchyStatus")
+    hierarchy_status.setWordWrap(True)
+    hierarchy_layout.addWidget(hierarchy_status)
+    hierarchy_split = QtWidgets.QSplitter(QtCore.Qt.Orientation.Horizontal)
+    hierarchy_tree = QtWidgets.QTreeWidget()
+    hierarchy_tree.setObjectName("waveHierarchyTree")
+    hierarchy_tree.setHeaderLabels(["Instance / port", "Direction / width"])
+    hierarchy_detail = QtWidgets.QPlainTextEdit()
+    hierarchy_detail.setObjectName("waveHierarchyDetail")
+    hierarchy_detail.setReadOnly(True)
+    hierarchy_detail.setMaximumHeight(150)
+    hierarchy_split.addWidget(hierarchy_tree)
+    hierarchy_split.addWidget(hierarchy_detail)
+    hierarchy_layout.addWidget(hierarchy_split)
+    hierarchy_scene = QtWidgets.QGraphicsScene(page)
+    hierarchy_canvas = QtWidgets.QGraphicsView(hierarchy_scene)
+    hierarchy_canvas.setObjectName("waveHierarchyCanvas")
+    hierarchy_canvas.setMinimumHeight(230)
+    hierarchy_canvas.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing)
+    hierarchy_canvas.setDragMode(QtWidgets.QGraphicsView.DragMode.ScrollHandDrag)
+    hierarchy_layout.addWidget(hierarchy_canvas)
+    hierarchy_state = {"graph": None, "nodes": {}}
+
+    def render_rtl_hierarchy(graph):
+        hierarchy_scene.clear()
+        nodes = graph.get("nodes", [])
+        edges = graph.get("edges", [])
+        if not nodes:
+            hierarchy_scene.addText("No RTL module instances were found.")
+            return
+        children = {}
+        for node in nodes:
+            parent = node["id"].rsplit(".", 1)[0] if "." in node["id"] else ""
+            children.setdefault(parent, []).append(node)
+        positions = {}
+        depth_groups = {}
+        for node in nodes:
+            depth = node["id"].count(".")
+            depth_groups.setdefault(depth, []).append(node)
+        for depth, group in sorted(depth_groups.items()):
+            for row, node in enumerate(group):
+                positions[node["id"]] = (24 + depth * 250, 36 + row * 100)
+        for edge in edges:
+            src_path = edge["from"].rsplit(".", 1)[0]
+            dst_path = edge["instance"]
+            a, b = positions.get(src_path), positions.get(dst_path)
+            if a and b:
+                x1, y1 = a[0] + 205, a[1] + 32
+                x2, y2 = b[0], b[1] + 32
+                path = QtGui.QPainterPath(QtCore.QPointF(x1, y1))
+                path.lineTo((x1 + x2) / 2, y1)
+                path.lineTo((x1 + x2) / 2, y2)
+                path.lineTo(x2, y2)
+                hierarchy_scene.addPath(path, QtGui.QPen(QtGui.QColor("#8A9AA8"), 1.2))
+        for node in nodes:
+            x, y = positions[node["id"]]
+            rounded = QtGui.QPainterPath()
+            rounded.addRoundedRect(QtCore.QRectF(x, y, 205, 64), 8, 8)
+            rect = hierarchy_scene.addPath(
+                rounded, QtGui.QPen(QtGui.QColor("#B09C58"), 1.5),
+                QtGui.QBrush(QtGui.QColor("#FFF0AD")))
+            rect.setToolTip(node["id"] + "\\n" + node["module"])
+            title = hierarchy_scene.addText(node["module"])
+            title.setDefaultTextColor(QtGui.QColor("#46380D"))
+            title.setPos(x + 8, y + 5)
+            inst = hierarchy_scene.addText(node["id"])
+            inst.setDefaultTextColor(QtGui.QColor("#695820"))
+            inst.setPos(x + 8, y + 31)
+        caption = hierarchy_scene.addText(
+            f"Yosys elaborated hierarchy · {graph['instance_count']} instances · "
+            f"{graph['connection_count']} port-bit connections · not physical layout")
+        caption.setDefaultTextColor(QtGui.QColor("#4A6370"))
+        caption.setPos(24, 5)
+        hierarchy_scene.setSceneRect(hierarchy_scene.itemsBoundingRect().adjusted(-15, -15, 30, 30))
+        hierarchy_canvas.fitInView(hierarchy_scene.sceneRect(),
+                                   QtCore.Qt.AspectRatioMode.KeepAspectRatio)
+
+    def build_rtl_hierarchy():
+        from pathlib import Path
+        from .rtl_hierarchy import elaborate_with_yosys
+        root = Path(project_root).resolve()
+        sources = sorted(
+            path for path in root.rglob("*")
+            if path.is_file() and path.suffix.lower() in {".sv", ".v"}
+            and not any(part in {".git", ".venv", "venv", "build", "dist", "__pycache__"}
+                        for part in path.parts)
+        )
+        if not hierarchy_top.text().strip():
+            hierarchy_status.setText("Enter the exact top module name before elaboration.")
+            return
+        hierarchy_build.setEnabled(False)
+        hierarchy_status.setText(f"Running Yosys elaboration on {len(sources)} source files…")
+        try:
+            graph = elaborate_with_yosys(
+                root, sources, top=hierarchy_top.text().strip(),
+                yosys=hierarchy_yosys.text().strip() or "yosys")
+            hierarchy_state["graph"] = graph
+            hierarchy_state["nodes"] = {node["id"]: node for node in graph["nodes"]}
+            hierarchy_tree.clear()
+            items = {}
+            for node in graph["nodes"]:
+                parent_path = node["id"].rsplit(".", 1)[0] if "." in node["id"] else ""
+                parent_item = items.get(parent_path)
+                item = QtWidgets.QTreeWidgetItem(
+                    [node["id"], node["module"]])
+                item.setData(0, QtCore.Qt.ItemDataRole.UserRole, node["id"])
+                if parent_item is not None:
+                    parent_item.addChild(item)
+                else:
+                    hierarchy_tree.addTopLevelItem(item)
+                items[node["id"]] = item
+                for port in node.get("ports", []):
+                    port_item = QtWidgets.QTreeWidgetItem(
+                        [port["name"], f"{port['direction']} · {port['width']} bit(s)"])
+                    port_item.setData(0, QtCore.Qt.ItemDataRole.UserRole,
+                                      node["id"] + "." + port["name"])
+                    port_item.setData(1, QtCore.Qt.ItemDataRole.UserRole, port)
+                    item.addChild(port_item)
+            hierarchy_tree.expandToDepth(1)
+            render_rtl_hierarchy(graph)
+            note = " · truncated at safety limit" if graph.get("truncated") else ""
+            hierarchy_status.setText(
+                f"Yosys hierarchy ready: {graph['instance_count']} instances, "
+                f"{graph['connection_count']} actual port-bit connections{note}. "
+                "Select a port to cross-probe the waveform and RTL.")
+        except Exception as exc:
+            hierarchy_status.setText("RTL hierarchy elaboration failed: " + str(exc))
+        finally:
+            hierarchy_build.setEnabled(True)
+
+    def select_hierarchy_item(item, _column):
+        signal_path = item.data(0, QtCore.Qt.ItemDataRole.UserRole)
+        port = item.data(1, QtCore.Qt.ItemDataRole.UserRole)
+        node_path = signal_path.rsplit(".", 1)[0] if port else signal_path
+        node = hierarchy_state["nodes"].get(node_path, {})
+        source = node.get("source") or (port or {}).get("source")
+        hierarchy_detail.setPlainText(json.dumps({
+            "selected": signal_path,
+            "port": port,
+            "instance": node,
+            "source_location": source,
+            "cross_probe_note": (
+                "The full hierarchical port path is sent to the waveform/source cross-probe. "
+                "A source line is shown only when Yosys emitted a src attribute.")
+        }, indent=2))
+        wave_prefix = hierarchy_wave_prefix.text().strip().strip(".")
+        if wave_prefix:
+            signal_path = wave_prefix + "." + signal_path
+        if port and on_crossprobe:
+            on_crossprobe(signal_path)
+        elif node.get("ports") and on_crossprobe:
+            on_crossprobe(wave_prefix + "." + node_path + "." +
+                          node["ports"][0]["name"] if wave_prefix else
+                          node_path + "." + node["ports"][0]["name"])
+        if source and source.get("file"):
+            hierarchy_status.setText(
+                f"Source: {source['file']}:{source['line']}:{source.get('column', 1)} · "
+                "select a port to cross-probe its full hierarchical signal path.")
+            if on_source_probe:
+                on_source_probe(source)
+
+    hierarchy_build.clicked.connect(build_rtl_hierarchy)
+    hierarchy_tree.itemClicked.connect(select_hierarchy_item)
+    hierarchy_layout.addWidget(QtWidgets.QLabel(
+        "Port cross-probe uses elaborated instance paths; source locations depend on Yosys src metadata."))
+    layout.addWidget(hierarchy_group)
 
     def browse_vcd(field, caption):
         filename, _ = QtWidgets.QFileDialog.getOpenFileName(

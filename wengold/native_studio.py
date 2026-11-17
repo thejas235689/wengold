@@ -242,6 +242,32 @@ def make_studio_tabs(state, QtCore, QtGui, QtWidgets, parent=None):
         # Preserve waveform viewer ownership and its project-constrained RTL probe.
         probe_selected_signal(signal_name)
 
+    def open_rtl_source_location(source):
+        if not source or not source.get("file"):
+            return
+        from pathlib import Path
+        raw_path = Path(source["file"])
+        candidate = raw_path if raw_path.is_absolute() else (root / raw_path)
+        try:
+            rel = candidate.resolve().relative_to(root.resolve()).as_posix()
+        except ValueError:
+            alert("Yosys source location is outside the active project root: " + str(raw_path), True)
+            return
+        try:
+            load_editor(rel)
+            cursor = editor.textCursor()
+            cursor.movePosition(QtGui.QTextCursor.MoveOperation.Start)
+            cursor.movePosition(QtGui.QTextCursor.MoveOperation.Down,
+                                QtGui.QTextCursor.MoveMode.MoveAnchor,
+                                max(0, int(source.get("line", 1)) - 1))
+            editor.setTextCursor(cursor)
+            editor.centerCursor()
+            tabs.setCurrentWidget(edit_page)
+            edit_detail.setText(
+                f"Yosys elaborated source location: {rel}:{source.get('line', 1)}")
+        except Exception as exc:
+            alert("Could not open Yosys source location: " + str(exc), True)
+
     def focus_wave_sample(index):
         if not isinstance(index, int) or index < 0:
             return
@@ -250,7 +276,8 @@ def make_studio_tabs(state, QtCore, QtGui, QtWidgets, parent=None):
         tabs.setCurrentWidget(wave_page)
 
     wave_debug = make_wave_debug(QtCore, QtGui, QtWidgets, root,
-                                 crossprobe_debug_signal, focus_wave_sample)
+                                 crossprobe_debug_signal, focus_wave_sample,
+                                 open_rtl_source_location)
     tabs.addTab(wave_debug, "Wave Debug")
     tabs.waveDebug = wave_debug
 
