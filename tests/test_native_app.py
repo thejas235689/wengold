@@ -210,3 +210,87 @@ def test_menu_start_prompts_for_project_instead_of_indexing_home(monkeypatch, tm
     assert native.main(".") == 0
     # Cancelling the dialog must not scan a huge home directory.
     assert selected.exists()
+
+
+def test_workspace_sidebar_tracks_overview_actions_and_console(project):
+    from PyQt6 import QtCore, QtWidgets
+    app, win = make_window(project)
+    win.show()
+    app.processEvents()
+    rail = win.workspaceNavigation
+    assert rail.currentItem().text() == "Overview"
+    assert win.workspace.tabBar().isHidden()
+    assert win.metricValues["project_files"].text() == "1"
+
+    rail.setCurrentItem(win.navigationItems["Formal"])
+    assert win.workspaceTitle.text() == "Formal"
+    assert win.workspace.tabText(win.workspace.currentIndex()) == "Formal"
+
+    win._focus_file_filter()
+    assert rail.currentItem().text() == "Overview"
+    assert win.fileFilter.hasFocus()
+    win.fileFilter.setText("does-not-exist")
+    assert win.fileFilterEmpty.isVisible()
+    win.fileFilter.clear()
+    assert not win.fileFilterEmpty.isVisible()
+
+    win.findChild(QtWidgets.QPushButton, "overviewShortcutWaveforms").click()
+    assert rail.currentItem().text() == "Waveforms"
+    assert rail.currentItem().data(QtCore.Qt.ItemDataRole.UserRole) == "Waveforms"
+
+    console = win.findChild(QtWidgets.QPushButton, "toggleConsoleButton")
+    assert console.isChecked()
+    console.click()
+    assert not win.ciwDock.isVisible()
+    win.ciwFocus()
+    assert win.ciwDock.isVisible()
+    assert console.isChecked()
+    win.close()
+
+
+def test_workspace_sidebar_rebinds_when_opening_project(project, monkeypatch, tmp_path):
+    from PyQt6 import QtWidgets
+    app, win = make_window(project)
+    win.show()
+    app.processEvents()
+    win._go_workspace("Formal")
+    new_root = tmp_path / "second-project"
+    new_root.mkdir()
+    (new_root / "other.sv").write_text("module other; endmodule\n")
+    (new_root / "second.sv").write_text("module second; endmodule\n")
+    monkeypatch.setattr(QtWidgets.QFileDialog, "getExistingDirectory",
+                        lambda *_args, **_kwargs: str(new_root))
+    win._open_project()
+    app.processEvents()
+    assert win.projectNameLabel.text() == "second-project"
+    assert win.metricValues["project_files"].text() == "2"
+    assert win.workspaceTitle.text() == "Formal"
+    assert win.workspaceNavigation.currentItem().text() == "Formal"
+
+    win.workspaceNavigation.setCurrentItem(win.navigationItems["Overview"])
+    assert win.tree.isVisible()
+    win._select_file("other.sv")
+    assert "module other" in win.detail.toPlainText()
+    assert [label for label in win.findChildren(QtWidgets.QLabel, "studioStatus")
+            if label.isVisible()] == [win.workspace.statusLabel]
+    win.close()
+
+
+
+def test_compact_window_keeps_dense_workspaces_scrollable(project):
+    from PyQt6 import QtWidgets
+    app, win = make_window(project)
+    win.resize(1024, 720)
+    win.show()
+    app.processEvents()
+    assert win.width() <= 1024
+    assert win.height() <= 720
+    win._go_workspace("Local AI")
+    app.processEvents()
+    assert win.width() <= 1024
+    assert isinstance(win.workspace.currentWidget(), QtWidgets.QScrollArea)
+    assert win.workspace.currentWidget().widget() is win.workspace.aiPage
+    assert win.workspace.currentWidget().horizontalScrollBar().maximum() > 0
+    sidebar = win.findChild(QtWidgets.QWidget, "workspaceRail")
+    assert sidebar.isVisible()
+    win.close()

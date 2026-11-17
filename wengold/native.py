@@ -19,81 +19,13 @@ Qt renders offscreen, so the whole window is built and screenshotted in CI:
     QT_QPA_PLATFORM=offscreen python -m wengold.native --screenshot out.png
 
 That is how this was verified. It is not the same as a human clicking it, and the
-tests are structural — widget tree, contents, colours — not behavioural.
+tests also exercise navigation, project switching and workspace interactions.
 """
 from __future__ import annotations
 
 from pathlib import Path
 
-# The palette the app was asked for: white ground, crimson accent, near-black text.
-# Red is reserved for INVALIDATED, so a red pixel always means the same thing.
-GROUND = "#FFFFFF"
-PANEL = "#FAFAFA"
-LINE = "#E4E4E7"
-TEXT = "#18181B"
-MUTED = "#71717A"
-RED = "#C81E1E"
-
-STYLESHEET = f"""
-QMainWindow, QWidget {{ background: {GROUND}; color: {TEXT}; }}
-QMenuBar {{ background: {PANEL}; border-bottom: 1px solid {LINE}; }}
-QMenuBar::item:selected {{ background: {LINE}; }}
-QMenu {{ background: {GROUND}; border: 1px solid {LINE}; }}
-QFrame#strip {{ background: {PANEL}; border-bottom: 1px solid {LINE}; }}
-QLabel#project {{ font-size: 13px; font-weight: 600; }}
-QLabel#revision {{ color: {MUTED}; font-size: 11px; }}
-QLabel#sectionTitle {{ color: {MUTED}; font-size: 10px; font-weight: 600;
-                       letter-spacing: 1px; }}
-QTreeWidget, QTableWidget, QTextEdit, QLineEdit {{
-    background: {GROUND}; border: 1px solid {LINE}; selection-background-color: {LINE};
-    selection-color: {TEXT}; }}
-QHeaderView::section {{ background: {PANEL}; color: {MUTED}; border: none;
-                        border-bottom: 1px solid {LINE}; padding: 4px 6px;
-                        font-size: 10px; font-weight: 600; }}
-QTreeWidget::item, QTableWidget::item {{ padding: 3px 4px; }}
-QLineEdit {{ border: 1px solid {LINE}; padding: 6px 8px; font-family: monospace; }}
-QLineEdit:focus {{ border: 1px solid {TEXT}; }}
-QTextEdit#transcript {{ font-family: monospace; font-size: 12px; }}
-QStatusBar {{ background: {PANEL}; border-top: 1px solid {LINE}; color: {MUTED}; }}
-QSplitter::handle {{ background: {LINE}; }}
-"""
-
-
-STYLESHEET = """/* Silicon Studio native Qt yellow and white UI */
-QMainWindow, QWidget { background:#FFFFFF; color:#292308; }
-QMenuBar { background:#FFDF4E; border-bottom:1px solid #DDBF40; }
-QMenuBar::item:selected { background:#FFF2AD; }
-QMenu { background:#FFFFFF; border:1px solid #E6D59C; }
-QFrame#strip { background:#FFE76B; border-bottom:1px solid #D8B832; }
-QLabel#project { font-size:16px; font-weight:750; color:#312700; }
-QLabel#revision { color:#66572D; font-size:11px; }
-QLabel#sectionTitle { color:#776210; font-size:11px; font-weight:650; }
-QTabWidget::pane { border:1px solid #E8DCAC; background:#FFFFFF; }
-QTabBar::tab { background:#FFF9E5; color:#655421; padding:9px 15px; border:1px solid #E5D9B1; border-bottom:0; }
-QTabBar::tab:selected { background:#FFDF4E; color:#342900; font-weight:bold; }
-QTreeWidget, QTableWidget, QTextEdit, QPlainTextEdit, QLineEdit, QComboBox {
- background:#FFFFFF; color:#28261F; border:1px solid #E6D9B1; selection-background-color:#FFE58A; selection-color:#292308; }
-QHeaderView::section { background:#FFF5C8; color:#655117; border:0; padding:6px; border-bottom:1px solid #E5D49C; }
-QPushButton { background:#FFDF4E; color:#322700; border:1px solid #D2B02C; border-radius:5px; padding:7px 10px; font-weight:600; }
-QPushButton:hover { background:#FFE979; }
-QPushButton:disabled { background:#F1EBDD; color:#8A8370; border:1px solid #D6CFBB; }
-QLineEdit:focus, QComboBox:focus, QPlainTextEdit:focus {
- border:2px solid #BE9416; selection-background-color:#FFE488; }
-QTabBar::tab:hover { background:#FFEBA1; }
-QTabBar::tab:disabled { color:#9A927A; }
-QToolTip { background:#FFFCEB; color:#332A10; border:1px solid #BFA13C;
- padding:5px; }
-QStatusBar { background:#FFF7DD; color:#68552C; }
-QSplitter::handle { background:#E8DCAD; }
-QDockWidget { background:#FFFFFF; color:#443914; font-weight:600; }
-QDockWidget::title { background:#FFE88D; color:#413400; padding:8px 12px;
-                     border-top:2px solid #D4AD27; }
-QTextEdit#ciwTranscript { background:#FFFEF8; border:0; color:#2C2B23;
-                         font-family:monospace; selection-background-color:#FFEB8F; }
-QLineEdit#ciwCommandInput { background:#FFFFFF; border:1px solid #D2BA66;
-                           padding:7px; font-family:monospace; color:#27251D; }
-QLabel#ciwPromptLabel { color:#806200; font-weight:800; font-family:monospace; }
-"""
+from .native_shell import DESCRIPTIONS, MUTED, STYLESHEET, make_navigation, sync_navigation
 
 
 class NativeUnavailable(RuntimeError):
@@ -132,31 +64,36 @@ def build_window(state: dict):
             super().__init__()
             self.state = state
             self.setWindowTitle(f"WENGOLD — {state['path']}")
-            self.resize(1180, 760)
+            self.resize(1240, 820)
             self.setStyleSheet(STYLESHEET)
 
-            # ---- header strip: the revision line, not a logo -----------------
-            # The mark rendered as a black blob at 15px in the browser version, so
-            # the strip carries information instead.
+            # Project context remains visible while workspaces change.
             strip = QtWidgets.QFrame()
             strip.setObjectName("strip")
-            strip.setFixedHeight(52)
+            strip.setMinimumHeight(59)
             lay = QtWidgets.QHBoxLayout(strip)
             lay.setContentsMargins(14, 8, 14, 8)
             left = QtWidgets.QVBoxLayout()
             left.setSpacing(2)
             project = QtWidgets.QLabel(Path(state["path"]).name or state["path"])
             project.setObjectName("project")
-            revision = QtWidgets.QLabel(self._revision())
+            project.setTextFormat(QtCore.Qt.TextFormat.PlainText)
+            project.setMinimumWidth(0)
+            project.setSizePolicy(QtWidgets.QSizePolicy.Policy.Ignored,
+                                  QtWidgets.QSizePolicy.Policy.Preferred)
+            revision = QtWidgets.QLabel()
             revision.setObjectName("revision")
+            revision.setTextFormat(QtCore.Qt.TextFormat.PlainText)
+            revision.setSizePolicy(QtWidgets.QSizePolicy.Policy.Ignored,
+                                   QtWidgets.QSizePolicy.Policy.Preferred)
             left.addWidget(project)
             left.addWidget(revision)
             self.projectNameLabel = project
             self.projectRevisionLabel = revision
-            lay.addLayout(left)
-            lay.addStretch(1)
+            lay.addLayout(left, 1)
             open_btn = QtWidgets.QPushButton("Open Project")
             open_btn.setObjectName("openProjectButton")
+            open_btn.setProperty("primary", True)
             open_btn.setToolTip("Open an existing RTL, verification and automation project (Ctrl+O)")
             open_btn.clicked.connect(self._open_project)
             lay.addWidget(open_btn)
@@ -164,23 +101,32 @@ def build_window(state: dict):
             reload_btn.setObjectName("rescanFilesButton")
             reload_btn.clicked.connect(self._reload)
             lay.addWidget(reload_btn)
-            self.coverage = QtWidgets.QLabel(
-                f"{state['design_units']}/{state['files']} files are design units"
-                + (f" · model {state['model']}"
-                   if state.get("model") and state["model"] != "off" else ""))
-            self.coverage.setObjectName("revision")
-            lay.addWidget(self.coverage)
+            console = QtWidgets.QPushButton("Console")
+            console.setObjectName("toggleConsoleButton")
+            console.setCheckable(True)
+            console.setToolTip("Show or hide the Wengold command interpreter")
+            lay.addWidget(console)
+            self.coverage = QtWidgets.QLabel()
+            self.coverage.setObjectName("metricHint")
 
             # ---- the three panes -------------------------------------------
             self.tree = QtWidgets.QTreeWidget()
-            self.tree.setHeaderLabels(["FILE"])
-            self.tree.setColumnWidth(0, 230)
+            self.tree.setHeaderHidden(True)
+            self.tree.setIndentation(13)
+            self.tree.setAccessibleName("Project file explorer")
             self.tree.itemSelectionChanged.connect(self._on_file)
             self.tree.itemDoubleClicked.connect(self._open_selected_source)
 
             self.table = QtWidgets.QTableWidget(0, 3)
-            self.table.setHorizontalHeaderLabels(["BLOCK", "OUT", "IN"])
-            self.table.horizontalHeader().setStretchLastSection(True)
+            self.table.setHorizontalHeaderLabels(["Block", "Deps", "Used by"])
+            self.table.setAccessibleName("Indexed design blocks")
+            self.table.setAlternatingRowColors(True)
+            self.table.verticalHeader().hide()
+            self.table.horizontalHeader().setSectionResizeMode(
+                0, QtWidgets.QHeaderView.ResizeMode.Stretch)
+            for col in (1, 2):
+                self.table.horizontalHeader().setSectionResizeMode(
+                    col, QtWidgets.QHeaderView.ResizeMode.ResizeToContents)
             self.table.setEditTriggers(
                 QtWidgets.QAbstractItemView.EditTrigger.NoEditTriggers)
             self.table.setSelectionBehavior(
@@ -189,11 +135,13 @@ def build_window(state: dict):
 
             self.detail = QtWidgets.QTextEdit()
             self.detail.setReadOnly(True)
+            self.detail.setAccessibleName("Project details and source preview")
 
             top = QtWidgets.QSplitter(QtCore.Qt.Orientation.Horizontal)
-            for w, title in ((self.tree, "FILES"), (self.table, "BLOCKS"),
-                             (self.detail, "DETAIL")):
-                box = QtWidgets.QWidget()
+            for w, title in ((self.tree, "Project files"), (self.table, "Design blocks"),
+                             (self.detail, "Inspector")):
+                box = QtWidgets.QFrame()
+                box.setProperty("card", True)
                 v = QtWidgets.QVBoxLayout(box)
                 v.setContentsMargins(8, 8, 8, 8)
                 v.setSpacing(6)
@@ -206,11 +154,20 @@ def build_window(state: dict):
                     self.fileFilter.setClearButtonEnabled(True)
                     self.fileFilter.setPlaceholderText("Filter RTL, UVM, specs, scripts…")
                     self.fileFilter.textChanged.connect(self._filter_files)
-                    self.fileFilter.setToolTip("Search discovered project files by path")
+                    self.fileFilter.setToolTip("Search discovered project files by path (Ctrl+Shift+F)")
+                    self.fileFilter.setAccessibleName("Filter project files")
                     v.addWidget(self.fileFilter)
+                    self.fileFilterEmpty = QtWidgets.QLabel("No matching project files.")
+                    self.fileFilterEmpty.setObjectName("metricHint")
+                    self.fileFilterEmpty.setWordWrap(True)
+                    v.addWidget(self.fileFilterEmpty)
                 v.addWidget(w)
                 top.addWidget(box)
-            top.setSizes([260, 420, 480])
+            top.setHandleWidth(7)
+            top.setChildrenCollapsible(False)
+            top.setSizes([250, 275, 445])
+            top.setStretchFactor(2, 1)
+            overview = self._overview_page(top)
 
             # ---- the CLI pane at the bottom --------------------------------
             self.transcript = QtWidgets.QTextEdit()
@@ -234,9 +191,8 @@ def build_window(state: dict):
             # Main engineering views stay above the persistent CIW dock.
             from .native_studio import make_studio_tabs
             self.workspace = make_studio_tabs(state, QtCore, QtGui, QtWidgets, self)
-            self.workspace.insertTab(0, top, "Overview")
-            self.workspace.setUsesScrollButtons(True)
-            self.workspace.setElideMode(QtCore.Qt.TextElideMode.ElideRight)
+            self._make_pages_scrollable(self.workspace)
+            self.workspace.insertTab(0, overview, "Overview")
             self.workspace.setCurrentIndex(0)
 
             central = QtWidgets.QWidget()
@@ -244,17 +200,44 @@ def build_window(state: dict):
             cv.setContentsMargins(0, 0, 0, 0)
             cv.setSpacing(0)
             cv.addWidget(strip)
-            cv.addWidget(self.workspace)
-            cv.addWidget(self.workspace.statusLabel)
+            body = QtWidgets.QWidget()
+            row = QtWidgets.QHBoxLayout(body)
+            row.setContentsMargins(0, 0, 0, 0)
+            row.setSpacing(0)
+            self.rail, self.workspaceNavigation = make_navigation(QtCore, QtWidgets)
+            self.workspaceNavigation.currentItemChanged.connect(self._select_workspace_item)
+            row.addWidget(self.rail)
+            content = QtWidgets.QWidget()
+            self.workspaceLayout = QtWidgets.QVBoxLayout(content)
+            self.workspaceLayout.setContentsMargins(0, 0, 0, 0)
+            self.workspaceLayout.setSpacing(0)
+
+            heading = QtWidgets.QFrame()
+            heading.setObjectName("workspaceHeading")
+            headline = QtWidgets.QVBoxLayout(heading)
+            headline.setContentsMargins(15, 8, 15, 8)
+            headline.setSpacing(2)
+            self.workspaceTitle = QtWidgets.QLabel()
+            self.workspaceTitle.setObjectName("workspaceTitle")
+            self.workspaceSubtitle = QtWidgets.QLabel()
+            self.workspaceSubtitle.setObjectName("workspaceSubtitle")
+            self.workspaceSubtitle.setWordWrap(True)
+            headline.addWidget(self.workspaceTitle)
+            headline.addWidget(self.workspaceSubtitle)
+            self.workspaceLayout.addWidget(heading)
+            self.workspaceLayout.addWidget(self.workspace, 1)
+            self.workspaceLayout.addWidget(self.workspace.statusLabel)
+            row.addWidget(content, 1)
+            cv.addWidget(body, 1)
             self.setCentralWidget(central)
+            self._bind_workspace()
 
             from .native_ciw import install_ciw
             install_ciw(self, bottom, QtCore, QtGui, QtWidgets)
-
+            self.ciwDock.visibilityChanged.connect(console.setChecked)
+            console.clicked.connect(self.ciwDock.setVisible)
             self._menus()
-            self.statusBar().showMessage(
-                f"{state['files']} files · {state['blocks']} blocks · "
-                f"{state['nodes']} nodes · {state['unresolved']} unresolved")
+            self._refresh_project_header()
             self._populate()
             self._watchSignature = self.state.get("project_inventory", {}).get("signature") if self.state.get("project_inventory") else None
             self.sourceWatch = QtCore.QTimer(self)
@@ -264,12 +247,98 @@ def build_window(state: dict):
             self._say("wengold " + _version() + " — type `help` for commands")
 
         # -- helpers -------------------------------------------------------
-        def _revision(self) -> str:
-            s = self.state
-            bits = [Path(s["path"]).name or s["path"],
-                    f"{s['blocks']} blocks", f"{s['nodes']} nodes",
-                    f"{s['edges']} edges", f"{s['unresolved']} unresolved"]
-            return " — ".join(bits)
+        def _overview_page(self, splitter):
+            page = QtWidgets.QWidget()
+            layout = QtWidgets.QVBoxLayout(page)
+            layout.setContentsMargins(12, 10, 12, 0)
+            layout.setSpacing(8)
+            cards = QtWidgets.QHBoxLayout()
+            cards.setSpacing(8)
+            self.metricValues = {}
+            for key, title, hint in (
+                    ("project_files", "Project files", "Discovered source and collateral"),
+                    ("blocks", "Design blocks", "RTL graph nodes"),
+                    ("unresolved", "Unresolved", "Graph items needing attention")):
+                card = QtWidgets.QFrame()
+                card.setProperty("card", True)
+                column = QtWidgets.QVBoxLayout(card)
+                column.setContentsMargins(10, 5, 10, 5)
+                column.setSpacing(1)
+                label = QtWidgets.QLabel(title)
+                label.setObjectName("sectionTitle")
+                value = QtWidgets.QLabel()
+                value.setObjectName("metricNumber")
+                value.setAccessibleName(title + " count")
+                value.setToolTip(hint)
+                column.addWidget(label)
+                column.addWidget(value)
+                cards.addWidget(card, 1)
+                self.metricValues[key] = value
+            layout.addLayout(cards)
+
+            access = QtWidgets.QHBoxLayout()
+            self.graphQuality = QtWidgets.QLabel()
+            self.graphQuality.setObjectName("graphQuality")
+            access.addWidget(self.graphQuality)
+            access.addStretch(1)
+            for name in ("DV Workflow", "Waveforms", "Jobs & Signoff"):
+                button = QtWidgets.QPushButton(name.replace("&", "&&"))
+                button.setObjectName("overviewShortcut" + name.split()[0])
+                button.clicked.connect(lambda _=False, title=name: self._go_workspace(title))
+                access.addWidget(button)
+            layout.addLayout(access)
+            layout.addWidget(splitter, 1)
+            return page
+
+        def _make_pages_scrollable(self, workspace):
+            # Dense tool forms must not impose their minimum size on all pages.
+            # Scroll only the page that doesn't fit on a smaller Linux display.
+            with QtCore.QSignalBlocker(workspace):
+                for index in range(workspace.count()):
+                    page = workspace.widget(index)
+                    title = workspace.tabText(index)
+                    workspace.removeTab(index)
+                    scroll = QtWidgets.QScrollArea()
+                    scroll.setWidgetResizable(True)
+                    scroll.setFrameShape(QtWidgets.QFrame.Shape.NoFrame)
+                    scroll.setWidget(page)
+                    workspace.insertTab(index, scroll, title)
+
+        def _bind_workspace(self):
+            self.workspace.tabBar().hide()
+            titles = [self.workspace.tabText(i) for i in range(self.workspace.count())]
+            with QtCore.QSignalBlocker(self.workspaceNavigation):
+                self.navigationItems = sync_navigation(
+                    self.workspaceNavigation, titles, QtCore, QtGui, QtWidgets)
+            self.workspace.currentChanged.connect(self._sync_workspace)
+            self._sync_workspace(self.workspace.currentIndex())
+
+        def _go_workspace(self, title):
+            for i in range(self.workspace.count()):
+                if self.workspace.tabText(i) == title:
+                    self.workspace.setCurrentIndex(i)
+                    return
+
+        def _select_workspace_item(self, current, _previous):
+            title = current.data(QtCore.Qt.ItemDataRole.UserRole) if current else None
+            if title:
+                self._go_workspace(title)
+
+        def _sync_workspace(self, index):
+            if index < 0:
+                return
+            title = self.workspace.tabText(index)
+            self.workspaceTitle.setText(title)
+            self.workspaceSubtitle.setText(DESCRIPTIONS.get(title, ""))
+            item = self.navigationItems.get(title)
+            if item is not None:
+                with QtCore.QSignalBlocker(self.workspaceNavigation):
+                    self.workspaceNavigation.setCurrentItem(item)
+
+        def _focus_file_filter(self):
+            self._go_workspace("Overview")
+            self.fileFilter.setFocus()
+            self.fileFilter.selectAll()
 
         def _menus(self):
             bar = self.menuBar()
@@ -301,21 +370,32 @@ def build_window(state: dict):
             focus_ciw.setShortcut("Ctrl+`")
             focus_ciw.triggered.connect(self.ciwFocus)
             view.addAction(focus_ciw)
+            rail = QtGui.QAction("Show Workspace Sidebar", self)
+            rail.setObjectName("toggleWorkspaceSidebarAction")
+            rail.setShortcut("Ctrl+B")
+            rail.setCheckable(True)
+            rail.setChecked(True)
+            rail.toggled.connect(self.rail.setVisible)
+            view.addAction(rail)
+            focus_files = QtGui.QAction("Find Project Files", self)
+            focus_files.setShortcut("Ctrl+Shift+F")
+            focus_files.triggered.connect(self._focus_file_filter)
+            view.addAction(focus_files)
             view.addSeparator()
             workspaces = view.addMenu("Go to Workspace")
             for idx in range(self.workspace.count()):
                 name = self.workspace.tabText(idx)
-                action = QtGui.QAction(name, self)
+                action = QtGui.QAction(name.replace("&", "&&"), self)
                 if idx < 9:
                     action.setShortcut(f"Ctrl+Alt+{idx + 1}")
                 action.triggered.connect(
-                    lambda _checked=False, i=idx: self.workspace.setCurrentIndex(i))
+                    lambda _checked=False, title=name: self._go_workspace(title))
                 workspaces.addAction(action)
             view.addSeparator()
             for name, focus in (("Files", self.tree), ("Blocks", self.table),
                                 ("CLI", self.input)):
                 act = QtGui.QAction(name, self)
-                act.triggered.connect(lambda _=False, w=focus: w.setFocus())
+                act.triggered.connect(lambda _=False, w=focus: self._focus_panel(w))
                 view.addAction(act)
 
             help_menu = bar.addMenu("&Help")
@@ -326,6 +406,13 @@ def build_window(state: dict):
             about = QtGui.QAction("&About", self)
             about.triggered.connect(self._about)
             help_menu.addAction(about)
+
+        def _focus_panel(self, widget):
+            if widget is self.input:
+                self.ciwFocus()
+            else:
+                self._go_workspace("Overview")
+                widget.setFocus()
 
         def _show_diagnostics(self):
             import json
@@ -352,17 +439,28 @@ def build_window(state: dict):
         def _filter_files(self, query):
             """Filter the inventory without destroying its path metadata."""
             needle = query.strip().casefold()
+            matches = 0
+            role = QtCore.Qt.ItemDataRole.UserRole
             for i in range(self.tree.topLevelItemCount()):
                 group = self.tree.topLevelItem(i)
+                if group.data(0, role):
+                    match = needle in group.text(0).casefold()
+                    group.setHidden(not match)
+                    matches += match
+                    continue
                 visible = 0
                 for j in range(group.childCount()):
                     child = group.child(j)
                     match = needle in child.text(0).casefold()
                     child.setHidden(not match)
-                    visible += bool(match)
+                    visible += match
                 group.setHidden(bool(needle) and visible == 0)
                 if needle and visible:
                     group.setExpanded(True)
+                matches += visible
+            self.fileFilterEmpty.setVisible(matches == 0)
+            self.fileFilterEmpty.setText(
+                "No matching project files." if needle else "No project files discovered.")
 
         def _open_selected_source(self, item, _column):
             """Double-click a source file to open it in the real editor."""
@@ -376,10 +474,7 @@ def build_window(state: dict):
             self.workspace.loadSource(rel)
             # Keep the viewer visible if a dirty-edit confirmation was refused.
             if self.workspace.editorFile() == rel:
-                for i in range(self.workspace.count()):
-                    if self.workspace.tabText(i) == "RTL Editor":
-                        self.workspace.setCurrentIndex(i)
-                        break
+                self._go_workspace("RTL Editor")
 
         def _populate(self):
             """Present design, verification, automation and filelists independently."""
@@ -392,7 +487,6 @@ def build_window(state: dict):
                 ("filelists", "Filelists / Build"),
                 ("specifications", "Specification / Requirements"),
             )
-            grouped = set()
             for key, title in categories:
                 paths = inventory.get(key, [])
                 group = QtWidgets.QTreeWidgetItem([f"{title} ({len(paths)})"])
@@ -401,8 +495,8 @@ def build_window(state: dict):
                 for rel in paths:
                     child = QtWidgets.QTreeWidgetItem([rel])
                     child.setData(0, QtCore.Qt.ItemDataRole.UserRole, rel)
+                    child.setToolTip(0, rel)
                     group.addChild(child)
-                    grouped.add(rel)
                 group.setExpanded(True)
             if not inventory:
                 for rel in self.state.get("file_paths", []):
@@ -431,9 +525,10 @@ def build_window(state: dict):
                 f"<h3 style='margin:0 0 8px'>{_esc(Path(s['path']).name)}</h3>"
                 f"<p style='color:{MUTED}'>{s['files']} files · {s['blocks']} blocks"
                 f" · {s['nodes']} nodes · {s['edges']} edges</p>"
-                f"<p>Design units <b>{s['design_units']}/{s['files']}</b> · "
-                f"complete <b>{s['complete']}</b> · "
-                f"unresolved <b>{s['unresolved']}</b></p>"
+                f"<p><b>{s['design_units']}/{s['files']}</b> HDL files contain design units. "
+                "Indexing status is not verification coverage.</p>"
+                "<p>Select a file to preview its source, or double-click it to edit. "
+                "Select a design block to see its dependencies.</p>"
                 + (f"<ul>{notes}</ul>" if notes else "")
             )
 
@@ -588,19 +683,25 @@ def build_window(state: dict):
                 return
             # Project-dependent workers and file paths must not be kept alive
             # after switching to another root. Recreate the workspace.
-            previous_index = self.workspace.currentIndex()
+            previous_page = self.workspaceTitle.text()
             old = self.workspace
             old.jobs.shutdown()
             from .native_studio import make_studio_tabs
             new = make_studio_tabs(selected, QtCore, QtGui, QtWidgets, self)
+            self._make_pages_scrollable(new)
             overview = old.widget(0)
-            old.removeTab(0)
+            # Block the old tab signal while moving the shared Overview page.
+            with QtCore.QSignalBlocker(old):
+                old.removeTab(0)
             new.insertTab(0, overview, "Overview")
-            new.setCurrentIndex(min(previous_index, new.count() - 1))
-            central_layout = self.centralWidget().layout()
-            central_layout.replaceWidget(old, new)
-            central_layout.replaceWidget(old.statusLabel, new.statusLabel)
+            self.workspaceLayout.replaceWidget(old, new)
+            self.workspaceLayout.replaceWidget(old.statusLabel, new.statusLabel)
+            old.hide()
+            old.statusLabel.hide()
+            old.statusLabel.setParent(old)
             self.workspace = new
+            self._bind_workspace()
+            self._go_workspace(previous_page)
             old.deleteLater()
             self.state = selected
             self._watchSignature = (selected.get("project_inventory") or {}).get("signature")
@@ -610,10 +711,23 @@ def build_window(state: dict):
 
         def _refresh_project_header(self):
             self.setWindowTitle(f"WENGOLD — {self.state['path']}")
-            self.projectNameLabel.setText(Path(self.state["path"]).name)
-            self.projectRevisionLabel.setText(self._revision())
+            path = Path(self.state["path"]).resolve()
+            self.projectNameLabel.setText(path.name or str(path))
+            self.projectNameLabel.setToolTip(str(path))
+            self.projectRevisionLabel.setText(str(path))
+            self.projectRevisionLabel.setToolTip(str(path))
             self.coverage.setText(
                 f"{self.state['design_units']}/{self.state['files']} files are design units")
+            self.metricValues["project_files"].setText(str(len(self.state.get("file_paths", []))))
+            for key in ("blocks", "unresolved"):
+                self.metricValues[key].setText(str(self.state[key]))
+            complete = self.state["complete"]
+            self.graphQuality.setText("Graph complete" if complete else "Graph incomplete")
+            self.graphQuality.setToolTip(
+                self.coverage.text() + ". Indexing status only, not verification coverage.")
+            self.graphQuality.setProperty("attention", not complete)
+            self.graphQuality.style().unpolish(self.graphQuality)
+            self.graphQuality.style().polish(self.graphQuality)
             self.statusBar().showMessage(
                 f"{self.state['files']} HDL files · "
                 f"{len(self.state.get('verification_paths', []))} verification · "

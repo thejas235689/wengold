@@ -10,11 +10,12 @@ import json
 from pathlib import Path
 
 from .ide_server import Refused, SOURCE_SUFFIXES, MAX_BODY
-from .wave import from_vcd
+from .wave import parse_vcd
 
 EDITOR_SUFFIXES = SOURCE_SUFFIXES | {".py", ".tcl", ".do", ".f", ".flist", ".pss", ".psf", ".yaml", ".yml", ".mk", ".sh", ".md", ".txt", ".rst", ".json"}
 
 MAX_VCD_BYTES = 8 * 1024 * 1024
+MAX_FST_BYTES = 8 * 1024 * 1024
 MAX_REPORT_BYTES = 2 * 1024 * 1024
 
 
@@ -61,7 +62,7 @@ def save_source(root: str | Path, rel: str, content: str, expected_sha256: str) 
 
 def list_evidence(root: str | Path) -> dict:
     base = Path(root).resolve()
-    vcd, formal = [], []
+    vcd, fst, formal = [], [], []
     # Search only conventional evidence directories; do not crawl huge checkout trees.
     dirs = [base / n for n in ("waveforms", "waves", "sim", "results", "formal-results", "reports")]
     for folder in dirs:
@@ -77,25 +78,37 @@ def list_evidence(root: str | Path) -> dict:
                 continue
             if path.suffix.lower() == ".vcd" and size <= MAX_VCD_BYTES:
                 vcd.append(rel)
+            elif path.suffix.lower() == ".fst" and size <= MAX_FST_BYTES:
+                fst.append(rel)
             elif path.suffix.lower() == ".json" and size <= MAX_REPORT_BYTES:
                 formal.append(rel)
-            if len(vcd) + len(formal) >= 200:
+            if len(vcd) + len(fst) + len(formal) >= 250:
                 break
-    return {"waveforms": vcd[:100], "formal_reports": formal[:100]}
+    return {"waveforms": vcd[:100], "fst_waveforms": fst[:100], "formal_reports": formal[:100]}
 
 
 def waveform(root: str | Path, rel: str) -> dict:
-    path = project_file(root, rel, {".vcd"})
-    if path.stat().st_size > MAX_VCD_BYTES:
-        raise Refused("VCD exceeds 8 MB viewer limit", 413)
-    result = from_vcd(path)
-    result["source"] = rel
-    # Cap payload size without inventing any samples. Full-resolution source remains on disk.
-    result["signals"] = result["signals"][:256]
-    for sig in result["signals"]:
-        sig["values"] = sig["values"][:1200]
-    result["times"] = result.get("times", [])[:1200]
-    result["cycles"] = min(result["cycles"], 1200)
+    path = project_file(root, rel, {".vcd", ".fst"})
+    kind = path.suffix.lower()[1:]
+    limit = MAX_FST_BYTES if kind == "fst" else MAX_VCD_BYTES
+    if path.stat().st_size > limit:
+        raise Refused(f"{kind.upper()} exceeds 8 MiB viewer limit", 413)
+    with path.open("rb") as stream:
+        raw = stream.read(limit + 1)
+    if len(raw) > limit:
+        raise Refused(f"{kind.upper()} exceeds 8 MiB viewer limit", 413)
+    payload = raw
+    if kind == "fst":
+        from tempfile import TemporaryDirectory
+        from .fst import to_vcd
+
+        # Decode the same immutable snapshot that is hashed for provenance.
+        with TemporaryDirectory(prefix="wengold-fst-") as work:
+            snapshot = Path(work) / "trace.fst"
+            snapshot.write_bytes(raw)
+            payload = to_vcd(snapshot, MAX_VCD_BYTES)
+    result = parse_vcd(payload.decode("utf-8", errors="replace"), limit=1200, signal_limit=256)
+    result.update(source=rel, source_format=kind, source_sha256=hashlib.sha256(raw).hexdigest())
     return result
 
 

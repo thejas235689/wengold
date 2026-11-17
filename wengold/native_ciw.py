@@ -6,14 +6,14 @@ through the same guarded desktop dispatch; no arbitrary OS commands are run.
 
 
 def install_ciw(window, widget, QtCore, QtGui, QtWidgets):
-    dock = QtWidgets.QDockWidget("Command Interpreter Window", window)
+    dock = QtWidgets.QDockWidget("Wengold Console", window)
     dock.setObjectName("commandInterpreterDock")
     dock.setAllowedAreas(QtCore.Qt.DockWidgetArea.BottomDockWidgetArea |
                          QtCore.Qt.DockWidgetArea.TopDockWidgetArea)
     dock.setFeatures(QtWidgets.QDockWidget.DockWidgetFeature.DockWidgetMovable |
                      QtWidgets.QDockWidget.DockWidgetFeature.DockWidgetFloatable)
     dock.setWidget(widget)
-    dock.setMinimumHeight(135)
+    dock.setMinimumHeight(115)
 
     transcript = window.transcript
     prompt = window.input
@@ -96,7 +96,7 @@ def install_ciw(window, widget, QtCore, QtGui, QtWidgets):
     layout.removeWidget(prompt)
     header = layout.itemAt(0).widget()
     if isinstance(header, QtWidgets.QLabel):
-        header.setText("COMMAND INTERPRETER WINDOW · WENGOLD COMMANDS")
+        header.hide()
 
     row = QtWidgets.QHBoxLayout()
     label = QtWidgets.QLabel("wengold>")
@@ -124,7 +124,7 @@ def install_ciw(window, widget, QtCore, QtGui, QtWidgets):
         transcript.toPlainText()))
 
     window.addDockWidget(QtCore.Qt.DockWidgetArea.BottomDockWidgetArea, dock)
-    window.resizeDocks([dock], [250], QtCore.Qt.Orientation.Vertical)
+    window.resizeDocks([dock], [145], QtCore.Qt.Orientation.Vertical)
     window.ciwDock = dock
     window.ciwFocus = lambda: (dock.show(), dock.raise_(), prompt.setFocus())
     return dock

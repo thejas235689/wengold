@@ -407,3 +407,205 @@ def test_native_sv_agent_roles_keep_separate_results(native_window, monkeypatch)
     selector.setCurrentIndex(selector.findData("formal"))
     assert "formal draft" in output.toPlainText()
     assert calls == ["formal", "debug", "spec"]
+
+
+def test_waveform_cursors_hierarchy_pins_bookmark_and_export(native_window, monkeypatch):
+    import hashlib
+    import json
+    from PyQt6 import QtCore, QtWidgets
+    from PyQt6.QtTest import QTest
+
+    root, app, window = native_window
+    (root / "waves").mkdir()
+    vcd = root / "waves" / "debug.vcd"
+    vcd.write_text(
+        "$timescale 10ps $end\n$scope module tb $end\n$var wire 1 ! clk $end\n"
+        "$scope module dut $end\n$var wire 4 # data $end\n"
+        "$upscope $end $upscope $end\n$enddefinitions $end\n"
+        "#0 0! b0010 #\n#3 1! bz #\n#9 0! b1111 #\n#15 1!\n"
+    )
+    window.show()
+    window._go_workspace("Waveforms")
+    app.processEvents()
+    tabs = window.workspace
+    tabs.refreshEvidence()
+
+    def widget(cls, name):
+        result = tabs.findChild(cls, name)
+        assert result is not None, name
+        return result
+
+    widget(QtWidgets.QPushButton, "waveLoad").click()
+    table = tabs.waveTable
+    assert table.rowCount() == 2
+    finder = widget(QtWidgets.QLineEdit, "waveSignalFilter")
+    finder.setText("tb.dut.*")
+    assert table.rowCount() == 1
+    assert tabs.waveCanvas.visible_signals[0]["name"] == "tb.dut.data"
+    table.item(0, 4).setCheckState(QtCore.Qt.CheckState.Checked)
+    widget(QtWidgets.QCheckBox, "wavePinnedOnly").setChecked(True)
+    finder.clear()
+    assert table.rowCount() == 1
+    table.setCurrentCell(0, 0)
+
+    QTest.mouseClick(tabs.waveCanvas, QtCore.Qt.MouseButton.LeftButton,
+                     pos=QtCore.QPoint(tabs.waveCanvas.sample_x(1) + 2, 48))
+    assert tabs.waveCanvas.cursors == (1, None)
+    widget(QtWidgets.QPushButton, "waveNextEdge").click()
+    assert tabs.waveCanvas.cursors == (2, None)
+    widget(QtWidgets.QPushButton, "wavePreviousEdge").click()
+    assert tabs.waveCanvas.cursors == (1, None)
+    assert table.item(0, 2).text() == "ZZZZ"
+
+    monkeypatch.setattr(QtWidgets.QInputDialog, "getText",
+                        lambda *_: ("Dropped write", True))
+    widget(QtWidgets.QPushButton, "waveAddBookmark").click()
+    combo = widget(QtWidgets.QComboBox, "waveBookmarks")
+    assert combo.currentText() == "Dropped write · 30 ps"
+    jump = widget(QtWidgets.QLineEdit, "waveJumpTick")
+    jump.setText("0")
+    widget(QtWidgets.QPushButton, "waveGoToTick").click()
+    assert tabs.waveCanvas.cursors == (0, None)
+    widget(QtWidgets.QPushButton, "waveUseBookmark").click()
+    assert tabs.waveCanvas.cursors == (1, None)
+
+    QTest.mouseClick(tabs.waveCanvas, QtCore.Qt.MouseButton.RightButton,
+                     pos=QtCore.QPoint(tabs.waveCanvas.sample_x(2) + 2, 48))
+    widget(QtWidgets.QComboBox, "waveRadix").setCurrentText("Signed")
+    assert table.item(0, 3).text() == "-1"
+    assert "Δ 60 ps" in widget(QtWidgets.QLabel, "waveCursorReadout").text()
+
+    outfile = root / "observed.json"
+    monkeypatch.setattr(QtWidgets.QFileDialog, "getSaveFileName",
+                        lambda *_: (str(outfile), "WaveJSON (*.json)"))
+    widget(QtWidgets.QPushButton, "waveExportDrom").click()
+    report = json.loads(outfile.read_text())
+    assert report["signal"] == [{"name": "tb.dut.data", "wave": "z=", "data": ["-1"]}]
+    assert report["wengold"]["source_sha256"] == hashlib.sha256(vcd.read_bytes()).hexdigest()
+
+
+def test_wave_debug_finding_switches_wrapped_shell_and_sets_cursor(native_window):
+    from PyQt6.QtWidgets import QPushButton
+    root, app, window = native_window
+    (root / "waves").mkdir()
+    (root / "waves" / "unanswered.vcd").write_text(
+        "$scope module tb $end\n$var wire 1 ! req $end\n"
+        "$var wire 1 # ack $end\n$upscope $end\n$enddefinitions $end\n"
+        "#0 0! 0#\n#5 1!\n#10\n#15\n#20\n#25\n#30\n#35\n"
+    )
+    tabs = window.workspace
+    tabs.refreshEvidence()
+    tabs.findChild(QPushButton, "waveLoad").click()
+    window._go_workspace("Wave Debug")
+    findings = tabs.waveDebug.findingTable
+    assert findings.rowCount() > 0
+    time = int(findings.item(0, 2).text())
+    findings.setCurrentCell(0, 0)
+    assert window.workspaceTitle.text() == "Waveforms"
+    index = tabs.waveCanvas.cursors[0]
+    assert tabs.waveCanvas.data["times"][index] == time
+
+
+def test_waveform_opens_explicit_source_match_at_line(native_window):
+    from PyQt6.QtWidgets import QComboBox, QPushButton
+    root, app, window = native_window
+    (root / "waves").mkdir()
+    (root / "waves" / "source.vcd").write_text(
+        "$scope module tb $end\n$var wire 1 ! q $end\n"
+        "$upscope $end\n$enddefinitions $end\n#0 0!\n#5 1!\n"
+    )
+    tabs = window.workspace
+    tabs.refreshEvidence()
+    tabs.findChild(QPushButton, "waveLoad").click()
+    tabs.waveTable.setCurrentCell(0, 0)
+    picker = tabs.findChild(QComboBox, "waveSourceMatch")
+    picker.setCurrentText("rtl/module.sv:2")
+    assert picker.currentText() == "rtl/module.sv:2"
+    tabs.findChild(QPushButton, "waveOpenSourceMatch").click()
+    assert window.workspaceTitle.text() == "RTL Editor"
+    assert tabs.editorFile() == "rtl/module.sv"
+    assert tabs.sourceEditor.textCursor().blockNumber() == 1
+
+
+def test_trace_tools_compare_and_protocol_navigation(native_window):
+    from PyQt6 import QtWidgets
+    root, app, window = native_window
+    (root / "waves").mkdir()
+    base = (
+        "$timescale 1ns $end\n$scope module tb $end\n"
+        "$var wire 1 ! PCLK $end\n$var wire 1 @ PSEL $end\n"
+        "$var wire 1 # PENABLE $end\n$var wire 1 % PREADY $end\n"
+        "$var wire 1 & PWRITE $end\n$var wire 8 ' PADDR [7:0] $end\n"
+        "$upscope $end\n$enddefinitions $end\n"
+        "#0 0! 1@ 0# 0% 1& b00101010 '\n#1 1!\n#2 0! 1#\n"
+        "#3 1!\n#4 0! 1%\n#5 1!\n"
+    )
+    (root / "waves/base.vcd").write_text(base)
+    (root / "waves/fail.vcd").write_text(base.replace("#4 0! 1%", "#4 0! 1% b00 '"))
+    tabs = window.workspace
+    tabs.refreshEvidence()
+    window.show()
+    window._go_workspace("Trace Tools")
+    app.processEvents()
+
+    def widget(cls, name):
+        return tabs.findChild(cls, name)
+
+    assert window.workspaceTitle.text() == "Trace Tools"
+    widget(QtWidgets.QComboBox, "traceBaseline").setCurrentText("waves/base.vcd")
+    widget(QtWidgets.QComboBox, "traceCandidate").setCurrentText("waves/fail.vcd")
+    widget(QtWidgets.QPushButton, "traceCompare").click()
+    summary = widget(QtWidgets.QLabel, "traceCompareSummary").text()
+    assert "First divergence: tb.PADDR at 4 ns" in summary
+    assert widget(QtWidgets.QTableWidget, "traceCompareTable").item(0, 0).text() == "tb.PADDR"
+    for side in ("Baseline", "Candidate"):
+        plot = widget(QtWidgets.QScrollArea, "tracePlot" + side)
+        assert plot.widget().cursors[0] == 4
+
+    window._go_workspace("Waveforms")
+    widget(QtWidgets.QComboBox, "waveFilePicker").setCurrentText("waves/fail.vcd")
+    widget(QtWidgets.QPushButton, "waveLoad").click()
+    window._go_workspace("Trace Tools")
+    widget(QtWidgets.QLineEdit, "traceProtocolPrefix").setText("tb.")
+    widget(QtWidgets.QPushButton, "traceDecode").click()
+    lane = widget(QtWidgets.QTableWidget, "traceLaneEvents")
+    assert lane.rowCount() == 1
+    assert lane.item(0, 2).text() == "1"
+    assert "PADDR=0x00" in lane.item(0, 3).text()
+    transfers = widget(QtWidgets.QTableWidget, "traceProtocolTransactions")
+    assert transfers.item(0, 4).text() == "4 ns"
+    lane.cellDoubleClicked.emit(0, 0)
+    assert window.workspaceTitle.text() == "Waveforms"
+    assert tabs.waveCanvas.data["times"][tabs.waveCanvas.cursors[0]] == 5
+
+
+def test_native_loads_fst_without_blocking_ui(native_window):
+    import shutil
+    import subprocess
+    import time
+    from PyQt6 import QtWidgets
+    if not shutil.which("fst2vcd") or not shutil.which("vcd2fst"):
+        pytest.skip("requires GTKWave FST conversion tools")
+    root, app, window = native_window
+    (root / "waves").mkdir()
+    temp_vcd = root / "input.vcd"
+    temp_vcd.write_text(
+        "$date\n test\n$end\n$version\n test\n$end\n$timescale\n1ns\n$end\n"
+        "$scope module tb $end\n$var wire 1 ! clk $end\n"
+        "$upscope $end\n$enddefinitions $end\n#0\n$dumpvars\n0!\n$end\n#5\n1!\n"
+    )
+    subprocess.run(["vcd2fst", "-v", str(temp_vcd), "-f", str(root / "waves/live.fst")],
+                   check=True, timeout=10)
+    tabs = window.workspace
+    tabs.refreshEvidence()
+    button = tabs.findChild(QtWidgets.QPushButton, "waveLoad")
+    assert button.text() == "Load FST"
+    button.click()
+    assert not button.isEnabled()
+    until = time.monotonic() + 4
+    while not button.isEnabled() and time.monotonic() < until:
+        app.processEvents()
+        time.sleep(.01)
+    assert button.isEnabled()
+    assert tabs.waveCanvas.data["source_format"] == "fst"
+    assert tabs.waveCanvas.data["times"] == [0, 5]
