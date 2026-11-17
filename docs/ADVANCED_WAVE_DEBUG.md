@@ -72,3 +72,22 @@ These tests include real VCD samples with RTL unknowns, TB scoreboard
 mismatches, missing handshakes and a clean capture. AI tests use a stub
 to verify prompting and evidence boundaries: a real local model remains
 workstation-dependent.
+
+
+## OpenTelemetry export
+
+After analyzing a loaded VCD, use **Export OpenTelemetry bundle** in the
+Wave Debug panel. The saved JSON contains separate OTLP traces, metrics and
+logs payloads. A simulation is the parent trace; each diagnostic finding is a
+child span and a trace-correlated log record. The time unit from the VCD header
+is retained, and the raw simulator timestamp remains available in attributes.
+
+This is an offline export: WENGOLD does not upload the waveform or contact
+Dynatrace. The bundle can be routed through an OpenTelemetry Collector to
+Dynatrace or another OTLP backend. See [OTEL_TRAFFIC_DEBUG.md](OTEL_TRAFFIC_DEBUG.md)
+for the transaction adapter contract, timestamp mapping and limitations.
+
+The generic telemetry model can emit spans for decoded transactions supplied
+by a protocol adapter. AXI/AHB/APB protocol decoders and direct Dynatrace
+upload are not part of this change; signal names alone are not sufficient to
+reconstruct a correct transaction.
