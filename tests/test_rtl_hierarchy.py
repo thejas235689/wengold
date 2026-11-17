@@ -77,7 +77,7 @@ def test_riscv_filelist_loader_uses_run_py_authoritative_list(tmp_path):
     (tmp_path / "sim").mkdir()
     (tmp_path / "rtl").mkdir()
     (tmp_path / "sim" / "run.py").write_text(
-        "RTL_SRCS = ['rv64_pkg.sv', 'riscv_core_top.sv']\\n")
+        "RTL_SRCS = ['rv64_pkg.sv', 'riscv_core_top.sv']" + chr(10))
     (tmp_path / "rtl" / "rv64_pkg.sv").write_text("package rv64_pkg; endpackage")
     (tmp_path / "rtl" / "riscv_core_top.sv").write_text("module riscv_core_top; endmodule")
     assert load_riscv_core_sources(tmp_path) == [
@@ -90,7 +90,7 @@ def test_riscv_filelist_loader_rejects_missing_sources(tmp_path):
     (tmp_path / "sim").mkdir()
     (tmp_path / "rtl").mkdir()
     (tmp_path / "sim" / "run.py").write_text(
-        "RTL_SRCS = ['rv64_pkg.sv', 'riscv_core_top.sv']\\n")
+        "RTL_SRCS = ['rv64_pkg.sv', 'riscv_core_top.sv']" + chr(10))
     (tmp_path / "rtl" / "rv64_pkg.sv").write_text("package rv64_pkg; endpackage")
     with pytest.raises(FileNotFoundError, match="missing files"):
         load_riscv_core_sources(tmp_path)
