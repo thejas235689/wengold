@@ -64,3 +64,20 @@ def test_quest_is_never_reported_available_before_native_bridge_exists():
     backends = available_backends()
     assert backends["quest"]["installed"] is False
     assert backends["quest"]["status"] == "not_implemented"
+
+
+def test_reset_gate_is_supported_by_both_simulators():
+    circuit = Circuit("reset", 1, (
+        Operation("x0", "X", (0,)),
+        Operation("reset0", "RESET", (0,)),
+    ))
+    pytest.importorskip("qiskit")
+    pytest.importorskip("qiskit_aer")
+    from quantum.backends.qiskit_backend import QiskitBackend
+    qiskit_result = QiskitBackend().run(circuit, seed=5)
+    assert qiskit_result.probabilities["0"] == pytest.approx(1.0, abs=1e-8)
+
+    pytest.importorskip("cirq")
+    from quantum.backends.cirq_backend import CirqBackend
+    cirq_result = CirqBackend().run(circuit, seed=5)
+    assert cirq_result.probabilities["0"] == pytest.approx(1.0, abs=1e-8)
