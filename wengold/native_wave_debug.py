@@ -189,12 +189,16 @@ def make_wave_debug(QtCore, QtGui, QtWidgets, project_root, on_crossprobe=None,
     hierarchy_yosys = QtWidgets.QLineEdit("yosys")
     hierarchy_yosys.setObjectName("waveHierarchyYosys")
     hierarchy_yosys.setMaximumWidth(150)
+    hierarchy_wave_prefix = QtWidgets.QLineEdit()
+    hierarchy_wave_prefix.setObjectName("waveHierarchyWavePrefix")
+    hierarchy_wave_prefix.setPlaceholderText("VCD root prefix, e.g. tb.dut (optional)")
     hierarchy_build = QtWidgets.QPushButton("Elaborate RTL hierarchy")
     hierarchy_build.setObjectName("waveBuildRtlHierarchy")
     hierarchy_controls.addWidget(QtWidgets.QLabel("Top"))
     hierarchy_controls.addWidget(hierarchy_top, 2)
     hierarchy_controls.addWidget(QtWidgets.QLabel("Yosys"))
     hierarchy_controls.addWidget(hierarchy_yosys)
+    hierarchy_controls.addWidget(hierarchy_wave_prefix, 2)
     hierarchy_controls.addWidget(hierarchy_build)
     hierarchy_layout.addLayout(hierarchy_controls)
     hierarchy_status = QtWidgets.QLabel(
@@ -344,10 +348,15 @@ def make_wave_debug(QtCore, QtGui, QtWidgets, project_root, on_crossprobe=None,
                 "The full hierarchical port path is sent to the waveform/source cross-probe. "
                 "A source line is shown only when Yosys emitted a src attribute.")
         }, indent=2))
+        wave_prefix = hierarchy_wave_prefix.text().strip().strip(".")
+        if wave_prefix:
+            signal_path = wave_prefix + "." + signal_path
         if port and on_crossprobe:
             on_crossprobe(signal_path)
         elif node.get("ports") and on_crossprobe:
-            on_crossprobe(node_path + "." + node["ports"][0]["name"])
+            on_crossprobe(wave_prefix + "." + node_path + "." +
+                          node["ports"][0]["name"] if wave_prefix else
+                          node_path + "." + node["ports"][0]["name"])
         if source and source.get("file"):
             hierarchy_status.setText(
                 f"Source: {source['file']}:{source['line']}:{source.get('column', 1)} · "
