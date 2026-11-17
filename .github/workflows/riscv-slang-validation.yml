@@ -10,6 +10,8 @@ on:
       - 'wengold/wave.py'
       - 'tools/validate_riscv_core.py'
       - 'tests/fixtures/riscv_core_wave_capture_tb.sv'
+      - 'tests/test_rtl_hierarchy.py'
+      - 'wengold/native_wave_debug.py'
       - 'docs/slang_riscv_validation.md'
       - '.github/workflows/riscv-slang-validation.yml'
   workflow_dispatch:
@@ -40,44 +42,9 @@ jobs:
           yosys -Q -p 'plugin -i slang; help read_slang' > slang-frontend.log
           grep -q 'read_slang' slang-frontend.log
           yosys --version
-      - name: Serialize full Slang elaborated AST (without synthesis loop unrolling)
-        run: |
-          mapfile -t RTL < <(python -c 'from wengold.rtl_hierarchy import load_riscv_core_sources; print(chr(10).join(load_riscv_core_sources("rv64_core")))')
-          slang --ast-json slang_ast.json --max-loop-analysis-steps 0 "${RTL[@]/#/rv64_core/}"
-          python - <<'PY'
-          import json
-          doc = json.load(open("slang_ast.json"))
-          design = doc.get("design", {})
-          members = design.get("members", [])
-          tops = [item for item in members if item.get("kind") == "Instance"]
-          print("AST root:", design.get("kind"), "members:", len(members),
-                "top instances:", [item.get("name") for item in tops])
-          top = next((item for item in tops if item.get("name") == "riscv_core_top"), None)
-          if top:
-            body = top.get("body", {})
-            print("TOP INSTANCE KEYS:", sorted(top.keys()))
-            print("TOP BODY KEYS:", sorted(body.keys()))
-            children = [item for item in body.get("members", [])
-                        if item.get("kind") == "Instance"]
-            print("CHILD INSTANCE COUNT:", len(children))
-            if children:
-              child = children[0]
-              print("FIRST CHILD KEYS:", sorted(child.keys()))
-              print("FIRST CHILD CONNECTIONS:", json.dumps(child.get("connections"), indent=2)[:5000])
-              child_ports = [item for item in child.get("body", {}).get("members", [])
-                             if item.get("kind") == "Port"]
-              print("FIRST CHILD PORT SAMPLE:", json.dumps(child_ports[:3], indent=2))
-            ports = [item for item in body.get("members", [])
-                     if item.get("kind") == "Port"]
-            print("TOP PORT KEYS:", sorted(ports[0].keys()) if ports else [])
-            print("TOP PORT SAMPLE:", json.dumps(ports[:3], indent=2))
-            print("TOP CONNECTIONS:", json.dumps(top.get("connections"), indent=2)[:2000])
-          else:
-            raise SystemExit("Slang AST JSON did not contain riscv_core_top")
-          PY
       - name: Elaborate the real RISC-V RTL with Slang
         run: |
-          python tools/validate_riscv_core.py rv64_core --frontend slang \
+          python tools/validate_riscv_core.py rv64_core --frontend slang_ast \
             --top riscv_core_top --output riscv-hierarchy.json
           python - <<'PY'
           import json
@@ -85,9 +52,9 @@ jobs:
           assert report["top"] == "riscv_core_top"
           assert report["source_count"] >= 40, report["source_count"]
           assert report["instance_count"] > 1, report["instance_count"]
-          assert report["port_bit_connection_count"] > 0
+          assert report["connection_count"] > 0
           print("RTL hierarchy:", report["instance_count"], "instances;",
-                report["port_bit_connection_count"], "port-bit connections")
+                report["connection_count"], report["connection_unit"])
           PY
       - name: Compile and generate a real RTL VCD capture
         run: |
@@ -102,7 +69,7 @@ jobs:
           ls -lh riscv_core_top.vcd
       - name: Validate exact RTL-to-VCD hierarchical cross-probes
         run: |
-          python tools/validate_riscv_core.py rv64_core --frontend slang \
+          python tools/validate_riscv_core.py rv64_core --frontend slang_ast \
             --top riscv_core_top --vcd riscv_core_top.vcd \
             --vcd-root riscv_core_wave_capture_tb --dut-instance dut.u_core \
             --output riscv-wave-crossprobe.json
@@ -125,5 +92,6 @@ jobs:
             riscv-wave-crossprobe.json
             riscv_core_top.vcd
             slang-frontend.log
-            slang_ast.json
+            .wengold/slang_ast.json
           if-no-files-found: warn
+          include-hidden-files: true
