@@ -93,7 +93,9 @@ class QuESTBackend(Backend):
             )
 
         rng = np.random.default_rng(seed)
-        basis = rng.choice(len(state), size=shots, p=np.abs(state) ** 2)
+        sampling_probabilities = np.abs(state) ** 2
+        sampling_probabilities /= sampling_probabilities.sum()
+        basis = rng.choice(len(state), size=shots, p=sampling_probabilities)
         counts: dict[str, int] = {}
         for index in basis:
             qbits = format(int(index), f"0{circuit.num_qubits}b")
