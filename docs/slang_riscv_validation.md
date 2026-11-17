@@ -73,11 +73,11 @@ PASS/FAIL comparison.
 
 - The graph is logical elaborated RTL connectivity, not placement, routing,
   parasitics, timing, or physical layout.
-- The standalone Slang AST path handles language elaboration without asking
-  Yosys to synthesize procedural loops. In the current RV64 RTL, the
-  `rv64_num_wide.sv` posit decode function exceeds Yosys-Slang's default
-  synthesis unroll limit (4,000). This is why the hierarchy path uses Slang AST
-  directly; it does not claim the same RTL is ready for Yosys synthesis.
+- The standalone Slang AST path is the authoritative full-SV hierarchy path.
+  The optional Yosys-Slang check is configured with `--keep-hierarchy` and a
+  bounded `--unroll-limit 4096`; CI is still validating this heavier path.
+  Passing that check would establish frontend/hierarchy compatibility only,
+  not full technology-mapped synthesis, STA, or timing closure.
 - The optional `yosys-slang` path supports a synthesizable SystemVerilog
   subset; simulator-only testbench constructs and unsupported language features
   may not map to a synthesis netlist.
