@@ -399,6 +399,20 @@ def make_studio_tabs(state, QtCore, QtGui, QtWidgets, parent=None):
     agent_plan.clicked.connect(show_plan)
     tabs.addTab(agent_page, "Agents")
 
+    # Quantum Design Studio is loaded lazily and shares the standalone editor.
+    try:
+        from quantum.ui.circuit_editor import build_editor as build_quantum_editor
+        quantum_page = build_quantum_editor(QtWidgets)
+        tabs.addTab(quantum_page, "Quantum Studio")
+    except Exception as exc:
+        quantum_page = QtWidgets.QWidget()
+        quantum_layout = QtWidgets.QVBoxLayout(quantum_page)
+        quantum_notice = QtWidgets.QLabel(
+            "Quantum Studio could not initialize. Install the optional desktop dependencies.\\n" + str(exc))
+        quantum_notice.setWordWrap(True)
+        quantum_layout.addWidget(quantum_notice)
+        tabs.addTab(quantum_page, "Quantum Studio (Unavailable)")
+
     # Durable queue: multiple external worker processes can claim transactionally.
     from .studio_durable import DurableQueue
     durable = DurableQueue(root)
