@@ -192,6 +192,7 @@ jobs:
           python -m pytest -q -p no:cacheprovider \
             tests/test_wave.py \
             tests/test_wave_debug.py \
+            tests/test_wave_diff.py \
             tests/test_axi4_telemetry.py \
             tests/test_otel_telemetry.py --tb=short
 
