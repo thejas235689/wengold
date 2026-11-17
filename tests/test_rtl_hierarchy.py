@@ -102,3 +102,48 @@ def test_invalid_frontend_is_rejected_before_tool_invocation(tmp_path):
     from wengold.rtl_hierarchy import elaborate_with_yosys
     with pytest.raises(ValueError, match="frontend"):
         elaborate_with_yosys(tmp_path, [], top="top", frontend="unknown")
+
+
+
+def test_slang_frontend_emits_read_slang_and_records_frontend(tmp_path, monkeypatch):
+    import json
+    from pathlib import Path
+    from wengold import rtl_hierarchy
+
+    source = tmp_path / "top.sv"
+    source.write_text("module top(input logic clk); endmodule")
+    netlist = {"modules": {"top": {
+        "attributes": {"top": "1"},
+        "ports": {"clk": {"direction": "input", "bits": [1]}},
+        "netnames": {"clk": {"bits": [1]}},
+        "cells": {},
+    }}}
+    calls = {}
+
+    def fake_run(command, **kwargs):
+        calls["command"] = command
+        output = tmp_path / ".wengold" / "rtl_hierarchy.json"
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(json.dumps(netlist))
+        class Result:
+            returncode = 0
+            stdout = "slang frontend ok"
+            stderr = ""
+        return Result()
+
+    monkeypatch.setattr(rtl_hierarchy.shutil, "which", lambda _name: "/usr/bin/yosys")
+    monkeypatch.setattr(rtl_hierarchy.subprocess, "run", fake_run)
+    graph = rtl_hierarchy.elaborate_with_yosys(
+        tmp_path, [source], top="top", frontend="slang")
+    assert graph["frontend"] == "yosys-slang/read_slang"
+    assert "plugin -i slang" in calls["command"][-1]
+    assert "read_slang --top top --std 1800-2017" in calls["command"][-1]
+    assert "read_verilog" not in calls["command"][-1]
+
+
+def test_slang_frontend_validates_sv_standard(tmp_path):
+    import pytest
+    from wengold.rtl_hierarchy import elaborate_with_yosys
+    with pytest.raises(ValueError, match="SystemVerilog standard"):
+        elaborate_with_yosys(tmp_path, [], top="top",
+                              frontend="slang", sv_standard="1364-2005")
