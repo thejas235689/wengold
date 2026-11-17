@@ -64,12 +64,12 @@ jobs:
       - name: Build and install QuEST v4.2.0 CPU library
         run: |
           git clone --depth 1 --branch v4.2.0 https://github.com/QuEST-Kit/QuEST.git "$RUNNER_TEMP/QuEST"
-          cmake -S "$RUNNER_TEMP/QuEST" -B "$RUNNER_TEMP/quest-build" -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="$RUNNER_TEMP/quest-install"
+          cmake -S "$RUNNER_TEMP/QuEST" -B "$RUNNER_TEMP/quest-build" -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="$RUNNER_TEMP/quest-prefix"
           cmake --build "$RUNNER_TEMP/quest-build" --parallel 2
           cmake --install "$RUNNER_TEMP/quest-build"
       - name: Build WENGOLD pybind11 bridge
         run: |
-          cmake -S quantum/native -B build/quest-bridge -DCMAKE_BUILD_TYPE=Release -Dpybind11_DIR="$(python -m pybind11 --cmakedir)" -DCMAKE_PREFIX_PATH="$RUNNER_TEMP/quest-install" -DCMAKE_INCLUDE_PATH="$RUNNER_TEMP/quest-install/include" -DCMAKE_LIBRARY_PATH="$RUNNER_TEMP/quest-install/lib"
+          cmake -S quantum/native -B build/quest-bridge -DCMAKE_BUILD_TYPE=Release -Dpybind11_DIR="$(python -m pybind11 --cmakedir)" -DCMAKE_PREFIX_PATH="$RUNNER_TEMP/quest-prefix/quest" -DCMAKE_INCLUDE_PATH="$RUNNER_TEMP/quest-prefix/quest/include" -DCMAKE_LIBRARY_PATH="$RUNNER_TEMP/quest-prefix/quest/lib"
           cmake --build build/quest-bridge --parallel 2
           cmake --install build/quest-bridge --prefix "$GITHUB_WORKSPACE"
       - name: Test QuEST CPU backend against Bell and bit-order reference
