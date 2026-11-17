@@ -30,6 +30,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: thejas235689/rv64_core
+          ref: fix/slang-width-and-posit-loop
           path: rv64_core
       - name: Install Python
         uses: actions/setup-python@v5
@@ -54,6 +55,20 @@ jobs:
           assert report["instance_count"] > 1, report["instance_count"]
           assert report["connection_count"] > 0
           print("RTL hierarchy:", report["instance_count"], "instances;",
+                report["connection_count"], report["connection_unit"])
+          PY
+      - name: Validate Yosys-Slang synthesis-oriented frontend
+        run: |
+          python tools/validate_riscv_core.py rv64_core --frontend slang \
+            --unroll-limit 256 --top riscv_core_top \
+            --output riscv-yosys-slang-hierarchy.json
+          python - <<'PY'
+          import json
+          report = json.load(open("riscv-yosys-slang-hierarchy.json"))
+          assert report["frontend"] == "yosys-slang/read_slang"
+          assert report["instance_count"] > 1, report["instance_count"]
+          assert report["connection_count"] > 0
+          print("Yosys-Slang hierarchy:", report["instance_count"], "instances;",
                 report["connection_count"], report["connection_unit"])
           PY
       - name: Compile and generate a real RTL VCD capture
@@ -91,6 +106,7 @@ jobs:
           name: riscv-slang-vcd-validation
           path: |
             riscv-hierarchy.json
+            riscv-yosys-slang-hierarchy.json
             riscv-wave-crossprobe.json
             riscv_core_top.vcd
             slang-frontend.log
