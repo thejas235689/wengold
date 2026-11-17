@@ -367,8 +367,12 @@ def make_wave_debug(QtCore, QtGui, QtWidgets, project_root, on_crossprobe=None,
                 "A source line is shown only when Yosys emitted a src attribute.")
         }, indent=2))
         wave_prefix = hierarchy_wave_prefix.text().strip().strip(".")
-        if wave_prefix:
-            signal_path = wave_prefix + "." + signal_path
+        graph = hierarchy_state.get("graph") or {}
+        top_name = graph.get("top", "")
+        if wave_prefix and top_name and signal_path.startswith(top_name + "."):
+            signal_path = wave_prefix + "." + signal_path[len(top_name) + 1:]
+        elif wave_prefix and signal_path == top_name:
+            signal_path = wave_prefix
         if port and on_crossprobe:
             on_crossprobe(signal_path)
         elif node.get("ports") and on_crossprobe:
