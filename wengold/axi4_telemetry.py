@@ -38,12 +38,12 @@ _CHANNELS = {
 }
 _STABLE_PAYLOAD = {
     "AW": ("AWADDR", "AWID", "AWLEN", "AWBURST", "AWSIZE",
-           "AWLOCK", "AWCACHE", "AWPROT", "AWQOS", "AWREGION"),
-    "W": ("WDATA", "WSTRB", "WLAST"),
-    "B": ("BID", "BRESP"),
+           "AWLOCK", "AWCACHE", "AWPROT", "AWQOS", "AWREGION", "AWUSER"),
+    "W": ("WDATA", "WSTRB", "WLAST", "WUSER"),
+    "B": ("BID", "BRESP", "BUSER"),
     "AR": ("ARADDR", "ARID", "ARLEN", "ARBURST", "ARSIZE",
-           "ARLOCK", "ARCACHE", "ARPROT", "ARQOS", "ARREGION"),
-    "R": ("RID", "RDATA", "RRESP", "RLAST"),
+           "ARLOCK", "ARCACHE", "ARPROT", "ARQOS", "ARREGION", "ARUSER"),
+    "R": ("RID", "RDATA", "RRESP", "RLAST", "RUSER"),
 }
 
 
