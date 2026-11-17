@@ -437,9 +437,15 @@ def _check_partial_success(signal: str, response_bytes: bytes) -> None:
             rejected_field = "rejected_log_records"
         response = Response()
         response.ParseFromString(response_bytes)
-    except (ImportError, ValueError):
-        # Some endpoints return an empty body; a non-empty but unparseable body
-        # is not silently treated as an OTLP partial-success response.
+    except ImportError:
+        raise
+    except Exception as exc:
+        # Empty response bodies are valid. Non-empty malformed protobuf
+        # responses should not be misreported as a successful export.
+        if response_bytes:
+            raise DynatraceExportError(
+                f"Dynatrace returned an invalid OTLP {signal} response"
+            ) from exc
         return
     if response.HasField("partial_success"):
         partial = response.partial_success
@@ -488,6 +494,8 @@ def send_dynatrace_otlp(bundle: Mapping[str, Any], endpoint: str, api_token: str
         )
     if parsed.path.rstrip("/").endswith(("/v1/traces", "/v1/metrics", "/v1/logs")):
         raise ValueError("provide the OTLP base URL, not an individual signal path")
+    if not parsed.path.rstrip("/").endswith("/api/v2/otlp"):
+        raise ValueError("Dynatrace OTLP base URL must end in /api/v2/otlp")
 
     signal_models = (
         ("traces", "resourceSpans"),
@@ -510,7 +518,7 @@ def send_dynatrace_otlp(bundle: Mapping[str, Any], endpoint: str, api_token: str
             url,
             data=body,
             headers={
-                "Authorization": f"Api-Token {api_token.strip()}",
+                "Authorization": f"Bearer {api_token.strip()}",
                 "Content-Type": "application/x-protobuf",
                 "Accept": "application/x-protobuf",
             },
