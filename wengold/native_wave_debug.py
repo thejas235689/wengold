@@ -128,9 +128,10 @@ def make_wave_debug(QtCore, QtGui, QtWidgets, project_root, on_crossprobe=None,
     schematic_scene.setSceneRect(0, 0, 760, 190)
 
     def schematic_node(x, y, width, height, title, detail, fill):
-        rect = schematic_scene.addRoundedRect(
-            x, y, width, height, 9, 9,
-            QtGui.QPen(QtGui.QColor("#38bdf8"), 2),
+        rounded = QtGui.QPainterPath()
+        rounded.addRoundedRect(QtCore.QRectF(x, y, width, height), 9, 9)
+        rect = schematic_scene.addPath(
+            rounded, QtGui.QPen(QtGui.QColor("#38bdf8"), 2),
             QtGui.QBrush(QtGui.QColor(fill)))
         rect.setToolTip(title + "\n" + detail)
         text_item = schematic_scene.addText(title + "\n" + detail)
@@ -260,9 +261,10 @@ def make_wave_debug(QtCore, QtGui, QtWidgets, project_root, on_crossprobe=None,
                 hierarchy_scene.addPath(path, QtGui.QPen(QtGui.QColor("#8A9AA8"), 1.2))
         for node in nodes:
             x, y = positions[node["id"]]
-            rect = hierarchy_scene.addRoundedRect(
-                x, y, 205, 64, 8, 8,
-                QtGui.QPen(QtGui.QColor("#B09C58"), 1.5),
+            rounded = QtGui.QPainterPath()
+            rounded.addRoundedRect(QtCore.QRectF(x, y, 205, 64), 8, 8)
+            rect = hierarchy_scene.addPath(
+                rounded, QtGui.QPen(QtGui.QColor("#B09C58"), 1.5),
                 QtGui.QBrush(QtGui.QColor("#FFF0AD")))
             rect.setToolTip(node["id"] + "\\n" + node["module"])
             title = hierarchy_scene.addText(node["module"])
