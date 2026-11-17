@@ -283,3 +283,66 @@ def test_default_backend_timeline_is_capped_inside_dynatrace_window(monkeypatch)
     # The raw VCD value remains available; only the external display window shrinks.
     assert bundle["metadata"]["simulation_time_origin"] == "0"
     assert bundle["metadata"]["simulation_time_unit_ns"] == "1"
+
+
+
+def test_axi4_transactions_stall_metrics_and_findings_share_simulation_trace():
+    traffic_finding = {
+        "rule": "axi4_aw_backpressure",
+        "domain": "rtl",
+        "severity": "warning",
+        "title": "AXI4 AW channel backpressure",
+        "sample_index": 3,
+        "time": 15,
+        "signals": ["tb.dut.axi.awvalid", "tb.dut.axi.awready"],
+        "observed": "AW channel stalled for 8 rising-edge cycles",
+        "assessment": "deterministic_protocol_observation",
+    }
+    report = dict(REPORT)
+    report["findings"] = list(REPORT["findings"]) + [traffic_finding]
+    traffic = {
+        "transactions": 2,
+        "protocol_errors": 0,
+        "stall_cycles_total": 8,
+        "aw_stall_cycles": 8,
+        "aw_max_stall_cycles": 8,
+        "aw_stall_events": 1,
+        "w_stall_cycles": 0,
+        "rising_edges": 20,
+    }
+    transactions = [{
+        "protocol": "axi4",
+        "operation": "write",
+        "transaction_id": "7",
+        "address": "0x4000",
+        "start_time": 10,
+        "end_time": 50,
+        "beats": 4,
+        "status": "ok",
+        "attributes": {"burst": "INCR", "expected_beats": 4},
+    }]
+    bundle = build_otlp_bundle(
+        report, transactions=transactions, traffic_metrics=traffic,
+        run_id="axi4-sim-77", run_start_unix_ns=3_000_000_000,
+        time_unit_ns=1, time_unit_label="ns")
+
+    spans = bundle["traces"]["resourceSpans"][0]["scopeSpans"][0]["spans"]
+    root = next(s for s in spans if s["name"] == "wengold.simulation.run")
+    tx = next(s for s in spans if s["name"] == "axi4.write")
+    stall = next(s for s in spans if s["name"] == "wave_debug.axi4_aw_backpressure")
+    assert root["traceId"] == tx["traceId"] == stall["traceId"]
+    assert tx["parentSpanId"] == root["spanId"]
+    assert stall["parentSpanId"] == root["spanId"]
+
+    metrics = bundle["metrics"]["resourceMetrics"][0]["scopeMetrics"][0]["metrics"]
+    aw_stalls = next(m for m in metrics
+                     if m["name"] == "wengold.traffic.axi4.aw_stall_cycles")
+    assert aw_stalls["sum"]["dataPoints"][0]["asInt"] == "8"
+    aw_max = next(m for m in metrics
+                  if m["name"] == "wengold.traffic.axi4.aw_max_stall_cycles")
+    assert aw_max["gauge"]["dataPoints"][0]["asInt"] == "8"
+
+
+def test_invalid_axi4_traffic_metric_is_rejected():
+    with pytest.raises(ValueError, match="must be numeric"):
+        build_otlp_bundle(REPORT, traffic_metrics={"aw_stall_cycles": "many"})
