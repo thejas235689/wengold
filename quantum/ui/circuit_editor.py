@@ -143,7 +143,22 @@ def build_editor(QtWidgets):
     palette.addStretch(1)
     canvas = CircuitCanvas()
     layout.addLayout(palette)
-    layout.addWidget(canvas, 1)
+    tabs = QtWidgets.QTabWidget()
+    tabs.addTab(canvas, "Circuit")
+    try:
+        from quantum.ui.state_visualizer import build_state_visualizer
+        state_visualizer = build_state_visualizer(QtWidgets)
+    except ImportError:
+        state_visualizer = QtWidgets.QWidget()
+        state_layout = QtWidgets.QVBoxLayout(state_visualizer)
+        state_layout.addWidget(QtWidgets.QLabel(
+            "Install the quantum extra to enable Bloch sphere and Q-sphere plots."
+        ))
+        state_visualizer.set_statevector = lambda state: None
+    tabs.addTab(state_visualizer, "State Visualizer")
+    layout.addWidget(tabs, 1)
     root.canvas = canvas
     root.to_circuit = canvas.to_circuit
+    root.state_visualizer = state_visualizer
+    root.set_statevector = state_visualizer.set_statevector
     return root
