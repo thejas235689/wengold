@@ -176,3 +176,79 @@ class QiskitBackend(Backend):
                           "snapshot_label": label, "single_execution": True},
             ))
         return snapshots
+
+    def run_trajectory(self, circuit: Circuit, *, seed: int | None = None):
+        """Run one seeded shot and return state snapshots after each operation.
+
+        Measurements collapse the Aer statevector. The final classical register
+        value is returned with the trajectory; per-boundary classical history is
+        not exposed by this adapter yet.
+        """
+        validate_circuit(circuit)
+        if circuit.num_clbits < 1 or not any(
+            op.gate.upper() == "MEASURE" for op in circuit.operations
+        ):
+            raise ValueError("trajectory execution requires measurement and classical bits")
+        start = time.perf_counter()
+        qc = self._qc_type(circuit.num_qubits, circuit.num_clbits)
+        labels = ["wengold_trajectory_0"]
+        qc.save_statevector(label=labels[0])
+        boundary_ops = [(None, "INITIAL")]
+        for index, op in enumerate(circuit.operations, start=1):
+            gate = op.gate.upper()
+            targets = list(op.targets)
+            controls = list(op.controls)
+            params = op.params
+            if gate == "MEASURE":
+                for qubit, cbit in zip(targets, op.classical_bits):
+                    qc.measure(qubit, cbit)
+            elif gate == "RESET":
+                for qubit in targets:
+                    qc.reset(qubit)
+            elif gate == "BARRIER":
+                qc.barrier(*targets)
+            elif gate in {"CNOT", "CX"}:
+                qc.cx(controls[0], targets[0])
+            elif gate in {"CCX", "TOFFOLI"}:
+                qc.ccx(controls[0], controls[1], targets[0])
+            elif gate == "CSWAP":
+                qc.cswap(controls[0], targets[0], targets[1])
+            elif gate in {"CZ", "SWAP"}:
+                getattr(qc, gate.lower())(*targets)
+            else:
+                method = {"I": "id", "SDG": "sdg", "TDG": "tdg"}.get(gate, gate.lower())
+                fn = getattr(qc, method, None)
+                if fn is None:
+                    raise BackendUnavailable(f"Qiskit adapter does not support {gate}")
+                if gate in {"RX", "RY", "RZ"}:
+                    fn(float(params[0]), targets[0])
+                else:
+                    fn(targets[0])
+            label = f"wengold_trajectory_{index}"
+            qc.save_statevector(label=label)
+            labels.append(label)
+            boundary_ops.append((op.id, gate))
+
+        simulator = self._sim_type(seed_simulator=seed)
+        compiled = self._transpile(qc, simulator)
+        result = simulator.run(compiled, shots=1).result()
+        data = result.data(0)
+        raw_counts = result.get_counts(compiled)
+        raw_key = next(iter(raw_counts))
+        classical = str(raw_key).replace(" ", "").zfill(circuit.num_clbits)[-circuit.num_clbits:]
+        elapsed = (time.perf_counter() - start) * 1000
+        snapshots = []
+        for index, label in enumerate(labels):
+            state = np.asarray(data[label], dtype=np.complex128)
+            snapshots.append({
+                "step": index,
+                "operation_id": boundary_ops[index][0],
+                "gate": boundary_ops[index][1],
+                "statevector": tuple((float(a.real), float(a.imag)) for a in state),
+            })
+        return {
+            "classical_bits": classical,
+            "snapshots": snapshots,
+            "execution_time_ms": elapsed,
+            "metadata": {"method": "aer_single_shot_trajectory", "seed": seed},
+        }
