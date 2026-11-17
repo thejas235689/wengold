@@ -48,3 +48,12 @@ def test_visualization_rejects_unnormalized_and_nonfinite_states():
         bloch_vectors([1, 1])
     with pytest.raises(ValueError, match="finite"):
         qsphere_points([complex(float("nan"), 0), 0])
+
+
+def test_qsphere_caps_large_basis_state_display():
+    state = [0.5, 0.5, 0.5, 0.5]
+    points = qsphere_points(state, max_points=2)
+    assert len(points) == 2
+    assert [point.basis_index for point in points] == sorted(
+        point.basis_index for point in points
+    )
