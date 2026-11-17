@@ -176,9 +176,10 @@ def make_trace_tools(root, QtCore, QtGui, QtWidgets, alert, focus_sample):
         show_diff()
 
     def invalidate_compare(_=None):
-        if state["diff"] is not None:
-            state["a"] = state["b"] = None
-            clear_diff("File selection changed. Load the two traces to recompute the comparison.")
+        # A selector change invalidates the loaded captures even if a previous
+        # alignment attempt failed and already cleared the visible diff.
+        state["a"] = state["b"] = None
+        clear_diff("File selection changed. Load the two traces to recompute the comparison.")
 
     def clear_diff(message):
         state["diff"] = None
