@@ -187,8 +187,9 @@ def make_wave_debug(QtCore, QtGui, QtWidgets, project_root, on_crossprobe=None,
     hierarchy_top = QtWidgets.QLineEdit()
     hierarchy_top.setObjectName("waveHierarchyTop")
     hierarchy_top.setPlaceholderText("Top module name (required)")
-    hierarchy_yosys = QtWidgets.QLineEdit("yosys")
+    hierarchy_yosys = QtWidgets.QLineEdit("slang")
     hierarchy_yosys.setObjectName("waveHierarchyYosys")
+    hierarchy_yosys.setPlaceholderText("slang or yosys executable")
     hierarchy_yosys.setMaximumWidth(150)
     hierarchy_frontend = QtWidgets.QComboBox()
     hierarchy_frontend.setObjectName("waveHierarchyFrontend")
@@ -202,15 +203,16 @@ def make_wave_debug(QtCore, QtGui, QtWidgets, project_root, on_crossprobe=None,
     hierarchy_build.setObjectName("waveBuildRtlHierarchy")
     hierarchy_controls.addWidget(QtWidgets.QLabel("Top"))
     hierarchy_controls.addWidget(hierarchy_top, 2)
-    hierarchy_controls.addWidget(QtWidgets.QLabel("Yosys"))
+    hierarchy_controls.addWidget(QtWidgets.QLabel("Frontend CLI"))
     hierarchy_controls.addWidget(hierarchy_yosys)
     hierarchy_controls.addWidget(hierarchy_frontend)
     hierarchy_controls.addWidget(hierarchy_wave_prefix, 2)
     hierarchy_controls.addWidget(hierarchy_build)
     hierarchy_layout.addLayout(hierarchy_controls)
     hierarchy_status = QtWidgets.QLabel(
-        "Slang mode requires the yosys-slang plugin (OSS CAD Suite). "
-        "For the RISC-V project, the RTL source list is read from sim/run.py.")
+        "Slang AST mode uses the standalone Slang elaborator. "
+        "Slang + Yosys netlist mode needs yosys-slang or a Yosys build with read_slang. "
+        "RISC-V sources are read from sim/run.py.")
     hierarchy_status.setObjectName("waveHierarchyStatus")
     hierarchy_status.setWordWrap(True)
     hierarchy_layout.addWidget(hierarchy_status)
@@ -314,15 +316,18 @@ def make_wave_debug(QtCore, QtGui, QtWidgets, project_root, on_crossprobe=None,
         hierarchy_status.setText(
             f"Running {frontend} elaboration on {len(sources)} source files…")
         try:
+            tool_cli = hierarchy_yosys.text().strip()
             if frontend == "slang_ast":
+                if not tool_cli or tool_cli == "yosys":
+                    tool_cli = "slang"
                 graph = elaborate_with_slang_ast(
-                    root, sources, top=hierarchy_top.text().strip(),
-                    slang=hierarchy_yosys.text().strip() or "slang")
+                    root, sources, top=hierarchy_top.text().strip(), slang=tool_cli)
             else:
+                if not tool_cli or tool_cli == "slang":
+                    tool_cli = "yosys"
                 graph = elaborate_with_yosys(
                     root, sources, top=hierarchy_top.text().strip(),
-                    yosys=hierarchy_yosys.text().strip() or "yosys",
-                    frontend=frontend)
+                    yosys=tool_cli, frontend=frontend)
             hierarchy_state["graph"] = graph
             hierarchy_state["nodes"] = {node["id"]: node for node in graph["nodes"]}
             hierarchy_tree.clear()
