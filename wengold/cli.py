@@ -1225,16 +1225,25 @@ def cmd_multi_rag(args) -> int:
 def cmd_sv_agent(args) -> int:
     from .agent.llm import DEFAULT_OLLAMA, DEFAULT_OPENAI, from_env, preset
     from .ide_server import Refused
+    from .qwen_cloud import QWEN_BACKEND, QWEN_MODEL, qwen_endpoint
     from .sv_agents import run
-    configured = from_env()
-    model = args.model or (configured.model if configured else "dhir-2b")
-    known = preset(model)
-    backend = (args.backend or (configured.backend if configured and not args.model else None)
-               or (known.backend if known else "ollama"))
-    endpoint = args.endpoint or (
-        configured.endpoint if configured and not (args.model or args.backend)
-        else DEFAULT_OPENAI if backend == "openai" else DEFAULT_OLLAMA)
     try:
+        if args.backend == QWEN_BACKEND:
+            backend = QWEN_BACKEND
+            model = args.model or QWEN_MODEL
+            endpoint = args.endpoint or qwen_endpoint()
+        else:
+            configured = from_env()
+            model = args.model or (configured.model if configured else "dhir-2b")
+            if model == QWEN_MODEL or (configured and configured.backend == QWEN_BACKEND
+                                       and not args.model and not args.backend):
+                raise ValueError("Qwen4-Max requires explicit --backend qwencloud")
+            known = preset(model)
+            backend = (args.backend or (configured.backend if configured and not args.model else None)
+                       or (known.backend if known else "ollama"))
+            endpoint = args.endpoint or (
+                configured.endpoint if configured and not (args.model or args.backend)
+                else DEFAULT_OPENAI if backend == "openai" else DEFAULT_OLLAMA)
         result = run(args.path, args.role, args.rtl, args.spec, args.evidence,
                      args.task, backend, endpoint, model)
     except (OSError, ValueError, RuntimeError, Refused) as exc:
@@ -1263,16 +1272,17 @@ def main(argv=None) -> int:
     p.set_defaults(func=cmd_multi_rag)
 
     from .sv_agents import ROLES
-    p = sub.add_parser("sv-agent", help="run one independent local SystemVerilog agent")
+    p = sub.add_parser("sv-agent", help="run one independent SystemVerilog agent")
     p.add_argument("role", choices=tuple(ROLES))
     p.add_argument("path", nargs="?", default=".", help="project root")
     p.add_argument("--rtl", required=True, help="project-relative RTL file")
     p.add_argument("--spec", default="", help="optional project-relative text specification")
     p.add_argument("--evidence", default="", help="project-relative log or report")
     p.add_argument("--task", default="", help="optional question for this run")
-    p.add_argument("--model", help="local model alias (defaults to Dhīr 2B when unconfigured)")
-    p.add_argument("--backend", choices=("openai", "ollama"))
-    p.add_argument("--endpoint", help="HTTP loopback model URL")
+    p.add_argument("--model", help="model ID (defaults to Dhīr 2B when unconfigured)")
+    p.add_argument("--backend", choices=("openai", "ollama", "qwencloud"),
+                   help="qwencloud sends selected inputs to Alibaba Cloud and requires opt-in")
+    p.add_argument("--endpoint", help="HTTP loopback model URL or HTTPS Model Studio base URL")
     p.set_defaults(func=cmd_sv_agent)
 
     p = sub.add_parser("index", help="index a project into a dependency graph")

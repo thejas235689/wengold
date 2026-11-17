@@ -1,13 +1,14 @@
 """Advanced native wave-debug panel: separate DUT RTL from TB/UVM observations.
 
-All findings are deterministic rules over actual VCD samples. The opt-in local
-LLM explains the evidence in a worker thread and cannot sign off a cause.
+All findings are deterministic rules over actual VCD samples. The opt-in
+model explains the evidence in a worker thread and cannot sign off a cause.
 """
 from __future__ import annotations
 
 import json
-import os
 
+from .native_model import model_controls
+from .qwen_cloud import QWEN_BACKEND
 from .wave_debug import diagnose, explain_with_local_ai
 
 
@@ -72,25 +73,20 @@ def make_wave_debug(QtCore, QtGui, QtWidgets, project_root, on_crossprobe=None,
     layout.addWidget(findings_detail)
 
     ai_row = QtWidgets.QHBoxLayout()
-    backend = QtWidgets.QComboBox()
-    backend.addItems(["ollama", "openai"])
-    backend.setObjectName("waveAiBackend")
-    endpoint = QtWidgets.QLineEdit(os.environ.get("WENGOLD_LLM_URL", "http://127.0.0.1:11434"))
-    endpoint.setObjectName("waveAiEndpoint")
-    model = QtWidgets.QLineEdit(os.environ.get("WENGOLD_LLM_MODEL", "qwen2.5-coder:7b"))
-    model.setObjectName("waveAiModel")
-    explain = QtWidgets.QPushButton("Explain evidence using Local AI")
+    backend, endpoint, model, presets = model_controls(QtCore, QtWidgets, "waveAi")
+    explain = QtWidgets.QPushButton("Explain evidence using AI")
     explain.setObjectName("waveExplainAi")
-    ai_row.addWidget(QtWidgets.QLabel("Local model"))
+    ai_row.addWidget(QtWidgets.QLabel("AI model"))
     ai_row.addWidget(backend)
     ai_row.addWidget(endpoint, 2)
     ai_row.addWidget(model)
     ai_row.addWidget(explain)
     layout.addLayout(ai_row)
+    layout.addLayout(presets)
     ai_text = QtWidgets.QPlainTextEdit()
     ai_text.setObjectName("waveAiRootCause")
     ai_text.setReadOnly(True)
-    ai_text.setPlaceholderText("No AI output until you explicitly request local inference.")
+    ai_text.setPlaceholderText("No AI output until you explicitly request inference.")
     ai_text.setMaximumHeight(135)
     layout.addWidget(ai_text)
     state = {"wave": None, "report": None, "busy": False, "worker": None, "thread": None}
@@ -177,13 +173,15 @@ def make_wave_debug(QtCore, QtGui, QtWidgets, project_root, on_crossprobe=None,
 
     def do_explain():
         if state["report"] is None:
-            ai_text.setPlainText("Analyze an actual loaded VCD before asking Local AI.")
+            ai_text.setPlainText("Analyze an actual loaded VCD before asking a model.")
             return
         if state["busy"]:
             return
         state["busy"] = True
         explain.setEnabled(False)
-        ai_text.setPlainText("Calling selected LOCAL model with bounded waveform evidence…")
+        cloud = backend.currentText() == QWEN_BACKEND
+        ai_text.setPlainText("Sending bounded waveform evidence to Alibaba Cloud…" if cloud
+                             else "Calling local model with bounded waveform evidence…")
         args = (state["report"], backend.currentText(), endpoint.text().strip(),
                 model.text().strip())
         thread = QtCore.QThread(page)
@@ -199,7 +197,7 @@ def make_wave_debug(QtCore, QtGui, QtWidgets, project_root, on_crossprobe=None,
                 + reply["answer"])
             done()
         def failed(message):
-            ai_text.setPlainText("LOCAL AI FAILED — no analysis produced\n" + message)
+            ai_text.setPlainText("AI FAILED — no analysis produced\n" + message)
             done()
         def done():
             state["busy"] = False

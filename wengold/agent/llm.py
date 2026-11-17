@@ -56,6 +56,7 @@ class ModelInfo:
 
 DEFAULT_OLLAMA = "http://127.0.0.1:11434"
 DEFAULT_OPENAI = "http://127.0.0.1:8080/v1"
+GEMMA4_MODEL = "gemma4:e4b"
 
 
 @dataclass(frozen=True)
@@ -78,6 +79,17 @@ class Preset:
 
 
 PRESETS: dict[str, Preset] = {
+    GEMMA4_MODEL: Preset(
+        name=GEMMA4_MODEL,
+        hf="google/gemma-4-E4B-it",
+        params="E4B",
+        licence="Apache-2.0",
+        instruction_tuned=True,
+        backend="ollama",
+        serve=f"ollama pull {GEMMA4_MODEL}",
+        note="Google Gemma 4 E4B via local Ollama. Try it for SystemVerilog "
+             "drafts, specifications and waveform evidence. Outputs are advisory.",
+    ),
     "dhir-2b": Preset(
         name="dhir-2b",
         hf="dassomnath/Dhir-2B-GGUF",
@@ -127,7 +139,7 @@ def preset(name: str) -> Preset | None:
     key = name.strip().lower().replace("_", "-").replace(" ", "-")
     if key in PRESETS:
         return PRESETS[key]
-    for k, p in PRESETS.items():
+    for p in PRESETS.values():
         if p.hf.lower() == name.strip().lower():
             return p
     return None
@@ -143,9 +155,8 @@ def from_env() -> LocalModel | None:
     model = os.environ.get("WENGOLD_LLM_MODEL", "").strip()
     if not model:
         return None
-    # A known preset carries the route it is actually served by: Sarvam-M is
-    # published for vLLM (OpenAI-compatible), Sarvam-1 for llama.cpp/Ollama. An
-    # explicit environment variable still wins.
+    # A known preset carries its local route. An explicit environment variable
+    # still wins.
     known = preset(model)
     backend = os.environ.get("WENGOLD_LLM_BACKEND", "").strip().lower() or (
         known.backend if known else "ollama")
@@ -208,7 +219,7 @@ def _get_json(url: str, timeout: float) -> dict:
 
 
 class LocalModel:
-    """A chat/generate client for a local server. Nothing leaves the machine."""
+    """Chat/generate client used for local servers by default."""
 
     def __init__(self, model: str, endpoint: str = DEFAULT_OLLAMA,
                  backend: str = "ollama", timeout: float = 120.0,
@@ -255,12 +266,18 @@ class LocalModel:
                 f"truncated. Raise num_ctx or shorten the prompt.")
         return text
 
+    def _chat_options(self) -> dict:
+        return {"temperature": self.temperature}
+
+    def _request_headers(self) -> dict:
+        return {"Content-Type": "application/json"}
+
     def _openai(self, prompt: str, system: str) -> str:
         messages = ([{"role": "system", "content": system}] if system else [])
         messages.append({"role": "user", "content": prompt})
         data = self._post("/chat/completions",
                           {"model": self.model, "messages": messages,
-                           "temperature": self.temperature, "stream": False})
+                           "stream": False, **self._chat_options()})
         try:
             raw = data["choices"][0]["message"]["content"]
         except (KeyError, IndexError, TypeError) as e:
@@ -281,7 +298,7 @@ class LocalModel:
         url = self.endpoint + path
         req = urllib.request.Request(
             url, data=json.dumps(body).encode("utf-8"),
-            headers={"Content-Type": "application/json"}, method="POST")
+            headers=self._request_headers(), method="POST")
         try:
             with _OPENER.open(req, timeout=self.timeout) as r:
                 data = json.loads(r.read().decode("utf-8", "replace") or "{}")
@@ -289,7 +306,7 @@ class LocalModel:
             # the error path must not itself raise: a short body here used to
             # escape as http.client.IncompleteRead
             try:
-                detail = e.read().decode("utf-8", "replace")[:200]
+                detail = self._http_error_detail(e)
             except Exception:                                    # noqa: BLE001
                 detail = ""
             raise LLMUnavailable(
@@ -299,7 +316,7 @@ class LocalModel:
         except (urllib.error.URLError, OSError) as e:
             raise LLMUnavailable(
                 f"could not reach {url} ({type(e).__name__}). Is the server "
-                f"running, and is the model pulled?") from e
+                f"running, and is the model available?") from e
         except http.client.HTTPException as e:
             # IncompleteRead and friends are HTTPException, not OSError
             raise LLMUnavailable(
@@ -313,6 +330,9 @@ class LocalModel:
             raise LLMUnavailable(
                 f"{url} returned {type(data).__name__}, not a JSON object")
         return data
+
+    def _http_error_detail(self, error: urllib.error.HTTPError) -> str:
+        return error.read(200).decode("utf-8", "replace")
 
     # ---- the jobs the kernel cannot do ---------------------------------
     def _require_instruction_following(self, job: str) -> None:
