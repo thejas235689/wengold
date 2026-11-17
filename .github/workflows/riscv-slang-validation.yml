@@ -4,7 +4,7 @@ on:
   push:
     branches: [feature/slang-riscv-elaboration-validation]
   pull_request:
-    branches: [main]
+    branches: [main, feature/otel-traffic-debug-observability]
     paths:
       - 'wengold/rtl_hierarchy.py'
       - 'wengold/wave.py'
@@ -80,7 +80,7 @@ jobs:
           assert cross["matched_ports"] > 0, cross
           print("VCD signals:", report["waveform"]["signal_count"])
           print("Exact port matches:", cross["matched_ports"], "/", cross["total_ports"])
-          print("Unmatched (not dumped/optimized):", cross["unmatched_ports"])
+          print("Direct port matches:", cross["direct_matches"])\nprint("Exact parent-net aliases:", cross["parent_net_alias_matches"])\nprint("Unmatched exact paths:", cross["unmatched_ports"])
           PY
       - name: Upload elaboration and waveform evidence
         if: always()
