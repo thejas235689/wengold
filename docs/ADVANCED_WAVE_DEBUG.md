@@ -143,3 +143,26 @@ debugging lead, not proof of root cause.
 
 Focused tests:
 `python3 -m pytest -q tests/test_wave_diff.py tests/test_wave_debug.py tests/test_wave.py`
+
+## Reset-release and clock-cycle alignment
+
+The PASS/FAIL differential panel now offers three alignment modes:
+
+- **Absolute simulation time**: compare on physical nanoseconds (original mode).
+- **Align at reset release**: provide the PASS and FAIL reset signal paths and active level (active-low by default). Both traces are shifted so the first observed active-to-inactive transition is time zero. Samples before release are excluded.
+- **Align by clock cycle + phase**: select or auto-detect each capture's clock. Rising edges define cycle boundaries; timestamps between edges are mapped to normalized cycle + phase coordinates. This supports different clock periods while retaining intra-cycle ordering.
+
+The panel also renders a difference timeline with aligned time/cycle, signal name,
+PASS value, FAIL value and difference type. Selecting a per-signal row cross-probes
+the RTL. For reset- and clock-aligned comparisons, the cross-probe does not jump
+the original absolute-time Waveforms cursor because the aligned coordinate is not
+the raw timestamp; the overlay remains the source of truth for that comparison.
+
+Clock alignment requires at least two rising edges in each capture and assumes
+corresponding rising edges represent corresponding cycle boundaries. It does not
+infer clock-domain crossings, transaction equivalence, or reset polarity. Use
+matching reset/clock paths where possible and review the raw captures before
+treating a mismatch as a DUT bug.
+
+Focused tests:
+`python3 -m pytest -q tests/test_wave_diff.py`
