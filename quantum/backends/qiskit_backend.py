@@ -20,6 +20,7 @@ class QiskitBackend(Backend):
             ) from exc
         self._qc_type = QuantumCircuit
         self._sim_type = AerSimulator
+        self._transpile = transpile
 
     def capabilities(self):
         return {
@@ -75,7 +76,7 @@ class QiskitBackend(Backend):
         simulator = self._sim_type(seed_simulator=seed)
         if not measured:
             qc.save_statevector()
-            compiled = transpile(qc, simulator)
+            compiled = self._transpile(qc, simulator)
             result = simulator.run(compiled, shots=1).result()
             state = result.get_statevector(compiled)
             encoded = [[float(a.real), float(a.imag)] for a in state]
