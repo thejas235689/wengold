@@ -56,7 +56,7 @@ jobs:
           PY
       - name: Compile and generate a real RTL VCD capture
         run: |
-          mapfile -t RTL < <(python rv64_core/sim/run.py --list-rtl)
+          mapfile -t RTL < <(python -c 'from wengold.rtl_hierarchy import load_riscv_core_sources; print("\\n".join(load_riscv_core_sources("rv64_core")))')
           for source in "${RTL[@]}"; do test -f "rv64_core/$source"; done
           iverilog -g2012 -s riscv_core_wave_capture_tb -o riscv-wave.vvp \
             "${RTL[@]/#/rv64_core/}" \
