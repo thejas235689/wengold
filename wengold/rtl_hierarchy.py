@@ -177,19 +177,21 @@ def elaborate_with_yosys(project_root: str | Path, sources: list[str | Path], *,
             raise ValueError(f"Invalid preprocessor define: {define}")
         macro_args.append("-D" + define)
     if frontend == "slang":
-        # read_slang comes from the yosys-slang plugin, bundled with OSS CAD Suite.
-        read_cmd = ["plugin -i " + slang_plugin,
-                    "read_slang --top " + top + " --std " + sv_standard]
+        # Load the plugin as its own Yosys command before invoking read_slang.
+        script = ["plugin -i " + slang_plugin]
+        read_cmd = ["read_slang --top " + top + " --std " + sv_standard]
         read_cmd.extend("-I " + json.dumps(str(path)) for path in incdirs)
         read_cmd.extend(macro_args)
         read_cmd.extend(json.dumps(str(path)) for path in resolved)
+        script.append(" ".join(read_cmd))
     else:
         read_cmd = ["read_verilog -sv"]
         read_cmd.extend("-I" + json.dumps(str(path)) for path in incdirs)
         read_cmd.extend(macro_args)
         read_cmd.extend(json.dumps(str(path)) for path in resolved)
-    script = [" ".join(read_cmd), "hierarchy -check -top " + top,
-              "proc", "write_json " + json.dumps(str(output))]
+        script = [" ".join(read_cmd)]
+    script.extend(["hierarchy -check -top " + top,
+                   "proc", "write_json " + json.dumps(str(output))])
     completed = subprocess.run(
         [executable, "-Q", "-q", "-p", "; ".join(script)],
         cwd=root, capture_output=True, text=True, timeout=timeout_seconds, check=False)
