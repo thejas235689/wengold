@@ -276,7 +276,14 @@ jobs:
           shim="$RUNNER_TEMP/oldpy"; mkdir -p "$shim"
           real="$(command -v python3.12 || command -v python3)"
           for cand in python3.13 python3.12 python3.11 python3; do
-            printf '#!/bin/sh\\ncase "$2" in\\n  *"version_info >= (3,11)"*) exit 1 ;;\\n  *"version_info[:2]"*) echo "3.9"; exit 0 ;;\\nesac\\nexec %s "$@"\\n' "$real" > "$shim/$cand"
+            cat > "$shim/$cand" <<EOF
+#!/bin/sh
+case "\$2" in
+  *"version_info >= (3,11)"*) exit 1 ;;
+  *"version_info[:2]"*) echo "3.9"; exit 0 ;;
+esac
+exec "$real" "\$@"
+EOF
             chmod +x "$shim/$cand"
           done
           set +e
