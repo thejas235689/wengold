@@ -197,7 +197,7 @@ def test_dynatrace_export_sends_binary_otlp_protobuf(monkeypatch):
     assert all(row[1] == 7 for row in sent)
     assert all(row[0].get_header("Content-type") == "application/x-protobuf"
                for row in sent)
-    assert all(row[0].get_header("Authorization") == "Api-Token secret-token-never-store"
+    assert all(row[0].get_header("Authorization") == "Bearer secret-token-never-store"
                for row in sent)
     assert ExportTraceServiceRequest.FromString(sent[0][0].data).resource_spans
     assert ExportMetricsServiceRequest.FromString(sent[1][0].data).resource_metrics
