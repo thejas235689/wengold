@@ -23,7 +23,7 @@ QuEST is a native C/C++ dependency and is built separately; see [quantum/native/
 - PyQt6 drag-and-drop editor with backend selector, shot control and QThread simulation execution.
 - Bloch-sphere reduced-state vectors, Q-sphere probability/relative-phase points and measurement histograms.
 - Strict OpenQASM 3 supported-subset import/export; unsupported syntax raises a validation error instead of being silently dropped.
-- Initial gate-by-gate debugger service: replays unitary circuit prefixes and captures statevector/probability snapshots at the initial state and after each operation.
+- Gate-by-gate debugger with bounded checkpoints, single-execution incremental Aer statevector snapshots, and seeded per-shot measurement trajectories.
 
 ## Project persistence and OpenQASM 3
 
@@ -47,7 +47,12 @@ for snapshot in trace.snapshots:
     print(snapshot.statevector, snapshot.probabilities)
 ```
 
-In the editor, select **Build debug trace** to compute snapshots off the Qt UI thread. Use **Previous**, **Next** or the step slider to navigate; the active gate is outlined on the circuit and its snapshot is loaded into the State Visualizer. The panel reports operation ID, backend, execution time and probability L1 change from the prior step. Starting a new normal simulation clears the previous debug trace.\n\nThe debugger is deliberately **unitary-only**. It rejects measurement, reset, barrier and delay because pure-state snapshots do not faithfully represent their execution semantics. Prefix checkpoints are stored in a bounded in-memory LRU cache (512 entries by default), keyed by backend identity, seed, circuit dimensions/metadata and the exact operation prefix. Qiskit, Cirq and QuEST adapters publish stable cache identities; custom backends should do so only when their simulation configuration is semantically stable. Cached snapshots retain their statevector and probabilities; execution time is reported as unavailable on cache hits. Use `clear_debug_checkpoint_cache()`, `debug_checkpoint_cache_info()` or `build_debug_trace(..., use_cache=False)` from `quantum.service.debugger` to manage or bypass caching. This avoids rerunning unchanged prefixes across repeated traces, but a cache miss still replays that prefix from the beginning; it is not yet incremental simulator-state continuation, a GUI time-travel debugger or a formal equivalence checker.
+In the editor, select **Build debug trace** to compute snapshots off the Qt UI thread. Use **Previous**, **Next** or the step slider to navigate; the active gate is outlined on the circuit and its snapshot is loaded into the State Visualizer. The panel reports operation ID, backend, execution time and probability L1 change from the prior step. Starting a new normal simulation clears the previous debug trace.\n\nThe debugger has two execution modes:
+
+- **Unitary incremental trace:** Qiskit Aer can capture the initial state and every gate boundary using labelled statevector saves in one simulator job. The debugger uses this adapter capability automatically. Other adapters without `run_incremental()` use the prefix-replay fallback. A bounded 512-entry LRU cache reuses exact statevector prefixes across trace builds; cache keys include backend identity, seed, circuit configuration and the operation prefix. Use `clear_debug_checkpoint_cache()`, `debug_checkpoint_cache_info()` or `build_debug_trace(..., use_cache=False)` to manage or bypass it.
+- **Measurement-shot trajectories:** `build_measurement_trajectories(circuit, backend, shots=32, seed=7)` runs independently seeded shots through an adapter's `run_trajectory()` implementation. The Qiskit Aer adapter captures collapsed-state snapshots at each operation boundary and the final classical register value for each shot. This makes stochastic outcomes inspectable instead of averaging them into one histogram.
+
+The current trajectory API does not yet expose the classical-register value after every individual operation; it records the final classical bits per shot. Qiskit is the first adapter with single-run incremental and per-shot trajectory support. Cirq and QuEST retain their existing capabilities and are not silently advertised as trajectory-capable. This is a simulator-debugging aid, not a formal equivalence checker.
 
 ## Verification boundary
 
