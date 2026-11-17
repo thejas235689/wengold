@@ -132,8 +132,8 @@ def make_wave_debug(QtCore, QtGui, QtWidgets, project_root, on_crossprobe=None,
             x, y, width, height, 9, 9,
             QtGui.QPen(QtGui.QColor("#38bdf8"), 2),
             QtGui.QBrush(QtGui.QColor(fill)))
-        rect.setToolTip(title + "\\n" + detail)
-        text_item = schematic_scene.addText(title + "\\n" + detail)
+        rect.setToolTip(title + "\n" + detail)
+        text_item = schematic_scene.addText(title + "\n" + detail)
         text_item.setDefaultTextColor(QtGui.QColor("#f8fafc"))
         text_item.setFont(QtGui.QFont("Sans Serif", 9, QtGui.QFont.Weight.DemiBold))
         text_item.setTextWidth(width - 16)
