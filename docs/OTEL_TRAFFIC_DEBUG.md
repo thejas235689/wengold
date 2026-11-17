@@ -183,7 +183,10 @@ When more than one AXI interface is present, use an explicit interface prefix
 or a logical-name-to-full-signal mapping rather than letting the decoder guess.
 
 A VALID/READY transfer is counted only when both are known high at a rising
-ACLK sample. A signal that is X/Z/unobserved is not treated as zero. All
+ACLK sample. A signal that is X/Z/unobserved is not treated as zero. When
+VALID is high and READY is low, captured channel payload fields must remain
+stable through the handshake; changes, unknown payload values, or VALID
+deassertion before READY are reported as protocol findings. All
 VALID-without-READY cycles contribute to stall metrics; a consecutive stall
 reaching the configured threshold produces a backpressure warning. A warning
 records observed wait time; it does not by itself claim that the DUT is faulty,
