@@ -220,3 +220,26 @@ endmodule
     assert report["events"][1]["fields"]["RDATA"] == "0x5B"
     assert report["transactions"][0]["addr"] == "0x2A"
     assert report["transactions"][0]["end"] - report["transactions"][0]["start"] == 10
+
+
+
+def test_trace_diff_normalizes_implicit_unknown_bus_values():
+    left = trace(
+        [0, 5],
+        {"name": "tb.data", "width": 8,
+         "logic_values": ["x", "00000000"], "values": [None, 0]},
+        {"name": "tb.high_z", "width": 8,
+         "logic_values": ["z", "zzzzzzzz"], "values": [None, None]},
+    )
+    right = trace(
+        [0, 5],
+        {"name": "tb.data", "width": 8,
+         "logic_values": ["xxxxxxxx", "00000001"], "values": [None, 1]},
+        {"name": "tb.high_z", "width": 8,
+         "logic_values": ["zzzzzzzz", "zzzzzzzz"], "values": [None, None]},
+    )
+    result = compare(left, right)
+    rows = {row["name"]: row for row in result["rows"]}
+    assert rows["tb.data"]["first"] == 1
+    assert result["times"][rows["tb.data"]["first"]] == 5
+    assert rows["tb.high_z"]["status"] == "No difference in overlap"
