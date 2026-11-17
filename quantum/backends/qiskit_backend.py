@@ -109,3 +109,70 @@ class QiskitBackend(Backend):
             counts=normalized, execution_time_ms=elapsed,
             metadata={"method": "aer_sampling", "bit_order": "c[n-1]..c[0]"},
         )
+
+    def run_incremental(self, circuit: Circuit, *, seed: int | None = 7):
+        """Execute a unitary circuit once and capture every gate boundary.
+
+        Aer save_statevector instructions create labelled snapshots within one
+        simulator job; this avoids replaying every circuit prefix separately.
+        """
+        validate_circuit(circuit)
+        if any(op.gate.upper() in {"MEASURE", "RESET", "BARRIER", "DELAY"}
+               for op in circuit.operations):
+            raise BackendUnavailable(
+                "Incremental statevector debugging currently requires a unitary-only circuit"
+            )
+        start = time.perf_counter()
+        qc = self._qc_type(circuit.num_qubits)
+        labels = ["wengold_step_0"]
+        qc.save_statevector(label=labels[0])
+        for index, op in enumerate(circuit.operations, start=1):
+            gate = op.gate.upper()
+            targets = list(op.targets)
+            controls = list(op.controls)
+            params = op.params
+            if gate in {"CNOT", "CX"}:
+                qc.cx(controls[0], targets[0])
+            elif gate in {"CCX", "TOFFOLI"}:
+                qc.ccx(controls[0], controls[1], targets[0])
+            elif gate == "CSWAP":
+                qc.cswap(controls[0], targets[0], targets[1])
+            elif gate in {"CZ", "SWAP"}:
+                getattr(qc, gate.lower())(*targets)
+            else:
+                method = {"I": "id", "SDG": "sdg", "TDG": "tdg"}.get(gate, gate.lower())
+                fn = getattr(qc, method, None)
+                if fn is None:
+                    raise BackendUnavailable(f"Qiskit adapter does not support {gate}")
+                if gate in {"RX", "RY", "RZ"}:
+                    fn(float(params[0]), targets[0])
+                else:
+                    fn(targets[0])
+            label = f"wengold_step_{index}"
+            qc.save_statevector(label=label)
+            labels.append(label)
+
+        simulator = self._sim_type(seed_simulator=seed)
+        compiled = self._transpile(qc, simulator)
+        result = simulator.run(compiled, shots=1).result()
+        data = result.data(0)
+        elapsed = (time.perf_counter() - start) * 1000
+        snapshots = []
+        for index, label in enumerate(labels):
+            state = np.asarray(data[label], dtype=np.complex128)
+            encoded = [[float(a.real), float(a.imag)] for a in state]
+            probabilities = {
+                format(basis, f"0{circuit.num_qubits}b"): float(abs(amplitude) ** 2)
+                for basis, amplitude in enumerate(state)
+            }
+            snapshots.append(SimulationResult(
+                job_id=f"{result.get_job_id()}:{index}",
+                backend=self.name,
+                status="COMPLETED",
+                statevector=encoded,
+                probabilities=probabilities,
+                execution_time_ms=(elapsed if index == len(labels) - 1 else None),
+                metadata={"method": "aer_incremental_statevector", "step": index,
+                          "snapshot_label": label, "single_execution": True},
+            ))
+        return snapshots
