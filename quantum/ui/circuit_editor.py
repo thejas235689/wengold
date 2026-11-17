@@ -256,6 +256,16 @@ def build_editor(QtWidgets):
     step_controls.addWidget(next_button)
     debug_layout.addWidget(debug_summary)
     debug_layout.addLayout(step_controls)
+    amplitude_table = QtWidgets.QTableWidget(0, 6)
+    amplitude_table.setObjectName("quantumAmplitudeTable")
+    amplitude_table.setHorizontalHeaderLabels(
+        ["Basis", "Real", "Imag", "Magnitude", "Phase (rad)", "Probability"]
+    )
+    amplitude_table.setEditTriggers(QtWidgets.QAbstractItemView.EditTrigger.NoEditTriggers)
+    amplitude_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectionBehavior.SelectRows)
+    amplitude_table.setMaximumHeight(190)
+    debug_layout.addWidget(QtWidgets.QLabel("STATEVECTOR AMPLITUDES"))
+    debug_layout.addWidget(amplitude_table)
     outer.addWidget(debug_panel)
     outer.addWidget(status_label)
 
@@ -271,6 +281,20 @@ def build_editor(QtWidgets):
             return
         snapshot = trace.snapshot(int(step))
         canvas.set_debug_operation(snapshot.operation_id)
+        from quantum.service.debugger import amplitude_rows
+        rows = amplitude_rows(snapshot.statevector)
+        amplitude_table.setRowCount(len(rows))
+        for row_index, row in enumerate(rows):
+            values = (
+                row.basis_state, f"{row.real:.8f}", f"{row.imag:.8f}",
+                f"{row.magnitude:.8f}", f"{row.phase_radians:.8f}",
+                f"{row.probability:.8f}",
+            )
+            for column, value in enumerate(values):
+                amplitude_table.setItem(
+                    row_index, column, QtWidgets.QTableWidgetItem(value)
+                )
+        amplitude_table.resizeColumnsToContents()
         state_visualizer.set_statevector(snapshot.statevector)
         if snapshot.step == 0:
             delta_text = "Initial state; no previous gate"
@@ -407,4 +431,5 @@ def build_editor(QtWidgets):
     root.debug_summary = debug_summary
     root.debug_previous_button = previous_button
     root.debug_next_button = next_button
+    root.amplitude_table = amplitude_table
     return root
