@@ -133,7 +133,7 @@ def build_otlp_bundle(report: Mapping[str, Any], *,
             address, response, beats, status and an optional attributes map.
             These records must come from a real protocol decoder/monitor.
         run_id: Stable simulation identifier; generated when omitted.
-        run_start_unix_ns: Synthetic Unix-nanosecond anchor. Defaults to now.
+        run_start_unix_ns: Optional explicit synthetic Unix-nanosecond anchor. If omitted, the simulation is placed immediately before export and the display window is capped at 55 minutes for Dynatrace time acceptance.
         time_unit_ns: Nanoseconds per raw VCD timestamp tick. Pass the parsed
             VCD timescale value (for example Decimal("1") for 1 ns or
             Decimal("0.001") for 1 ps). If unknown, keep the default and set
@@ -148,12 +148,8 @@ def build_otlp_bundle(report: Mapping[str, Any], *,
     run_id = str(run_id or uuid.uuid4().hex)
     if not run_id or len(run_id) > 256:
         raise ValueError("run_id must contain 1..256 characters")
-    if run_start_unix_ns is None:
-        run_start_unix_ns = time.time_ns()
-    if not isinstance(run_start_unix_ns, int) or run_start_unix_ns < 0:
-        raise ValueError("run_start_unix_ns must be a non-negative integer")
-    unit_ns = _decimal(time_unit_ns, "time_unit_ns")
-    if unit_ns <= 0:
+    requested_unit_ns = _decimal(time_unit_ns, "time_unit_ns")
+    if requested_unit_ns <= 0:
         raise ValueError("time_unit_ns must be positive")
 
     times = list(report.get("times") or [])
@@ -170,11 +166,30 @@ def build_otlp_bundle(report: Mapping[str, Any], *,
         if transaction.get("end_time") is not None:
             all_times.append(_decimal(transaction["end_time"], "transaction end_time"))
     origin = min(all_times) if all_times else Decimal(0)
+    end_time = max(all_times) if all_times else origin
+    raw_duration_ns = max(Decimal(0), (end_time - origin) * requested_unit_ns)
+
+    # Dynatrace rejects spans ending more than 10 minutes in the future and
+    # older than 60 minutes in the past. For the default UI path, place the
+    # simulation window immediately before export and cap its display duration
+    # at 55 minutes. For long simulation time ranges, scale only the backend
+    # display timeline; every original simulator timestamp and unit is retained
+    # unchanged in attributes for real analysis.
+    timeline_scale_factor = Decimal(1)
+    if run_start_unix_ns is None:
+        max_window_ns = Decimal(55 * 60 * 1_000_000_000)
+        if raw_duration_ns > max_window_ns and raw_duration_ns > 0:
+            timeline_scale_factor = max_window_ns / raw_duration_ns
+        run_start_unix_ns = time.time_ns() - int(
+            (raw_duration_ns * timeline_scale_factor).to_integral_value(
+                rounding=ROUND_HALF_UP))
+    if not isinstance(run_start_unix_ns, int) or run_start_unix_ns < 0:
+        raise ValueError("run_start_unix_ns must be a non-negative integer")
+    unit_ns = requested_unit_ns * timeline_scale_factor
 
     def stamp(value: Any) -> int:
         return _to_unix_ns(value, origin, unit_ns, run_start_unix_ns)
 
-    end_time = max(all_times) if all_times else origin
     run_end_ns = stamp(end_time) + max(1, int(unit_ns.to_integral_value(
         rounding=ROUND_HALF_UP)))
     trace_id = _hex_id("wengold:" + run_id, 32)
@@ -183,7 +198,8 @@ def build_otlp_bundle(report: Mapping[str, Any], *,
         "wengold.run.id": run_id,
         "wengold.evidence.source": report.get("source", "unknown"),
         "wengold.simulation.time_unit": time_unit_label,
-        "wengold.simulation.time_unit_ns": str(unit_ns),
+        "wengold.simulation.time_unit_ns": str(requested_unit_ns),
+        "wengold.otel.timeline_scale_factor": float(timeline_scale_factor),
         "wengold.simulation.samples": int(report.get("samples", len(times)) or 0),
         "wengold.findings.count": len(finding_rows),
         "wengold.transactions.count": len(tx_rows),
@@ -357,7 +373,8 @@ def build_otlp_bundle(report: Mapping[str, Any], *,
             "finding_span_ids": finding_span_ids,
             "transaction_span_ids": transaction_span_ids,
             "simulation_time_unit": time_unit_label,
-            "simulation_time_unit_ns": str(unit_ns),
+            "simulation_time_unit_ns": str(requested_unit_ns),
+            "otel_timeline_scale_factor": str(timeline_scale_factor),
             "simulation_time_origin": str(origin),
             "timestamp_mapping": "synthetic Unix time anchored at run_start_unix_ns; raw simulator ticks are retained as attributes",
         },
