@@ -86,8 +86,9 @@ def _clock_axis(times: list[Decimal], signals: dict, clock_name: str,
     for index, value in enumerate(values[:len(times)]):
         if previous == 0 and value == 1:
             edges.append(times[index])
-        if value is not None:
-            previous = value
+        # An X/Z sample breaks edge certainty. Do not infer a 0->1
+        # transition across an unknown clock value.
+        previous = value
     if len(edges) < 2:
         raise ValueError(
             f"{side} clock {clock_name} needs at least two observed rising edges")
