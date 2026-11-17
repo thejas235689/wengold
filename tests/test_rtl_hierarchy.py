@@ -60,24 +60,28 @@ def test_exact_hierarchical_vcd_crossprobe_maps_instance_ports():
     from wengold.rtl_hierarchy import crossprobe_hierarchy_to_vcd
     graph = build_rtl_hierarchy(sample_netlist(), top="top")
     wave = {"signals": [
-        {"name": "tb_core_top.u_core.clk_i"},
+        {"name": "tb_core_top.u_core.clk"},
+        {"name": "tb_core_top.u_core.u_sub.clk_i"},
         {"name": "tb_core_top.u_core.u_sub.data_i"},
     ]}
     result = crossprobe_hierarchy_to_vcd(
         graph, wave, vcd_root="tb_core_top", dut_instance="u_core")
-    assert result["matched_ports"] == 2
-    assert result["unmatched_ports"] == 1
+    assert result["matched_ports"] == 3
+    assert result["unmatched_ports"] == 0
     assert result["status"] == "matched"
-    assert result["matches"][0]["vcd_path"] == "tb_core_top.u_core.clk_i"
+    assert result["matches"][0]["vcd_path"] == "tb_core_top.u_core.clk"
 
 
 def test_riscv_filelist_loader_uses_run_py_authoritative_list(tmp_path):
     from wengold.rtl_hierarchy import load_riscv_core_sources
     (tmp_path / "sim").mkdir()
     (tmp_path / "rtl").mkdir()
-    (tmp_path / "sim" / "run.py").write_text(
-        "import sys\\nif '--list-rtl' in sys.argv:\\n"
-        " print('rtl/rv64_pkg.sv')\\n print('rtl/riscv_core_top.sv')\\n")
+    (tmp_path / "sim" / "run.py").write_text("\\n".join([
+        "import sys",
+        "if '--list-rtl' in sys.argv:",
+        " print('rtl/rv64_pkg.sv')",
+        " print('rtl/riscv_core_top.sv')",
+        ""]))
     (tmp_path / "rtl" / "rv64_pkg.sv").write_text("package rv64_pkg; endpackage")
     (tmp_path / "rtl" / "riscv_core_top.sv").write_text("module riscv_core_top; endmodule")
     assert load_riscv_core_sources(tmp_path) == [
@@ -89,9 +93,12 @@ def test_riscv_filelist_loader_rejects_missing_sources(tmp_path):
     from wengold.rtl_hierarchy import load_riscv_core_sources
     (tmp_path / "sim").mkdir()
     (tmp_path / "rtl").mkdir()
-    (tmp_path / "sim" / "run.py").write_text(
-        "import sys\\nif '--list-rtl' in sys.argv:\\n"
-        " print('rtl/rv64_pkg.sv')\\n print('rtl/riscv_core_top.sv')\\n")
+    (tmp_path / "sim" / "run.py").write_text("\\n".join([
+        "import sys",
+        "if '--list-rtl' in sys.argv:",
+        " print('rtl/rv64_pkg.sv')",
+        " print('rtl/riscv_core_top.sv')",
+        ""]))
     (tmp_path / "rtl" / "rv64_pkg.sv").write_text("package rv64_pkg; endpackage")
     with pytest.raises(FileNotFoundError, match="missing files"):
         load_riscv_core_sources(tmp_path)
