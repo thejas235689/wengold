@@ -54,7 +54,7 @@ def make_wave_debug(QtCore, QtGui, QtWidgets, project_root, on_crossprobe=None,
     fail_browse.setObjectName("waveBrowseFailVcd")
     compare_button = QtWidgets.QPushButton("Compare PASS vs FAIL")
     compare_button.setObjectName("waveComparePassFail")
-    compare_button.setEnabled(False)
+    compare_button.setEnabled(True)
     diff_row.addWidget(pass_path, 2)
     diff_row.addWidget(pass_browse)
     diff_row.addWidget(fail_path, 2)
