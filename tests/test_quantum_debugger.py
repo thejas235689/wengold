@@ -133,3 +133,23 @@ def test_checkpoint_cache_can_be_bypassed():
 
     assert len(backend.prefixes) == 4
     clear_debug_checkpoint_cache()
+
+
+def test_qiskit_incremental_trace_uses_single_execution_when_available():
+    pytest.importorskip("qiskit_aer")
+    from quantum.backends.qiskit_backend import QiskitBackend
+
+    circuit = Circuit("incremental", 1, (
+        Operation("h0", "H", (0,)),
+        Operation("x0", "X", (0,)),
+    ))
+    clear_debug_checkpoint_cache()
+    trace = build_debug_trace(circuit, QiskitBackend(), use_cache=False)
+
+    assert len(trace.snapshots) == 3
+    assert trace.snapshots[0].gate == "INITIAL"
+    assert trace.snapshots[1].gate == "H"
+    assert trace.snapshots[2].gate == "X"
+    assert trace.snapshots[0].statevector[0] == pytest.approx((1.0, 0.0))
+    assert abs(trace.snapshots[1].statevector[0][0]) == pytest.approx(2 ** -0.5)
+    assert abs(trace.snapshots[2].statevector[1][0]) == pytest.approx(2 ** -0.5)
