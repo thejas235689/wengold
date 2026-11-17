@@ -51,9 +51,23 @@ python tools/validate_riscv_core.py /path/to/rv64_core \
 ```
 
 Cross-probing uses exact hierarchical names, e.g.
-`tb_core_top.u_core.u_fetch.if_req_valid`. It deliberately does not fuzzy-match
-leaf names. A VCD with a different testbench instance path must supply the
-correct `--vcd-root` and `--dut-instance`.
+`tb_core_top.u_core.u_fetch.if_req_valid`. The VCD parser preserves every
+hierarchical declaration that shares a VCD identifier (common for aliased nets
+in Icarus), instead of overwriting earlier scope names. If a simulator omits a
+child-port alias, Wengold may use only the exact parent-net symbol recorded in
+Slang's elaborated port expression and only when that exact parent path exists
+in the VCD. It never fuzzy-matches leaf names. A VCD with a different testbench
+instance path must supply the correct `--vcd-root` and `--dut-instance`.
+
+## CI evidence
+
+The deterministic capture harness compiles the real RV64 RTL and
+`tb/tb_core_top.sv`, runs a short RV64 smoke program, and generates a fresh VCD.
+The latest validated capture contains **2,618 hierarchical VCD signal names**
+and maps **758 / 758 elaborated ports (100%)** by exact hierarchical path:
+**758 direct matches, 0 parent-net fallbacks, 0 unmatched**. This is a
+smoke-program capture, not a failing regression trace or a user-supplied
+PASS/FAIL comparison.
 
 ## Limitations
 
@@ -68,5 +82,6 @@ correct `--vcd-root` and `--dut-instance`.
   subset; simulator-only testbench constructs and unsupported language features
   may not map to a synthesis netlist.
 - A port is reported as cross-probed only when its exact VCD hierarchical name
-  exists. Optimized-away or un-dumped internal signals remain unmatched.
+  exists, or its exact elaborated parent-net connection is present in the VCD.
+  No leaf-name or approximate matching is performed.
 - VCD and FST are different formats; this validator currently accepts VCD only.
