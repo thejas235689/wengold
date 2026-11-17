@@ -87,8 +87,8 @@ def build_state_visualizer(QtWidgets):
             qax.set_title("Q-sphere: Hamming-weight latitude / relative phase longitude")
             self._qsphere_canvas.draw()
             self._summary.setText(
-                f"{len(vectors)} qubits · {len(points)} populated basis states · "
-                "Bloch vectors show reduced states; Q-sphere phase is relative to the largest amplitude."
+                f"{len(vectors)} qubits · {len(points)} displayed basis states · "
+                "Q-sphere displays at most 2,048 highest-probability states; phase is relative to the largest amplitude."
             )
 
         def set_measurements(self, counts):
