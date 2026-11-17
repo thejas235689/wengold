@@ -102,8 +102,11 @@ def compare_waveforms(pass_wave: dict, fail_wave: dict, *,
             count += 1
             first_for_signal = {"time_ns": str(start), "pass": f"width={pwidth}",
                                 "fail": f"width={fwidth}", "kind": "width_mismatch"}
+            width_item = {"signal": name, **first_for_signal}
+            if first is None:
+                first = width_item
             if len(differences) < max_differences:
-                differences.append({"signal": name, **first_for_signal})
+                differences.append(width_item)
         for t in grid:
             pv = _sample_at(psig, pidx, ptime, t)
             fv = _sample_at(fsig, fidx, ftime, t)
