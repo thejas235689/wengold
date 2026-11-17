@@ -5,10 +5,8 @@ artifact is always a draft. Compiler/simulator evidence is displayed separately.
 """
 from __future__ import annotations
 
-import os
-
-from .agent.llm import DEFAULT_OLLAMA, DEFAULT_OPENAI, PRESETS, preset
-
+from .native_model import model_controls
+from .qwen_cloud import QWEN_BACKEND
 from .ai_prompts import PROFILES
 from .multi_rag import MultiRAG
 from .eda_flows import inspect_manifest, execute_manifest
@@ -23,47 +21,22 @@ def create_ai_tab(root, QtCore, QtGui, QtWidgets, parent=None):
     outer.setSpacing(8)
 
     row = QtWidgets.QHBoxLayout()
-    backend = QtWidgets.QComboBox()
-    backend.setObjectName("aiBackend")
-    backend.addItems(["ollama", "openai"])
-    env_model = os.environ.get("WENGOLD_LLM_MODEL", "qwen2.5-coder:7b")
-    configured = preset(env_model)
-    configured_backend = os.environ.get("WENGOLD_LLM_BACKEND", "").strip().lower()
-    backend.setCurrentText(configured_backend or (configured.backend if configured else "ollama"))
-    default_endpoint = DEFAULT_OPENAI if backend.currentText() == "openai" else DEFAULT_OLLAMA
-    endpoint = QtWidgets.QLineEdit(os.environ.get("WENGOLD_LLM_URL") or default_endpoint)
-    endpoint.setObjectName("aiEndpoint")
-    model = QtWidgets.QComboBox()
-    model.setObjectName("aiModel")
-    model.setEditable(True)
-    model.addItem(env_model)
-    dhir_button = QtWidgets.QPushButton("Use Dhīr 2B")
-    dhir_button.setObjectName("aiDhirPreset")
-    dhir_button.setToolTip(PRESETS["dhir-2b"].note + "\nStart locally with: " +
-                           PRESETS["dhir-2b"].serve)
-
-    def select_dhir():
-        previous = DEFAULT_OPENAI if backend.currentText() == "openai" else DEFAULT_OLLAMA
-        if endpoint.text().strip() in ("", previous):
-            endpoint.setText(DEFAULT_OPENAI)
-        backend.setCurrentText("openai")
-        model.setCurrentText("dhir-2b")
-
-    dhir_button.clicked.connect(select_dhir)
+    backend, endpoint, model, presets = model_controls(
+        QtCore, QtWidgets, "ai", discoverable=True, dhir=True)
     discover = QtWidgets.QPushButton("Connect / Models")
     discover.setObjectName("aiConnect")
     roundtrip = QtWidgets.QPushButton("Test Inference")
     roundtrip.setObjectName("aiTestInference")
     row.addWidget(QtWidgets.QLabel("Backend"))
     row.addWidget(backend)
-    row.addWidget(QtWidgets.QLabel("Local server"))
+    row.addWidget(QtWidgets.QLabel("Model endpoint"))
     row.addWidget(endpoint, 2)
     row.addWidget(QtWidgets.QLabel("Model"))
     row.addWidget(model, 2)
-    row.addWidget(dhir_button)
     row.addWidget(discover)
     row.addWidget(roundtrip)
     outer.addLayout(row)
+    outer.addLayout(presets)
 
     mode = QtWidgets.QComboBox()
     mode.setObjectName("aiDiscipline")
@@ -147,7 +120,7 @@ def create_ai_tab(root, QtCore, QtGui, QtWidgets, parent=None):
     evidence.setReadOnly(True)
     evidence.setPlaceholderText("Tool evidence and connection status; no fabricated signoff.")
     outer.addWidget(evidence, 1)
-    status = QtWidgets.QLabel("Local AI disabled until a real model server responds")
+    status = QtWidgets.QLabel("No model inference has run")
     status.setObjectName("aiStatus")
     outer.addWidget(status)
 
@@ -203,12 +176,13 @@ def create_ai_tab(root, QtCore, QtGui, QtWidgets, parent=None):
 
     def perform(op, values):
         if state["busy"]:
-            status.setText("A local AI or tool check is still running")
+            status.setText("An AI or tool check is still running")
             return
         state["busy"] = True
         for btn in buttons:
             btn.setEnabled(False)
-        status.setText("Running " + op + " (real local execution)…")
+        cloud = op in ("roundtrip", "generate") and backend.currentText() == QWEN_BACKEND
+        status.setText("Running " + op + (" using Alibaba Cloud…" if cloud else " locally…"))
         thread = QtCore.QThread(page)
         worker = Worker(op, values)
         state["thread"], state["worker"] = thread, worker
@@ -264,11 +238,6 @@ def create_ai_tab(root, QtCore, QtGui, QtWidgets, parent=None):
         thread.finished.connect(thread.deleteLater)
         thread.start()
 
-    def choose_backend(selected):
-        if endpoint.text().strip() in ("", DEFAULT_OLLAMA, DEFAULT_OPENAI):
-            endpoint.setText(DEFAULT_OPENAI if selected == "openai" else DEFAULT_OLLAMA)
-
-    backend.currentTextChanged.connect(choose_backend)
     discover.clicked.connect(lambda: perform("connect", (backend.currentText(),
                                                          endpoint.text().strip())))
     roundtrip.clicked.connect(lambda: perform(

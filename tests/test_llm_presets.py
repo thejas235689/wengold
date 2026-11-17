@@ -109,3 +109,16 @@ def test_dhir_2b_preset_defaults_to_local_llamacpp(monkeypatch):
     client = from_env()
     assert (client.model, client.backend, client.endpoint) == (
         "dhir-2b", "openai", "http://127.0.0.1:8080/v1")
+
+
+def test_gemma4_preset_defaults_to_local_ollama(monkeypatch):
+    p = preset("gemma4:e4b")
+    assert p is preset("google/gemma-4-E4B-it")
+    assert p.instruction_tuned and p.licence == "Apache-2.0"
+    assert p.serve == "ollama pull gemma4:e4b"
+    monkeypatch.setenv("WENGOLD_LLM_MODEL", p.name)
+    monkeypatch.delenv("WENGOLD_LLM_BACKEND", raising=False)
+    monkeypatch.delenv("WENGOLD_LLM_URL", raising=False)
+    client = from_env()
+    assert (client.model, client.backend, client.endpoint) == (
+        "gemma4:e4b", "ollama", "http://127.0.0.1:11434")

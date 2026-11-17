@@ -1,4 +1,4 @@
-"""Local AI: loopback inference, real compiler evidence, optional Satya PSS check.
+"""Engineering AI: local or opt-in Qwen inference and independent tool evidence.
 
 An LLM draft is never automatically promoted to verification signoff.
 """
@@ -15,9 +15,12 @@ from urllib.parse import urlparse
 
 from .ai_prompts import make_prompt
 from .agent.llm import LocalModel, probe
+from .qwen_cloud import QWEN_BACKEND, QwenCloudModel
 
 
 def model_client(backend: str, endpoint: str, model: str, timeout: float = 120.0) -> LocalModel:
+    if backend == QWEN_BACKEND:
+        return QwenCloudModel(model, endpoint, timeout)
     if backend not in ("ollama", "openai"):
         raise ValueError("unsupported backend")
     if not model or len(model) > 200:
@@ -34,6 +37,8 @@ def model_client(backend: str, endpoint: str, model: str, timeout: float = 120.0
 
 
 def list_models(backend: str, endpoint: str) -> list[str]:
+    if backend == QWEN_BACKEND:
+        raise ValueError("Qwen4-Max has a fixed model ID. Use Test Inference to check access.")
     model_client(backend, endpoint, "__probe__", 5.0)
     return probe(endpoint, backend, timeout=5.0).models
 
@@ -247,10 +252,11 @@ def rustdv_unit_check(project_root: str | Path, rel: str = "") -> dict:
 
 
 def test_connection(backend: str, endpoint: str, model: str) -> dict:
-    """Actually round-trip a short instruction through the selected local LLM."""
-    info = list_models(backend, endpoint)
-    if model not in info:
-        return {"ok": False, "status": "model_missing", "models": info}
+    """Round-trip a short instruction without sending any project input."""
+    if backend != QWEN_BACKEND:
+        info = list_models(backend, endpoint)
+        if model not in info:
+            return {"ok": False, "status": "model_missing", "models": info}
     client = model_client(backend, endpoint, model, timeout=45.0)
     response = client.ask("Reply with a single word: ready",
                           system="Follow the user's short instruction.")
