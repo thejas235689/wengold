@@ -22,8 +22,9 @@ cmake --install build/quest --prefix .
 ```
 
 The bridge serializes calls with a process mutex because QuEST environment
-initialization/finalization is process-global. Each invocation owns and frees
-its Qureg before finalizing the environment.
+initialization/finalization is process-global. It initializes the environment
+once for the process and finalizes it during process shutdown. Each invocation
+owns and frees its Qureg before returning.
 
 ## Supported contract
 
