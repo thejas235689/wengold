@@ -58,3 +58,9 @@ def test_statevector_qubit_zero_uses_rightmost_bit_in_both_backends():
     from quantum.backends.cirq_backend import CirqBackend
     cirq_result = CirqBackend().run(circuit, seed=3)
     assert cirq_result.probabilities["01"] == pytest.approx(1.0, abs=1e-8)
+
+def test_quest_is_never_reported_available_before_native_bridge_exists():
+    from quantum.backends import available_backends
+    backends = available_backends()
+    assert backends["quest"]["installed"] is False
+    assert backends["quest"]["status"] == "not_implemented"
