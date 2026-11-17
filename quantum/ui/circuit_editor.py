@@ -134,15 +134,54 @@ def build_editor(QtWidgets):
                     self.scene.addRect(x - 24, rect_y, 48, 38)
                     self.scene.addText(gate).setPos(x - 18, rect_y + 6)
 
+    class SimulationWorker(QtCore.QThread):
+        result_ready = QtCore.pyqtSignal(object)
+        failed = QtCore.pyqtSignal(str)
+
+        def __init__(self, backend_name, circuit, shots, seed):
+            super().__init__()
+            self.backend_name = backend_name
+            self.circuit = circuit
+            self.shots = shots
+            self.seed = seed
+
+        def run(self):
+            try:
+                from quantum.backends.registry import create_backend
+                backend = create_backend(self.backend_name)
+                self.result_ready.emit(backend.run(
+                    self.circuit, shots=self.shots, seed=self.seed
+                ))
+            except Exception as exc:
+                self.failed.emit(str(exc))
+
     root = QtWidgets.QWidget()
-    layout = QtWidgets.QHBoxLayout(root)
+    outer = QtWidgets.QVBoxLayout(root)
+    controls = QtWidgets.QHBoxLayout()
+    backend_combo = QtWidgets.QComboBox()
+    for backend_name in ("qiskit", "cirq", "quest"):
+        backend_combo.addItem(backend_name.upper(), backend_name)
+    shots_input = QtWidgets.QSpinBox()
+    shots_input.setRange(1, 1000000)
+    shots_input.setValue(1024)
+    run_button = QtWidgets.QPushButton("Run simulation")
+    status_label = QtWidgets.QLabel("Ready — drag gates onto the circuit wires.")
+    controls.addWidget(QtWidgets.QLabel("Backend"))
+    controls.addWidget(backend_combo)
+    controls.addWidget(QtWidgets.QLabel("Shots"))
+    controls.addWidget(shots_input)
+    controls.addWidget(run_button)
+    outer.addLayout(controls)
+
+    content = QtWidgets.QHBoxLayout()
     palette = QtWidgets.QVBoxLayout()
     palette.addWidget(QtWidgets.QLabel("GATE LIBRARY"))
     for gate in gate_arity:
         palette.addWidget(GateButton(gate))
     palette.addStretch(1)
     canvas = CircuitCanvas()
-    layout.addLayout(palette)
+    content.addLayout(palette)
+
     tabs = QtWidgets.QTabWidget()
     tabs.addTab(canvas, "Circuit")
     try:
@@ -157,9 +196,60 @@ def build_editor(QtWidgets):
         state_visualizer.set_statevector = lambda state: None
         state_visualizer.set_measurements = lambda counts: None
     tabs.addTab(state_visualizer, "State Visualizer")
-    layout.addWidget(tabs, 1)
+    content.addWidget(tabs, 1)
+    outer.addLayout(content, 1)
+    outer.addWidget(status_label)
+
+    root._workers = []
+
+    def launch_simulation():
+        if any(worker.isRunning() for worker in root._workers):
+            status_label.setText("A simulation is already running.")
+            return
+        try:
+            circuit = canvas.to_circuit()
+        except Exception as exc:
+            status_label.setText(f"Circuit validation failed: {exc}")
+            return
+        worker = SimulationWorker(
+            backend_combo.currentData(), circuit, shots_input.value(), 7
+        )
+        run_button.setEnabled(False)
+        status_label.setText(f"Running on {backend_combo.currentText()}…")
+
+        def show_result(result):
+            run_button.setEnabled(True)
+            if result.statevector is not None:
+                state_visualizer.set_statevector(result.statevector)
+            elif result.counts:
+                state_visualizer.set_measurements(result.counts)
+            tabs.setCurrentWidget(state_visualizer)
+            duration = result.execution_time_ms
+            duration_text = f"{duration:.2f} ms" if duration is not None else "time unavailable"
+            shot_text = str(result.shots) if result.shots is not None else "statevector"
+            status_label.setText(
+                f"{result.backend} {result.status} · {duration_text} · {shot_text}"
+            )
+
+        def show_error(message):
+            run_button.setEnabled(True)
+            status_label.setText(f"Simulation failed: {message}")
+
+        worker.result_ready.connect(show_result)
+        worker.failed.connect(show_error)
+        worker.finished.connect(
+            lambda w=worker: root._workers.remove(w) if w in root._workers else None
+        )
+        root._workers.append(worker)
+        worker.start()
+
+    run_button.clicked.connect(launch_simulation)
     root.canvas = canvas
     root.to_circuit = canvas.to_circuit
     root.state_visualizer = state_visualizer
     root.set_statevector = state_visualizer.set_statevector
+    root.run_button = run_button
+    root.backend_combo = backend_combo
+    root.status_label = status_label
+    root.run_simulation = launch_simulation
     return root
