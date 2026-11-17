@@ -167,7 +167,10 @@ def compare_waveforms(pass_wave: dict, fail_wave: dict, *,
         alignment_info.update({"pass_clock": pclock, "fail_clock": fclock})
         axis_label = "cycle"
 
-    start, end = max(paxis[0], faxis[0]), min(paxis[-1], faxis[-1])
+    start = max(paxis[0], faxis[0])
+    if alignment in ("reset", "clock"):
+        start = max(start, Decimal(0))
+    end = min(paxis[-1], faxis[-1])
     if end < start:
         raise ValueError("PASS and FAIL captures have no overlapping aligned time range")
     grid = sorted({t for t in paxis if start <= t <= end} |
