@@ -67,3 +67,69 @@ def test_debug_snapshot_index_is_checked():
     trace = build_debug_trace(Circuit("empty", 1), FakeStatevectorBackend())
     with pytest.raises(IndexError):
         trace.snapshot(1)
+
+
+
+def test_checkpoint_cache_reuses_prefixes_for_same_backend_identity():
+    from quantum.service.debugger import (
+        clear_debug_checkpoint_cache, debug_checkpoint_cache_info,
+    )
+
+    class StableBackend(FakeStatevectorBackend):
+        cache_identity = "fake-statevector-v1"
+
+    clear_debug_checkpoint_cache()
+    circuit = Circuit("cached", 1, (
+        Operation("h0", "H", (0,)),
+        Operation("x0", "X", (0,)),
+    ))
+    first_backend = StableBackend()
+    first = build_debug_trace(circuit, first_backend)
+    assert len(first_backend.prefixes) == 3
+
+    second_backend = StableBackend()
+    second = build_debug_trace(circuit, second_backend)
+
+    assert second_backend.prefixes == []
+    assert [item.statevector for item in first.snapshots] == [
+        item.statevector for item in second.snapshots
+    ]
+    assert all(item.execution_time_ms is None for item in second.snapshots)
+    assert debug_checkpoint_cache_info()["hits"] == 3
+    clear_debug_checkpoint_cache()
+
+
+def test_checkpoint_cache_invalidates_on_operation_or_seed_change():
+    from quantum.service.debugger import clear_debug_checkpoint_cache
+
+    class StableBackend(FakeStatevectorBackend):
+        cache_identity = "fake-statevector-v1"
+
+    clear_debug_checkpoint_cache()
+    backend = StableBackend()
+    original = Circuit("same-id", 1, (Operation("h0", "H", (0,)),))
+    changed = Circuit("same-id", 1, (Operation("x0", "X", (0,)),))
+
+    build_debug_trace(original, backend, seed=7)
+    build_debug_trace(changed, backend, seed=7)
+    build_debug_trace(original, backend, seed=8)
+
+    assert len(backend.prefixes) == 6
+    clear_debug_checkpoint_cache()
+
+
+def test_checkpoint_cache_can_be_bypassed():
+    from quantum.service.debugger import clear_debug_checkpoint_cache
+
+    class StableBackend(FakeStatevectorBackend):
+        cache_identity = "fake-statevector-v1"
+
+    clear_debug_checkpoint_cache()
+    circuit = Circuit("uncached", 1, (Operation("h0", "H", (0,)),))
+    backend = StableBackend()
+
+    build_debug_trace(circuit, backend, use_cache=False)
+    build_debug_trace(circuit, backend, use_cache=False)
+
+    assert len(backend.prefixes) == 4
+    clear_debug_checkpoint_cache()
