@@ -95,6 +95,10 @@ class CirqBackend(Backend):
             format(index, f"0{circuit.num_qubits}b")[::-1]: float(abs(amplitude) ** 2)
             for index, amplitude in enumerate(state)
         }
+        probability_sum = sum(probabilities.values())
+        if probability_sum <= 0.0:
+            raise RuntimeError("Cirq returned a zero-norm statevector")
+        probabilities = {key: value / probability_sum for key, value in probabilities.items()}
         elapsed = (time.perf_counter() - start) * 1000
         return SimulationResult(
             uuid.uuid4().hex, self.name, "COMPLETED", None,
