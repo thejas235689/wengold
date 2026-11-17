@@ -234,7 +234,12 @@ def load_riscv_core_sources(project_root: str | Path,
             break
     if not isinstance(raw_sources, list) or not raw_sources:
         raise RuntimeError("Could not find a non-empty literal RTL_SRCS list in sim/run.py")
-    sources = [str(item).strip() for item in raw_sources]
+    sources = []
+    for item in raw_sources:
+        value = str(item).strip()
+        if not value.startswith("rtl/"):
+            value = "rtl/" + value
+        sources.append(value)
     if any(not item.endswith((".sv", ".v")) for item in sources):
         raise RuntimeError("sim/run.py RTL_SRCS contains a non-Verilog source entry")
     if not sources:
