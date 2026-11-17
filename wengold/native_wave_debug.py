@@ -9,7 +9,8 @@ import json
 import os
 
 from .wave_debug import diagnose, explain_with_local_ai
-from .otel_telemetry import (build_otlp_bundle, write_otlp_bundle,\n                             send_dynatrace_otlp)
+from .otel_telemetry import (build_otlp_bundle, write_otlp_bundle,
+                             send_dynatrace_otlp)
 
 
 def make_wave_debug(QtCore, QtGui, QtWidgets, project_root, on_crossprobe=None,
