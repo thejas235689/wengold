@@ -1,5 +1,6 @@
-"""PyQt6 drag-and-drop circuit editor with explicit multi-qubit IR mapping."""
+"""PyQt6 drag-and-drop quantum circuit editor and gate-by-gate debugger."""
 from __future__ import annotations
+
 import uuid
 
 from quantum.core.circuit_ir import Circuit, Operation, validate_circuit
@@ -45,6 +46,7 @@ def build_editor(QtWidgets):
             self.setAcceptDrops(True)
             self.num_qubits = 3
             self.operations = []
+            self.debug_operation_id = None
             self.setMinimumSize(650, 320)
             self.setSceneRect(0, 0, 980, 280)
             self.render_circuit()
@@ -62,12 +64,12 @@ def build_editor(QtWidgets):
                 return [anchor]
             candidates = [q for q in range(self.num_qubits) if q != anchor]
             if gate == "CNOT":
-                return [candidates[0], anchor]  # control, target
+                return [candidates[0], anchor]
             if gate == "CCX":
-                return [candidates[0], candidates[1], anchor]  # controls, target
+                return [candidates[0], candidates[1], anchor]
             if gate == "CSWAP":
-                return [candidates[0], anchor, candidates[1]]  # control, swap targets
-            return [anchor, candidates[0]]  # two targets
+                return [candidates[0], anchor, candidates[1]]
+            return [anchor, candidates[0]]
 
         def dropEvent(self, event):
             gate = event.mimeData().text().upper()
@@ -77,13 +79,11 @@ def build_editor(QtWidgets):
             point = self.mapToScene(event.position().toPoint())
             anchor = max(0, min(self.num_qubits - 1, round((point.y() - 45) / 75)))
             column = max(0, round((point.x() - 100) / 95))
-            operands = self._operands(gate, anchor)
             self.operations.append({
-                "id": uuid.uuid4().hex,
-                "gate": gate,
-                "qubits": operands,
-                "column": column,
+                "id": uuid.uuid4().hex, "gate": gate,
+                "qubits": self._operands(gate, anchor), "column": column,
             })
+            self.debug_operation_id = None
             self.render_circuit()
             event.acceptProposedAction()
 
@@ -94,9 +94,11 @@ def build_editor(QtWidgets):
                 if gate == "CNOT":
                     op = Operation(item["id"], gate, targets=(qubits[1],), controls=(qubits[0],))
                 elif gate == "CCX":
-                    op = Operation(item["id"], gate, targets=(qubits[2],), controls=(qubits[0], qubits[1]))
+                    op = Operation(item["id"], gate, targets=(qubits[2],),
+                                   controls=(qubits[0], qubits[1]))
                 elif gate == "CSWAP":
-                    op = Operation(item["id"], gate, targets=(qubits[1], qubits[2]), controls=(qubits[0],))
+                    op = Operation(item["id"], gate, targets=(qubits[1], qubits[2]),
+                                   controls=(qubits[0],))
                 elif gate in {"CZ", "SWAP"}:
                     op = Operation(item["id"], gate, targets=tuple(qubits))
                 elif gate == "MEASURE":
@@ -109,6 +111,10 @@ def build_editor(QtWidgets):
                               num_clbits=self.num_qubits)
             validate_circuit(circuit)
             return circuit
+
+        def set_debug_operation(self, operation_id):
+            self.debug_operation_id = operation_id
+            self.render_circuit()
 
         def render_circuit(self):
             self.scene.clear()
@@ -142,6 +148,14 @@ def build_editor(QtWidgets):
                     rect_y = ys[0] - 19
                     self.scene.addRect(x - 24, rect_y, 48, 38)
                     self.scene.addText(gate).setPos(x - 18, rect_y + 6)
+                if item["id"] == self.debug_operation_id:
+                    top, bottom = min(ys) - 26, max(ys) + 26
+                    highlight = self.scene.addRect(
+                        x - 31, top, 62, max(52, bottom - top),
+                        QtGui.QPen(QtGui.QColor("#f59e0b"), 3),
+                        QtGui.QBrush(QtCore.Qt.BrushStyle.NoBrush),
+                    )
+                    highlight.setZValue(5)
 
     class SimulationWorker(QtCore.QThread):
         result_ready = QtCore.pyqtSignal(object)
@@ -149,10 +163,8 @@ def build_editor(QtWidgets):
 
         def __init__(self, backend_name, circuit, shots, seed):
             super().__init__()
-            self.backend_name = backend_name
-            self.circuit = circuit
-            self.shots = shots
-            self.seed = seed
+            self.backend_name, self.circuit = backend_name, circuit
+            self.shots, self.seed = shots, seed
 
         def run(self):
             try:
@@ -161,6 +173,23 @@ def build_editor(QtWidgets):
                 self.result_ready.emit(backend.run(
                     self.circuit, shots=self.shots, seed=self.seed
                 ))
+            except Exception as exc:
+                self.failed.emit(str(exc))
+
+    class DebugWorker(QtCore.QThread):
+        trace_ready = QtCore.pyqtSignal(object)
+        failed = QtCore.pyqtSignal(str)
+
+        def __init__(self, backend_name, circuit):
+            super().__init__()
+            self.backend_name, self.circuit = backend_name, circuit
+
+        def run(self):
+            try:
+                from quantum.backends.registry import create_backend
+                from quantum.service.debugger import build_debug_trace
+                backend = create_backend(self.backend_name)
+                self.trace_ready.emit(build_debug_trace(self.circuit, backend))
             except Exception as exc:
                 self.failed.emit(str(exc))
 
@@ -174,12 +203,14 @@ def build_editor(QtWidgets):
     shots_input.setRange(1, 1000000)
     shots_input.setValue(1024)
     run_button = QtWidgets.QPushButton("Run simulation")
+    debug_button = QtWidgets.QPushButton("Build debug trace")
     status_label = QtWidgets.QLabel("Ready — drag gates onto the circuit wires.")
     controls.addWidget(QtWidgets.QLabel("Backend"))
     controls.addWidget(backend_combo)
     controls.addWidget(QtWidgets.QLabel("Shots"))
     controls.addWidget(shots_input)
     controls.addWidget(run_button)
+    controls.addWidget(debug_button)
     outer.addLayout(controls)
 
     content = QtWidgets.QHBoxLayout()
@@ -207,27 +238,130 @@ def build_editor(QtWidgets):
     tabs.addTab(state_visualizer, "State Visualizer")
     content.addWidget(tabs, 1)
     outer.addLayout(content, 1)
+
+    debug_panel = QtWidgets.QGroupBox("QUANTUM DEBUGGER")
+    debug_layout = QtWidgets.QVBoxLayout(debug_panel)
+    debug_summary = QtWidgets.QLabel("Build a trace to inspect each gate boundary.")
+    debug_summary.setWordWrap(True)
+    step_controls = QtWidgets.QHBoxLayout()
+    previous_button = QtWidgets.QPushButton("◀ Previous")
+    next_button = QtWidgets.QPushButton("Next ▶")
+    step_slider = QtWidgets.QSlider(QtCore.Qt.Orientation.Horizontal)
+    step_slider.setRange(0, 0)
+    step_slider.setEnabled(False)
+    previous_button.setEnabled(False)
+    next_button.setEnabled(False)
+    step_controls.addWidget(previous_button)
+    step_controls.addWidget(step_slider, 1)
+    step_controls.addWidget(next_button)
+    debug_layout.addWidget(debug_summary)
+    debug_layout.addLayout(step_controls)
+    outer.addWidget(debug_panel)
     outer.addWidget(status_label)
 
     root._workers = []
+    root.debug_trace = None
 
-    def launch_simulation():
-        if any(worker.isRunning() for worker in root._workers):
-            status_label.setText("A simulation is already running.")
+    def any_worker_running():
+        return any(worker.isRunning() for worker in root._workers)
+
+    def show_debug_step(step):
+        trace = root.debug_trace
+        if trace is None or not trace.snapshots:
+            return
+        snapshot = trace.snapshot(int(step))
+        canvas.set_debug_operation(snapshot.operation_id)
+        state_visualizer.set_statevector(snapshot.statevector)
+        if snapshot.step == 0:
+            delta_text = "Initial state; no previous gate"
+        else:
+            previous = trace.snapshot(snapshot.step - 1)
+            keys = set(previous.probabilities) | set(snapshot.probabilities)
+            delta = sum(abs(snapshot.probabilities.get(k, 0.0)
+                            - previous.probabilities.get(k, 0.0)) for k in keys)
+            delta_text = f"Probability L1 change vs previous step: {delta:.6f}"
+        operation = snapshot.operation_id or "—"
+        duration = (f"{snapshot.execution_time_ms:.3f} ms"
+                    if snapshot.execution_time_ms is not None else "n/a")
+        debug_summary.setText(
+            f"Step {snapshot.step}/{trace.num_steps} · {snapshot.gate} · "
+            f"operation {operation} · backend {trace.backend} · {duration}\n{delta_text}"
+        )
+        previous_button.setEnabled(snapshot.step > 0)
+        next_button.setEnabled(snapshot.step < trace.num_steps)
+        tabs.setCurrentWidget(state_visualizer)
+
+    def on_slider_changed(value):
+        show_debug_step(value)
+
+    def move_step(delta):
+        if root.debug_trace is not None:
+            step_slider.setValue(max(0, min(root.debug_trace.num_steps,
+                                            step_slider.value() + delta)))
+
+    def launch_debug():
+        if any_worker_running():
+            status_label.setText("Wait for the active simulator task to finish.")
             return
         try:
             circuit = canvas.to_circuit()
         except Exception as exc:
             status_label.setText(f"Circuit validation failed: {exc}")
             return
-        worker = SimulationWorker(
-            backend_combo.currentData(), circuit, shots_input.value(), 7
-        )
+        debug_button.setEnabled(False)
         run_button.setEnabled(False)
+        step_slider.setEnabled(False)
+        status_label.setText(f"Building gate-by-gate trace on {backend_combo.currentText()}…")
+        worker = DebugWorker(backend_combo.currentData(), circuit)
+
+        def trace_ready(trace):
+            root.debug_trace = trace
+            step_slider.blockSignals(True)
+            step_slider.setRange(0, trace.num_steps)
+            step_slider.setValue(0)
+            step_slider.blockSignals(False)
+            step_slider.setEnabled(True)
+            show_debug_step(0)
+            status_label.setText(
+                f"Debug trace ready · {trace.num_steps} gates · {len(trace.snapshots)} snapshots"
+            )
+
+        def trace_failed(message):
+            root.debug_trace = None
+            canvas.set_debug_operation(None)
+            debug_summary.setText("Trace unavailable.")
+            status_label.setText(f"Debug trace failed: {message}")
+
+        worker.trace_ready.connect(trace_ready)
+        worker.failed.connect(trace_failed)
+        worker.finished.connect(lambda: (
+            debug_button.setEnabled(True),
+            run_button.setEnabled(True),
+            root._workers.remove(worker) if worker in root._workers else None
+        ))
+        root._workers.append(worker)
+        worker.start()
+
+    def launch_simulation():
+        if any_worker_running():
+            status_label.setText("A simulation or debug trace is already running.")
+            return
+        try:
+            circuit = canvas.to_circuit()
+        except Exception as exc:
+            status_label.setText(f"Circuit validation failed: {exc}")
+            return
+        worker = SimulationWorker(backend_combo.currentData(), circuit, shots_input.value(), 7)
+        run_button.setEnabled(False)
+        debug_button.setEnabled(False)
         status_label.setText(f"Running on {backend_combo.currentText()}…")
 
         def show_result(result):
-            run_button.setEnabled(True)
+            root.debug_trace = None
+            step_slider.setEnabled(False)
+            previous_button.setEnabled(False)
+            next_button.setEnabled(False)
+            canvas.set_debug_operation(None)
             if result.statevector is not None:
                 state_visualizer.set_statevector(result.statevector)
             elif result.counts:
@@ -241,24 +375,36 @@ def build_editor(QtWidgets):
             )
 
         def show_error(message):
-            run_button.setEnabled(True)
             status_label.setText(f"Simulation failed: {message}")
 
         worker.result_ready.connect(show_result)
         worker.failed.connect(show_error)
-        worker.finished.connect(
-            lambda w=worker: root._workers.remove(w) if w in root._workers else None
-        )
+        worker.finished.connect(lambda: (
+            run_button.setEnabled(True),
+            debug_button.setEnabled(True),
+            root._workers.remove(worker) if worker in root._workers else None
+        ))
         root._workers.append(worker)
         worker.start()
 
     run_button.clicked.connect(launch_simulation)
+    debug_button.clicked.connect(launch_debug)
+    previous_button.clicked.connect(lambda: move_step(-1))
+    next_button.clicked.connect(lambda: move_step(1))
+    step_slider.valueChanged.connect(on_slider_changed)
+
     root.canvas = canvas
     root.to_circuit = canvas.to_circuit
     root.state_visualizer = state_visualizer
     root.set_statevector = state_visualizer.set_statevector
     root.run_button = run_button
+    root.debug_button = debug_button
     root.backend_combo = backend_combo
     root.status_label = status_label
     root.run_simulation = launch_simulation
+    root.run_debug_trace = launch_debug
+    root.debug_slider = step_slider
+    root.debug_summary = debug_summary
+    root.debug_previous_button = previous_button
+    root.debug_next_button = next_button
     return root
