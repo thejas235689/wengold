@@ -167,7 +167,7 @@ def test_advanced_wave_debug_decodes_axi4_and_exposes_transaction_lanes(native_w
         "RVALID", "RREADY", "RID", "RDATA", "RLAST", "RRESP",
         "ARESETn", "AWBURST", "ARBURST",
     )
-    symbols = {name: chr(33 + index) for index, name in enumerate(required)}
+    symbols = {name: f"s{index}" for index, name in enumerate(required)}
     widths = {name: 64 if name in {"AWADDR", "ARADDR", "WDATA", "RDATA"} else 8
               for name in required}
     declarations = ["$timescale 1ns $end", "$scope module tb $end",
