@@ -15,8 +15,7 @@ def _installed(module: str) -> bool:
 def available_backends() -> dict[str, dict[str, object]]:
     qiskit_ready = _installed("qiskit") and _installed("qiskit_aer")
     cirq_ready = _installed("cirq")
-    # The QuEST adapter is intentionally disabled until WENGOLD ships and tests
-    # its own ABI-pinned native bridge; a third-party package alone is not enough.
+    quest_ready = _installed("quantum.backends._quest_bridge")
     return {
         "qiskit": {
             "installed": qiskit_ready,
@@ -28,10 +27,11 @@ def available_backends() -> dict[str, dict[str, object]]:
         },
         "cirq": {"installed": cirq_ready, "adapter": "CirqBackend"},
         "quest": {
-            "installed": False,
+            "installed": quest_ready,
             "adapter": "QuESTBackend",
-            "status": "not_implemented",
-            "note": "Waiting for the WENGOLD ABI-pinned native C++ bridge and CI tests.",
+            "status": "ready" if quest_ready else "not_built",
+            "note": "WENGOLD QuEST v4 native bridge detected." if quest_ready else
+                    "Build the optional WENGOLD QuEST v4 native bridge to enable execution.",
         },
     }
 
