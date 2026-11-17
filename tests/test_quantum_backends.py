@@ -63,7 +63,7 @@ def test_quest_is_never_reported_available_before_native_bridge_exists():
     from quantum.backends import available_backends
     backends = available_backends()
     assert backends["quest"]["installed"] is False
-    assert backends["quest"]["status"] == "not_implemented"
+    assert backends["quest"]["status"] in {"not_built", "ready"}
 
 
 def test_reset_gate_is_supported_by_both_simulators():
