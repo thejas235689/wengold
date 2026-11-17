@@ -67,3 +67,123 @@ def test_debug_snapshot_index_is_checked():
     trace = build_debug_trace(Circuit("empty", 1), FakeStatevectorBackend())
     with pytest.raises(IndexError):
         trace.snapshot(1)
+
+
+
+def test_checkpoint_cache_reuses_prefixes_for_same_backend_identity():
+    from quantum.service.debugger import (
+        clear_debug_checkpoint_cache, debug_checkpoint_cache_info,
+    )
+
+    class StableBackend(FakeStatevectorBackend):
+        cache_identity = "fake-statevector-v1"
+
+    clear_debug_checkpoint_cache()
+    circuit = Circuit("cached", 1, (
+        Operation("h0", "H", (0,)),
+        Operation("x0", "X", (0,)),
+    ))
+    first_backend = StableBackend()
+    first = build_debug_trace(circuit, first_backend)
+    assert len(first_backend.prefixes) == 3
+
+    second_backend = StableBackend()
+    second = build_debug_trace(circuit, second_backend)
+
+    assert second_backend.prefixes == []
+    assert [item.statevector for item in first.snapshots] == [
+        item.statevector for item in second.snapshots
+    ]
+    assert all(item.execution_time_ms is None for item in second.snapshots)
+    assert debug_checkpoint_cache_info()["hits"] == 3
+    clear_debug_checkpoint_cache()
+
+
+def test_checkpoint_cache_invalidates_on_operation_or_seed_change():
+    from quantum.service.debugger import clear_debug_checkpoint_cache
+
+    class StableBackend(FakeStatevectorBackend):
+        cache_identity = "fake-statevector-v1"
+
+    clear_debug_checkpoint_cache()
+    backend = StableBackend()
+    original = Circuit("same-id", 1, (Operation("h0", "H", (0,)),))
+    changed = Circuit("same-id", 1, (Operation("x0", "X", (0,)),))
+
+    build_debug_trace(original, backend, seed=7)
+    build_debug_trace(changed, backend, seed=7)
+    build_debug_trace(original, backend, seed=8)
+
+    assert len(backend.prefixes) == 5
+    clear_debug_checkpoint_cache()
+
+
+def test_checkpoint_cache_can_be_bypassed():
+    from quantum.service.debugger import clear_debug_checkpoint_cache
+
+    class StableBackend(FakeStatevectorBackend):
+        cache_identity = "fake-statevector-v1"
+
+    clear_debug_checkpoint_cache()
+    circuit = Circuit("uncached", 1, (Operation("h0", "H", (0,)),))
+    backend = StableBackend()
+
+    build_debug_trace(circuit, backend, use_cache=False)
+    build_debug_trace(circuit, backend, use_cache=False)
+
+    assert len(backend.prefixes) == 4
+    clear_debug_checkpoint_cache()
+
+
+def test_qiskit_incremental_trace_uses_single_execution_when_available():
+    pytest.importorskip("qiskit_aer")
+    from quantum.backends.qiskit_backend import QiskitBackend
+
+    circuit = Circuit("incremental", 1, (
+        Operation("h0", "H", (0,)),
+        Operation("x0", "X", (0,)),
+    ))
+    clear_debug_checkpoint_cache()
+    trace = build_debug_trace(circuit, QiskitBackend(), use_cache=False)
+
+    assert len(trace.snapshots) == 3
+    assert trace.snapshots[0].gate == "INITIAL"
+    assert trace.snapshots[1].gate == "H"
+    assert trace.snapshots[2].gate == "X"
+    assert trace.snapshots[0].statevector[0] == pytest.approx((1.0, 0.0))
+    assert abs(trace.snapshots[1].statevector[0][0]) == pytest.approx(2 ** -0.5)
+    assert abs(trace.snapshots[2].statevector[1][0]) == pytest.approx(2 ** -0.5)
+
+
+def test_qiskit_measurement_trajectories_capture_each_shot_and_collapsed_states():
+    pytest.importorskip("qiskit_aer")
+    from quantum.backends.qiskit_backend import QiskitBackend
+    from quantum.service.debugger import build_measurement_trajectories
+
+    circuit = Circuit("bell-trajectories", 2, (
+        Operation("h0", "H", (0,)),
+        Operation("cx01", "CNOT", (1,), (0,)),
+        Operation("measure0", "MEASURE", (0,), classical_bits=(0,)),
+        Operation("measure1", "MEASURE", (1,), classical_bits=(1,)),
+    ), num_clbits=2)
+
+    trace = build_measurement_trajectories(
+        circuit, QiskitBackend(), shots=12, seed=31,
+    )
+
+    assert trace.shots == 12
+    assert all(len(shot.snapshots) == 5 for shot in trace.trajectories)
+    assert {shot.classical_bits for shot in trace.trajectories} <= {"00", "11"}
+    for shot in trace.trajectories:
+        assert shot.snapshots[-1].gate == "MEASURE"
+        assert sum(shot.snapshots[-1].probabilities.values()) == pytest.approx(1.0)
+
+
+def test_trajectory_debugger_rejects_backend_without_shot_support():
+    from quantum.service.debugger import build_measurement_trajectories
+
+    circuit = Circuit("unsupported-trajectory", 1, (
+        Operation("m0", "MEASURE", (0,), classical_bits=(0,)),
+    ), num_clbits=1)
+    with pytest.raises(QuantumDebugError, match="does not implement shot trajectories"):
+        build_measurement_trajectories(circuit, FakeStatevectorBackend(), shots=2)

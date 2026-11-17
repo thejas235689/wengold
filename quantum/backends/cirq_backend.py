@@ -9,6 +9,7 @@ from quantum.core.circuit_ir import Circuit, validate_circuit
 
 class CirqBackend(Backend):
     name = "cirq"
+    cache_identity = "cirq-statevector-v1"
 
     def __init__(self):
         try:
