@@ -45,7 +45,7 @@ def make_wave_debug(QtCore, QtGui, QtWidgets, project_root, on_crossprobe=None,
     axi_prefix.setPlaceholderText("AXI4 interface prefix, for example tb.dut.m_axi")
     axi_clock = QtWidgets.QLineEdit()
     axi_clock.setObjectName("waveAxi4Clock")
-    axi_clock.setPlaceholderText("ACLK full signal path (blank = selected waveform clock)")
+    axi_clock.setPlaceholderText("ACLK full signal path (blank = interface ACLK, then waveform clock)")
     axi_stall_threshold = QtWidgets.QSpinBox()
     axi_stall_threshold.setObjectName("waveAxi4StallThreshold")
     axi_stall_threshold.setRange(1, 1000)
