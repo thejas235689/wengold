@@ -257,6 +257,222 @@ def load_riscv_core_sources(project_root: str | Path,
     return sources
 
 
+
+def _slang_type_width(type_name: str, member: dict[str, Any] | None = None) -> int | None:
+    """Best-effort packed width from Slang's elaborated type display."""
+    for key in ("bitWidth", "width"):
+        value = (member or {}).get(key)
+        if isinstance(value, int) and value > 0:
+            return value
+    ranges = re.findall(r"\\[(\\d+)\\s*:\\s*(\\d+)\\]", type_name or "")
+    if not ranges:
+        return 1 if type_name else None
+    width = 1
+    for left, right in ranges:
+        width *= abs(int(left) - int(right)) + 1
+    return width
+
+
+def _slang_source_info(node: dict[str, Any]) -> dict[str, Any] | None:
+    for key in ("source", "sourceLocation", "location", "declaredAt"):
+        value = node.get(key)
+        if isinstance(value, dict):
+            file_name = value.get("file") or value.get("path") or value.get("filename")
+            line = value.get("line") or value.get("lineNumber")
+            if file_name:
+                return {"file": str(file_name), "line": int(line or 1), "raw": value}
+        elif isinstance(value, str):
+            match = re.match(r"(.+?):(\\d+)(?::(\\d+))?", value)
+            if match:
+                return {"file": match.group(1), "line": int(match.group(2)),
+                        "column": int(match.group(3) or 1), "raw": value}
+    return None
+
+
+def _slang_named_symbols(expression: Any) -> list[tuple[str, str]]:
+    """Return (symbol address, source-level name) pairs from a Slang expression."""
+    found: list[tuple[str, str]] = []
+    def visit(value: Any) -> None:
+        if isinstance(value, dict):
+            symbol = value.get("symbol")
+            if isinstance(symbol, str):
+                match = re.match(r"^(\\d+)\\s+(.+)$", symbol)
+                if match:
+                    found.append((match.group(1), match.group(2)))
+            for child in value.values():
+                visit(child)
+        elif isinstance(value, list):
+            for child in value:
+                visit(child)
+    visit(expression)
+    # Preserve order while removing duplicate references.
+    return list(dict.fromkeys(found))
+
+
+def build_hierarchy_from_slang_ast(ast_document: dict[str, Any], *,
+                                   top: str, max_instances: int = MAX_INSTANCES) -> dict[str, Any]:
+    """Build instance hierarchy and actual port-expression connections from Slang AST JSON."""
+    design = ast_document.get("design") or {}
+    top_instance = next((item for item in design.get("members", [])
+                         if item.get("kind") == "Instance" and item.get("name") == top), None)
+    if top_instance is None:
+        available = [item.get("name") for item in design.get("members", [])
+                     if item.get("kind") == "Instance"]
+        raise ValueError(f"Top instance {top!r} not found in Slang AST; available: {available}")
+
+    nodes: list[dict[str, Any]] = []
+    edges: list[dict[str, Any]] = []
+    truncated = False
+
+    def walk(instance: dict[str, Any], instance_path: str,
+             parent_body: dict[str, Any] | None = None) -> None:
+        nonlocal truncated
+        if len(nodes) >= max_instances:
+            truncated = True
+            return
+        body = instance.get("body") or {}
+        module_name = body.get("name") or instance.get("name", "")
+        members = body.get("members") or []
+        port_members = [member for member in members if member.get("kind") == "Port"]
+        ports = []
+        for port in port_members:
+            type_name = str(port.get("type", ""))
+            ports.append({
+                "name": port.get("name", ""),
+                "direction": {"In": "input", "Out": "output", "InOut": "inout",
+                              "Ref": "ref"}.get(port.get("direction"), "inout"),
+                "width": _slang_type_width(type_name, port),
+                "type": type_name,
+                "source": _slang_source_info(port) or _slang_source_info(body),
+            })
+        node = {
+            "id": instance_path, "module": module_name,
+            "source": _slang_source_info(instance) or _slang_source_info(body),
+            "ports": ports,
+        }
+        nodes.append(node)
+
+        if parent_body is not None:
+            parent_members = parent_body.get("members") or []
+            parent_symbols = {str(member.get("addr")): member.get("name", "")
+                              for member in parent_members if member.get("addr") is not None}
+            for connection in instance.get("connections") or []:
+                port = connection.get("port") or {}
+                port_name = port.get("name", "")
+                expression = connection.get("expr")
+                refs = _slang_named_symbols(expression)
+                if refs:
+                    for symbol_addr, symbol_name in refs:
+                        net_name = parent_symbols.get(symbol_addr) or symbol_name
+                        edges.append({
+                            "from": instance_path.rsplit(".", 1)[0] + "." + net_name,
+                            "to": instance_path + "." + port_name,
+                            "instance": instance_path, "port": port_name,
+                            "direction": {"In": "input", "Out": "output",
+                                          "InOut": "inout", "Ref": "ref"}.get(
+                                              port.get("direction"), "inout"),
+                            "width": _slang_type_width(str(port.get("type", "")), port),
+                            "expression_kind": (expression or {}).get("kind"),
+                            "parent_symbol": net_name, "parent_symbol_addr": symbol_addr,
+                            "source": _slang_source_info(port),
+                        })
+                else:
+                    edges.append({
+                        "from": instance_path.rsplit(".", 1)[0] + ".<expression>",
+                        "to": instance_path + "." + port_name,
+                        "instance": instance_path, "port": port_name,
+                        "direction": {"In": "input", "Out": "output",
+                                      "InOut": "inout", "Ref": "ref"}.get(
+                                          port.get("direction"), "inout"),
+                        "width": _slang_type_width(str(port.get("type", "")), port),
+                        "expression_kind": (expression or {}).get("kind"),
+                        "parent_symbol": None, "expression": expression,
+                        "source": _slang_source_info(port),
+                    })
+
+        for child in members:
+            if child.get("kind") != "Instance":
+                continue
+            child_path = instance_path + "." + child.get("name", "<unnamed>")
+            walk(child, child_path, body)
+            if truncated:
+                return
+
+    walk(top_instance, top)
+    return {
+        "top": top, "nodes": nodes, "edges": edges,
+        "instance_count": len(nodes), "connection_count": len(edges),
+        "connection_unit": "port connections",
+        "truncated": truncated, "warnings": [],
+        "qualification": "Slang elaborated AST hierarchy and port expressions; logical connectivity, not physical layout",
+    }
+
+
+def elaborate_with_slang_ast(project_root: str | Path, sources: list[str | Path], *,
+                             top: str, slang: str = "slang",
+                             include_dirs: list[str | Path] | None = None,
+                             defines: list[str] | None = None,
+                             max_loop_analysis_steps: int = 0,
+                             timeout_seconds: int = 300) -> dict[str, Any]:
+    """Run standalone Slang full-SV elaboration and export its elaborated AST JSON.
+
+    Driver-loop analysis is disabled by default because hierarchy extraction does
+    not require procedural driver unrolling; this avoids synthesis-style unroll
+    limits on legal dynamic loops in behavioral functions.
+    """
+    if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_$]*", top):
+        raise ValueError("Top module must be a simple Verilog/SystemVerilog identifier")
+    executable = shutil.which(slang)
+    if not executable:
+        raise RuntimeError("Slang executable not found; install Slang or OSS CAD Suite")
+    root = Path(project_root).resolve()
+    if not sources:
+        raise ValueError("Select at least one SystemVerilog/Verilog source file")
+    resolved = []
+    for source in sources:
+        path = (root / source).resolve() if not Path(source).is_absolute() else Path(source).resolve()
+        if root not in path.parents and path != root:
+            raise ValueError(f"Source escapes project root: {source}")
+        if not path.is_file() or path.suffix.lower() not in {".sv", ".v"}:
+            raise ValueError(f"Not a readable Verilog/SystemVerilog source: {source}")
+        resolved.append(path)
+    incdirs = []
+    for directory in include_dirs or []:
+        path = (root / directory).resolve() if not Path(directory).is_absolute() else Path(directory).resolve()
+        if root not in path.parents and path != root:
+            raise ValueError(f"Include directory escapes project root: {directory}")
+        if not path.is_dir():
+            raise ValueError(f"Include directory does not exist: {directory}")
+        incdirs.append(path)
+    command = [executable, "--ast-json", str(root / ".wengold" / "slang_ast.json"),
+               "--ast-json-source-info", "--max-loop-analysis-steps",
+               str(max_loop_analysis_steps)]
+    for directory in incdirs:
+        command.extend(["-I", str(directory)])
+    for define in defines or []:
+        if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*(?:=[^\\s]+)?", define):
+            raise ValueError(f"Invalid preprocessor define: {define}")
+        command.append("-D" + define)
+    command.extend(str(path) for path in resolved)
+    output = root / ".wengold" / "slang_ast.json"
+    output.parent.mkdir(parents=True, exist_ok=True)
+    completed = subprocess.run(command, cwd=root, capture_output=True, text=True,
+                               timeout=timeout_seconds, check=False)
+    if completed.returncode:
+        detail = (completed.stderr or completed.stdout or "Slang elaboration failed").strip()
+        raise RuntimeError(detail[-8000:])
+    try:
+        ast_document = json.loads(output.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise RuntimeError(f"Slang did not produce valid AST JSON: {exc}") from exc
+    graph = build_hierarchy_from_slang_ast(ast_document, top=top)
+    graph["tool"] = "Slang"
+    graph["frontend"] = "Slang CLI elaborated AST JSON"
+    graph["source_files"] = [str(path.relative_to(root)) for path in resolved]
+    graph["diagnostics"] = (completed.stderr or completed.stdout or "")[-8000:]
+    return graph
+
+
 def crossprobe_hierarchy_to_vcd(graph: dict[str, Any], wave: dict[str, Any], *,
                                 vcd_root: str, dut_instance: str = "u_core") -> dict[str, Any]:
     """Map elaborated DUT ports to exact VCD hierarchical names.
