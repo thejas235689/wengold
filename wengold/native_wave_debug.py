@@ -9,6 +9,7 @@ import json
 import os
 
 from .wave_debug import diagnose, explain_with_local_ai
+from .axi4_telemetry import decode_axi4
 from .otel_telemetry import (build_otlp_bundle, write_otlp_bundle,
                              send_dynatrace_otlp)
 
@@ -38,6 +39,28 @@ def make_wave_debug(QtCore, QtGui, QtWidgets, project_root, on_crossprobe=None,
         roots.addWidget(w)
     layout.addLayout(roots)
 
+    axi_row = QtWidgets.QHBoxLayout()
+    axi_prefix = QtWidgets.QLineEdit("tb.dut.axi")
+    axi_prefix.setObjectName("waveAxi4Prefix")
+    axi_prefix.setPlaceholderText("AXI4 interface prefix, for example tb.dut.m_axi")
+    axi_clock = QtWidgets.QLineEdit()
+    axi_clock.setObjectName("waveAxi4Clock")
+    axi_clock.setPlaceholderText("ACLK full signal path (blank = selected waveform clock)")
+    axi_stall_threshold = QtWidgets.QSpinBox()
+    axi_stall_threshold.setObjectName("waveAxi4StallThreshold")
+    axi_stall_threshold.setRange(1, 1000)
+    axi_stall_threshold.setValue(8)
+    axi_decode_button = QtWidgets.QPushButton("Decode AXI4 traffic")
+    axi_decode_button.setObjectName("waveDecodeAxi4")
+    axi_decode_button.setEnabled(False)
+    axi_row.addWidget(QtWidgets.QLabel("AXI4 prefix"))
+    axi_row.addWidget(axi_prefix, 2)
+    axi_row.addWidget(axi_clock, 2)
+    axi_row.addWidget(QtWidgets.QLabel("Stall cycles"))
+    axi_row.addWidget(axi_stall_threshold)
+    axi_row.addWidget(axi_decode_button)
+    layout.addLayout(axi_row)
+
     views = QtWidgets.QSplitter(QtCore.Qt.Orientation.Horizontal)
     rtl_panel = QtWidgets.QWidget()
     rtl_layout = QtWidgets.QVBoxLayout(rtl_panel)
@@ -66,6 +89,18 @@ def make_wave_debug(QtCore, QtGui, QtWidgets, project_root, on_crossprobe=None,
     finding_table.horizontalHeader().setStretchLastSection(True)
     finding_table.setEditTriggers(QtWidgets.QAbstractItemView.EditTrigger.NoEditTriggers)
     layout.addWidget(finding_table, 2)
+
+    traffic_summary = QtWidgets.QLabel("AXI4 decoder has not run")
+    traffic_summary.setObjectName("waveAxi4Summary")
+    layout.addWidget(traffic_summary)
+    traffic_table = QtWidgets.QTableWidget(0, 7)
+    traffic_table.setObjectName("waveAxi4Transactions")
+    traffic_table.setHorizontalHeaderLabels(
+        ["Direction", "ID", "Address", "Beats", "Response", "Status", "Start → End"])
+    traffic_table.horizontalHeader().setStretchLastSection(True)
+    traffic_table.setMaximumHeight(145)
+    traffic_table.setEditTriggers(QtWidgets.QAbstractItemView.EditTrigger.NoEditTriggers)
+    layout.addWidget(traffic_table)
 
     findings_detail = QtWidgets.QPlainTextEdit()
     findings_detail.setObjectName("waveEvidenceDetail")
@@ -125,7 +160,7 @@ def make_wave_debug(QtCore, QtGui, QtWidgets, project_root, on_crossprobe=None,
     ai_text.setPlaceholderText("No AI output until you explicitly request local inference.")
     ai_text.setMaximumHeight(135)
     layout.addWidget(ai_text)
-    state = {"wave": None, "report": None, "busy": False, "otel_busy": False, "worker": None, "thread": None, "otel_worker": None, "otel_thread": None}
+    state = {"wave": None, "report": None, "traffic": None, "display_findings": [], "busy": False, "otel_busy": False, "worker": None, "thread": None, "otel_worker": None, "otel_thread": None}
     page.debugState = state
 
     def update_table(table, group):
@@ -136,6 +171,44 @@ def make_wave_debug(QtCore, QtGui, QtWidgets, project_root, on_crossprobe=None,
 
     def chosen_roots(field):
         return tuple(x.strip() for x in field.text().split(",") if x.strip())
+
+    def refresh_findings():
+        base = list((state["report"] or {}).get("findings", []))
+        traffic = list((state["traffic"] or {}).get("findings", []))
+        rows = base + traffic
+        state["display_findings"] = rows
+        finding_table.setRowCount(len(rows))
+        for i, finding in enumerate(rows):
+            for c, value in enumerate((finding.get("severity", ""),
+                                       finding.get("domain", ""),
+                                       finding.get("time", ""),
+                                       finding.get("rule", ""),
+                                       finding.get("title", ""))):
+                finding_table.setItem(i, c, QtWidgets.QTableWidgetItem(str(value)))
+        return rows
+
+    def telemetry_report_and_bundle():
+        report = state["report"]
+        wave_data = state["wave"]
+        if report is None or wave_data is None:
+            raise ValueError("Analyze a loaded waveform before exporting telemetry")
+        combined = dict(report)
+        combined["findings"] = list(report.get("findings", []))
+        traffic = state["traffic"]
+        transactions = []
+        traffic_metrics = None
+        if traffic is not None:
+            combined["findings"].extend(traffic.get("findings", []))
+            transactions = traffic.get("transactions", [])
+            traffic_metrics = traffic.get("metrics", {})
+        bundle = build_otlp_bundle(
+            combined,
+            transactions=transactions,
+            traffic_metrics=traffic_metrics,
+            run_id=wave_data.get("run_id"),
+            time_unit_ns=wave_data.get("time_unit_ns") or 1,
+            time_unit_label=wave_data.get("time_unit_label") or "tick")
+        return combined, bundle
 
     def analyze():
         data = state["wave"]
@@ -150,30 +223,27 @@ def make_wave_debug(QtCore, QtGui, QtWidgets, project_root, on_crossprobe=None,
             findings_detail.setPlainText("Diagnostic configuration error: " + str(exc))
             return
         state["report"] = report
+        state["traffic"] = None
+        traffic_table.setRowCount(0)
+        traffic_summary.setText("AXI4 decoder has not run")
         update_table(rtl_table, report["groups"]["rtl"])
         update_table(tb_table, report["groups"]["testbench"])
-        rows = report["findings"]
-        finding_table.setRowCount(len(rows))
-        for i, finding in enumerate(rows):
-            for c, value in enumerate((finding["severity"], finding["domain"],
-                                       finding["time"], finding["rule"],
-                                       finding["title"])):
-                finding_table.setItem(i, c, QtWidgets.QTableWidgetItem(str(value)))
+        rows = refresh_findings()
         findings_detail.setPlainText(
             json.dumps({"summary": report["summary"], "limits": report["limits"]},
                        indent=2))
         ai_text.clear()
         export_otel_button.setEnabled(True)
         send_dynatrace_button.setEnabled(True)
+        axi_decode_button.setEnabled(True)
         page.summaryText = ("Observed %d signals, %d evidence candidates; "
                             "root cause NOT proven." %
                             (sum(len(v) for v in report["groups"].values()), len(rows)))
 
     def export_otel():
         report = state["report"]
-        wave_data = state["wave"]
-        if report is None or wave_data is None:
-            findings_detail.setPlainText("Analyze a loaded VCD before exporting telemetry.")
+        if report is None or state["wave"] is None:
+            findings_detail.setPlainText("Analyze a loaded waveform before exporting telemetry.")
             return
         filename, _selected = QtWidgets.QFileDialog.getSaveFileName(
             page, "Export OpenTelemetry bundle",
@@ -181,17 +251,14 @@ def make_wave_debug(QtCore, QtGui, QtWidgets, project_root, on_crossprobe=None,
         if not filename:
             return
         try:
-            bundle = build_otlp_bundle(
-                report,
-                run_id=wave_data.get("run_id"),
-                time_unit_ns=wave_data.get("time_unit_ns") or 1,
-                time_unit_label=wave_data.get("time_unit_label") or "tick")
+            combined, bundle = telemetry_report_and_bundle()
             target = write_otlp_bundle(filename, bundle)
             findings_detail.setPlainText(
                 "OpenTelemetry bundle exported.\n"
                 f"File: {target}\n"
                 f"Trace ID: {bundle['metadata']['trace_id']}\n"
-                f"Findings: {len(report.get('findings', []))}\n"
+                f"Findings: {len(combined.get('findings', []))}\n"
+                f"AXI4 transactions: {len(state['traffic'].get('transactions', [])) if state['traffic'] else 0}\n"
                 "The JSON contains separate OTLP traces, metrics and logs payloads. "
                 "No data was sent to an external service.")
         except (OSError, TypeError, ValueError) as exc:
@@ -233,11 +300,7 @@ def make_wave_debug(QtCore, QtGui, QtWidgets, project_root, on_crossprobe=None,
         if state["otel_busy"]:
             return
         try:
-            bundle = build_otlp_bundle(
-                report,
-                run_id=wave_data.get("run_id"),
-                time_unit_ns=wave_data.get("time_unit_ns") or 1,
-                time_unit_label=wave_data.get("time_unit_label") or "tick")
+            combined, bundle = telemetry_report_and_bundle()
         except (TypeError, ValueError) as exc:
             findings_detail.setPlainText(f"Telemetry preparation failed: {exc}")
             return
@@ -288,12 +351,57 @@ def make_wave_debug(QtCore, QtGui, QtWidgets, project_root, on_crossprobe=None,
 
     send_dynatrace_button.clicked.connect(send_to_dynatrace)
 
+    def decode_axi4_action():
+        data = state["wave"]
+        if data is None:
+            findings_detail.setPlainText("Load a real waveform before decoding AXI4.")
+            return
+        try:
+            result = decode_axi4(
+                data,
+                prefix=axi_prefix.text().strip() or None,
+                clock=axi_clock.text().strip() or None,
+                max_stall_cycles=axi_stall_threshold.value())
+        except (TypeError, ValueError) as exc:
+            findings_detail.setPlainText("AXI4 decode configuration error: " + str(exc))
+            return
+        state["traffic"] = result
+        rows = result["transactions"]
+        traffic_table.setRowCount(len(rows))
+        for i, tx in enumerate(rows):
+            values = (
+                tx.get("operation", "").upper(),
+                tx.get("transaction_id", ""),
+                tx.get("address") or "UNKNOWN",
+                f"{tx.get('beats', 0)}/{tx.get('expected_beats', 0)}",
+                tx.get("response", "—"),
+                tx.get("status", ""),
+                f"{tx.get('start_time')} → {tx.get('end_time')}",
+            )
+            for c, value in enumerate(values):
+                traffic_table.setItem(i, c, QtWidgets.QTableWidgetItem(str(value)))
+        metrics = result["metrics"]
+        traffic_summary.setText(
+            f"AXI4: {len(rows)} completed transaction(s) · "
+            f"{metrics['protocol_errors']} protocol error(s) · "
+            f"{metrics['stall_cycles_total']} total stall cycle(s) · "
+            f"{metrics['rising_edges']} sampled rising edges")
+        refresh_findings()
+        findings_detail.setPlainText(json.dumps({
+            "status": result["status"],
+            "signal_map": result["signal_map"],
+            "metrics": result["metrics"],
+            "findings": result["findings"],
+            "limits": result["limits"],
+        }, indent=2))
+        page.axi4DecodeResult = result
+
     def show_finding():
         row = finding_table.currentRow()
-        report = state["report"]
-        if not report or row < 0 or row >= len(report["findings"]):
+        rows = state["display_findings"]
+        if row < 0 or row >= len(rows):
             return
-        finding = report["findings"][row]
+        finding = rows[row]
         findings_detail.setPlainText(json.dumps(finding, indent=2))
         if on_crossprobe and finding["signals"]:
             on_crossprobe(finding["signals"][0])
@@ -312,6 +420,7 @@ def make_wave_debug(QtCore, QtGui, QtWidgets, project_root, on_crossprobe=None,
     tb_table.itemSelectionChanged.connect(lambda: select_signal(tb_table))
     finding_table.itemSelectionChanged.connect(show_finding)
     run.clicked.connect(analyze)
+    axi_decode_button.clicked.connect(decode_axi4_action)
     export_otel_button.clicked.connect(export_otel)
 
     class AiWorker(QtCore.QObject):
@@ -373,5 +482,10 @@ def make_wave_debug(QtCore, QtGui, QtWidgets, project_root, on_crossprobe=None,
     page.tbSignals = tb_table
     page.findingTable = finding_table
     page.aiFindings = ai_text
+    page.axiPrefix = axi_prefix
+    page.axiClock = axi_clock
+    page.axiDecodeButton = axi_decode_button
+    page.axiTransactions = traffic_table
+    page.axiTrafficSummary = traffic_summary
     page.rootEvidence = findings_detail
     return page
