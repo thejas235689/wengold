@@ -24,6 +24,7 @@ security = ["cryptography>=42"]  # signed reviewer attestations
 formal = ["z3-solver>=4.12"]   # optional symbolic backend
 slang = ["pyslang>=9"]         # optional real SystemVerilog front-end
 spec = ["PyYAML>=6.0"]          # YAML specs (JSON needs nothing extra)
+otel = ["opentelemetry-proto>=1.30,<2"]  # Binary OTLP Protobuf export to Dynatrace/Collector
 all = ["z3-solver>=4.12", "pyslang>=9", "cocotb>=1.8", "PyYAML>=6.0"]
 dev  = ["pytest>=8.0", "pytest-cov", "PyYAML>=6.0"]
 
