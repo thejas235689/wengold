@@ -15,7 +15,7 @@ from .otel_telemetry import (build_otlp_bundle, write_otlp_bundle,
 
 
 def make_wave_debug(QtCore, QtGui, QtWidgets, project_root, on_crossprobe=None,
-                    on_select_time=None):
+                    on_select_time=None, on_source_probe=None):
     page = QtWidgets.QWidget()
     page.setObjectName("advancedWaveDebug")
     layout = QtWidgets.QVBoxLayout(page)
@@ -352,6 +352,8 @@ def make_wave_debug(QtCore, QtGui, QtWidgets, project_root, on_crossprobe=None,
             hierarchy_status.setText(
                 f"Source: {source['file']}:{source['line']}:{source.get('column', 1)} · "
                 "select a port to cross-probe its full hierarchical signal path.")
+            if on_source_probe:
+                on_source_probe(source)
 
     hierarchy_build.clicked.connect(build_rtl_hierarchy)
     hierarchy_tree.itemClicked.connect(select_hierarchy_item)
