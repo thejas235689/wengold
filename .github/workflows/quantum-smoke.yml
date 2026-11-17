@@ -47,4 +47,32 @@ jobs:
           python-version: '3.11'
       - run: python -m pip install --upgrade pip
       - run: python -m pip install -e '.[dev,quantum]'
-      - run: python -m pytest -q tests/test_quantum_ir.py tests/test_quantum_backends.py tests/test_quantum_openqasm3.py
+      - run: python -m pytest -q tests/test_quantum_ir.py tests/test_quantum_backends.py tests/test_quantum_openqasm3.py tests/test_quantum_quest_bridge.py
+
+  quest-native-cpu:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: lukka/get-cmake@latest
+      - name: Install WENGOLD quantum and native build dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e '.[dev,quantum,quantum-native]'
+      - name: Build and install QuEST v4.2.0 CPU library
+        run: |
+          git clone --depth 1 --branch v4.2.0 https://github.com/QuEST-Kit/QuEST.git "$RUNNER_TEMP/QuEST"
+          cmake -S "$RUNNER_TEMP/QuEST" -B "$RUNNER_TEMP/quest-build" -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="$RUNNER_TEMP/quest-install"
+          cmake --build "$RUNNER_TEMP/quest-build" --parallel 2
+          cmake --install "$RUNNER_TEMP/quest-build"
+      - name: Build WENGOLD pybind11 bridge
+        run: |
+          cmake -S quantum/native -B build/quest-bridge -DCMAKE_BUILD_TYPE=Release -Dpybind11_DIR="$(python -m pybind11 --cmakedir)" -DCMAKE_PREFIX_PATH="$RUNNER_TEMP/quest-install" -DCMAKE_INCLUDE_PATH="$RUNNER_TEMP/quest-install/include" -DCMAKE_LIBRARY_PATH="$RUNNER_TEMP/quest-install/lib"
+          cmake --build build/quest-bridge --parallel 2
+          cmake --install build/quest-bridge --prefix "$GITHUB_WORKSPACE"
+      - name: Test QuEST CPU backend against Bell and bit-order reference
+        env:
+          LD_LIBRARY_PATH: ${{ runner.temp }}/quest-install/lib
+        run: python -m pytest -q tests/test_quantum_quest_bridge.py
