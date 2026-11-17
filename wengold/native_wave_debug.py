@@ -190,6 +190,10 @@ def make_wave_debug(QtCore, QtGui, QtWidgets, project_root, on_crossprobe=None,
     hierarchy_yosys = QtWidgets.QLineEdit("yosys")
     hierarchy_yosys.setObjectName("waveHierarchyYosys")
     hierarchy_yosys.setMaximumWidth(150)
+    hierarchy_frontend = QtWidgets.QComboBox()
+    hierarchy_frontend.setObjectName("waveHierarchyFrontend")
+    hierarchy_frontend.addItem("Slang + Yosys (SV-2017)", "slang")
+    hierarchy_frontend.addItem("Yosys built-in SV subset", "yosys")
     hierarchy_wave_prefix = QtWidgets.QLineEdit()
     hierarchy_wave_prefix.setObjectName("waveHierarchyWavePrefix")
     hierarchy_wave_prefix.setPlaceholderText("VCD root prefix, e.g. tb.dut (optional)")
@@ -199,12 +203,13 @@ def make_wave_debug(QtCore, QtGui, QtWidgets, project_root, on_crossprobe=None,
     hierarchy_controls.addWidget(hierarchy_top, 2)
     hierarchy_controls.addWidget(QtWidgets.QLabel("Yosys"))
     hierarchy_controls.addWidget(hierarchy_yosys)
+    hierarchy_controls.addWidget(hierarchy_frontend)
     hierarchy_controls.addWidget(hierarchy_wave_prefix, 2)
     hierarchy_controls.addWidget(hierarchy_build)
     hierarchy_layout.addLayout(hierarchy_controls)
     hierarchy_status = QtWidgets.QLabel(
-        "Select a top module and elaborate the project's .sv/.v sources. "
-        "Yosys must be installed.")
+        "Slang mode requires the yosys-slang plugin (OSS CAD Suite). "
+        "For the RISC-V project, the RTL source list is read from sim/run.py.")
     hierarchy_status.setObjectName("waveHierarchyStatus")
     hierarchy_status.setWordWrap(True)
     hierarchy_layout.addWidget(hierarchy_status)
@@ -286,21 +291,31 @@ def make_wave_debug(QtCore, QtGui, QtWidgets, project_root, on_crossprobe=None,
         from pathlib import Path
         from .rtl_hierarchy import elaborate_with_yosys
         root = Path(project_root).resolve()
-        sources = sorted(
-            path for path in root.rglob("*")
-            if path.is_file() and path.suffix.lower() in {".sv", ".v"}
-            and not any(part in {".git", ".venv", "venv", "build", "dist", "__pycache__"}
-                        for part in path.parts)
-        )
+        from .rtl_hierarchy import load_riscv_core_sources
+        if (root / "sim" / "run.py").is_file() and (root / "rtl" / "riscv_core_top.sv").is_file():
+            source_names = load_riscv_core_sources(root)
+            sources = [root / name for name in source_names]
+            if not hierarchy_top.text().strip():
+                hierarchy_top.setText("riscv_core_top")
+        else:
+            sources = sorted(
+                path for path in root.rglob("*")
+                if path.is_file() and path.suffix.lower() in {".sv", ".v"}
+                and not any(part in {".git", ".venv", "venv", "build", "dist", "__pycache__"}
+                            for part in path.parts)
+            )
         if not hierarchy_top.text().strip():
             hierarchy_status.setText("Enter the exact top module name before elaboration.")
             return
         hierarchy_build.setEnabled(False)
-        hierarchy_status.setText(f"Running Yosys elaboration on {len(sources)} source files…")
+        frontend = hierarchy_frontend.currentData()
+        hierarchy_status.setText(
+            f"Running {frontend} elaboration on {len(sources)} source files…")
         try:
             graph = elaborate_with_yosys(
                 root, sources, top=hierarchy_top.text().strip(),
-                yosys=hierarchy_yosys.text().strip() or "yosys")
+                yosys=hierarchy_yosys.text().strip() or "yosys",
+                frontend=frontend)
             hierarchy_state["graph"] = graph
             hierarchy_state["nodes"] = {node["id"]: node for node in graph["nodes"]}
             hierarchy_tree.clear()
@@ -329,6 +344,7 @@ def make_wave_debug(QtCore, QtGui, QtWidgets, project_root, on_crossprobe=None,
             hierarchy_status.setText(
                 f"Yosys hierarchy ready: {graph['instance_count']} instances, "
                 f"{graph['connection_count']} actual port-bit connections{note}. "
+                f"Frontend: {graph.get('frontend', frontend)}. "
                 "Select a port to cross-probe the waveform and RTL.")
         except Exception as exc:
             hierarchy_status.setText("RTL hierarchy elaboration failed: " + str(exc))
