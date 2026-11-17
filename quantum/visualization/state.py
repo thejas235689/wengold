@@ -56,41 +56,54 @@ def bloch_vectors(statevector: Iterable[complex | Iterable[float]], *, tolerance
     output = []
     for qubit in range(nqubits):
         mask = 1 << qubit
-        rho01 = 0j
-        p0 = p1 = 0.0
-        for index in range(state.size):
-            if index & mask:
-                continue
-            a0 = state[index]
-            a1 = state[index | mask]
-            p0 += float(abs(a0) ** 2)
-            p1 += float(abs(a1) ** 2)
-            rho01 += a0 * a1.conjugate()
-        x = 2.0 * rho01.real
-        y = -2.0 * rho01.imag
+        # In C-order, the middle axis of (-1, 2, 2**qubit) is this qubit's
+        # zero/one value; the final axis spans all less-significant qubits.
+        blocks = state.reshape(-1, 2, mask)
+        a0 = blocks[:, 0, :].reshape(-1)
+        a1 = blocks[:, 1, :].reshape(-1)
+        p0 = float((a0.conjugate() @ a0).real)
+        p1 = float((a1.conjugate() @ a1).real)
+        rho01 = a1.conjugate() @ a0
+        x = 2.0 * float(rho01.real)
+        y = -2.0 * float(rho01.imag)
         z = p0 - p1
         purity = (1.0 + x*x + y*y + z*z) / 2.0
         output.append(BlochVector(qubit, x, y, z, purity))
     return output
 
 
-def qsphere_points(statevector: Iterable[complex | Iterable[float]], *, probability_cutoff: float = 1e-12) -> list[QSpherePoint]:
+def qsphere_points(
+    statevector: Iterable[complex | Iterable[float]],
+    *,
+    probability_cutoff: float = 1e-12,
+    max_points: int = 2048,
+) -> list[QSpherePoint]:
     """Map basis amplitudes onto Q-sphere coordinates.
 
     Latitude is determined by Hamming weight; longitude is phase relative to
     the largest-magnitude amplitude, making the display global-phase invariant.
+    For large states, only the highest-probability max_points are returned.
     """
+    import numpy as np
+
     state = _coerce_statevector(statevector)
     if not math.isfinite(probability_cutoff) or probability_cutoff < 0:
         raise ValueError("probability_cutoff must be finite and non-negative")
+    if max_points < 1:
+        raise ValueError("max_points must be positive")
     nqubits = int(math.log2(state.size))
-    reference = state[int(abs(state).argmax())]
+    probabilities = np.abs(state) ** 2
+    populated = np.flatnonzero(probabilities > probability_cutoff)
+    if populated.size > max_points:
+        strongest = np.argpartition(probabilities, -max_points)[-max_points:]
+        populated = np.sort(strongest[probabilities[strongest] > probability_cutoff])
+    reference = state[int(np.argmax(probabilities))]
     reference_phase = math.atan2(reference.imag, reference.real)
     points = []
-    for index, amplitude in enumerate(state):
-        probability = float(abs(amplitude) ** 2)
-        if probability <= probability_cutoff:
-            continue
+    for raw_index in populated:
+        index = int(raw_index)
+        amplitude = state[index]
+        probability = float(probabilities[index])
         weight = index.bit_count()
         theta = math.acos(max(-1.0, min(1.0, 1.0 - 2.0 * weight / nqubits)))
         phase = math.atan2(amplitude.imag, amplitude.real) - reference_phase
