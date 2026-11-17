@@ -59,7 +59,7 @@ Base: Python >=3.11, existing WENGOLD native extra (PyQt6), NumPy. Quantum optio
 2. Drag/drop canvas, gate palette, undo/redo, project save/load.
 3. Qiskit and Cirq adapters; backend capability reporting.
 4. QuEST native bridge and CPU CI; GPU/MPI optional profiles.
-5. OpenQASM import/export with unsupported-feature diagnostics.
+5. OpenQASM 3 supported-subset import/export with strict unsupported-feature diagnostics.
 6. Statevector, density matrix, Bloch sphere, Q-sphere and measurement visualizers.
 7. Differential and statistical verification, regression artifacts.
 8. AI circuit generation/optimization/debug agents with parser + simulator + verifier evidence.
