@@ -15,6 +15,9 @@ def test_quantum_editor_builds_offscreen():
     assert widget.debug_button.text() == "Build debug trace"
     assert widget.amplitude_table.columnCount() == 6
     assert widget.amplitude_table.objectName() == "quantumAmplitudeTable"
+    assert widget.compare_button.objectName() == "quantumCompareSnapshots"
+    assert not widget.compare_button.isEnabled()
+    assert widget.comparison_baseline.minimum() == 0
     assert widget.backend_combo.count() == 3
     assert callable(widget.run_simulation)
     assert callable(widget.run_debug_trace)
