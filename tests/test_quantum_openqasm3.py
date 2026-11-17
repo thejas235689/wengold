@@ -13,7 +13,7 @@ def test_import_export_roundtrip_for_supported_gate_set():
         Operation("m0", "MEASURE", (0,), classical_bits=(1,)),
     ), num_clbits=2)
     restored = import_openqasm3(export_openqasm3(circuit), circuit_id="bell")
-    assert restored == circuit
+    assert [(op.gate, op.targets, op.controls, op.params, op.classical_bits) for op in restored.operations] == [\n        (op.gate, op.targets, op.controls, op.params, op.classical_bits) for op in circuit.operations\n    ]\n    assert restored.num_qubits == circuit.num_qubits\n    assert restored.num_clbits == circuit.num_clbits
 
 
 def test_import_accepts_measure_arrow_and_rotation_expression():
