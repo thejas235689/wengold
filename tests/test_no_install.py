@@ -23,14 +23,9 @@ BLOCK = '''
 import sys
 BANNED = {"numpy", "pyslang", "z3", "PyQt6"}
 
-class Block:
-    def find_module(self, name, path=None):
-        if name.split(".")[0] in BANNED:
-            return self
-    def load_module(self, name):
-        raise ImportError("blocked for this test: " + name)
-
-sys.meta_path.insert(0, Block())
+# Use sys.modules sentinels rather than the removed find_module fallback.
+for name in BANNED:
+    sys.modules[name] = None
 '''
 
 
