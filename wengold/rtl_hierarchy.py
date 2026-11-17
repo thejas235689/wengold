@@ -173,7 +173,7 @@ def elaborate_with_yosys(project_root: str | Path, sources: list[str | Path], *,
         incdirs.append(path)
     macro_args = []
     for define in defines or []:
-        if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*(?:=[^\\s;]+)?", define):
+        if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*(?:=[^\s;]+)?", define):
             raise ValueError(f"Invalid preprocessor define: {define}")
         macro_args.append("-D" + define)
     if frontend == "slang":
@@ -264,7 +264,7 @@ def _slang_type_width(type_name: str, member: dict[str, Any] | None = None) -> i
         value = (member or {}).get(key)
         if isinstance(value, int) and value > 0:
             return value
-    ranges = re.findall(r"\\[(\\d+)\\s*:\\s*(\\d+)\\]", type_name or "")
+    ranges = re.findall(r"\[(\d+)\s*:\s*(\d+)\]", type_name or "")
     if not ranges:
         return 1 if type_name else None
     width = 1
@@ -282,7 +282,7 @@ def _slang_source_info(node: dict[str, Any]) -> dict[str, Any] | None:
             if file_name:
                 return {"file": str(file_name), "line": int(line or 1), "raw": value}
         elif isinstance(value, str):
-            match = re.match(r"(.+?):(\\d+)(?::(\\d+))?", value)
+            match = re.match(r"(.+?):(\d+)(?::(\d+))?", value)
             if match:
                 return {"file": match.group(1), "line": int(match.group(2)),
                         "column": int(match.group(3) or 1), "raw": value}
@@ -296,7 +296,7 @@ def _slang_named_symbols(expression: Any) -> list[tuple[str, str]]:
         if isinstance(value, dict):
             symbol = value.get("symbol")
             if isinstance(symbol, str):
-                match = re.match(r"^(\\d+)\\s+(.+)$", symbol)
+                match = re.match(r"^(\d+)\s+(.+)$", symbol)
                 if match:
                     found.append((match.group(1), match.group(2)))
             for child in value.values():
@@ -459,7 +459,7 @@ def elaborate_with_slang_ast(project_root: str | Path, sources: list[str | Path]
     for directory in incdirs:
         command.extend(["-I", str(directory)])
     for define in defines or []:
-        if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*(?:=[^\\s]+)?", define):
+        if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*(?:=[^\s]+)?", define):
             raise ValueError(f"Invalid preprocessor define: {define}")
         command.append("-D" + define)
     command.extend(str(path) for path in resolved)
