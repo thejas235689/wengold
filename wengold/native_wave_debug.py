@@ -9,6 +9,7 @@ import json
 import os
 
 from .wave_debug import diagnose, explain_with_local_ai
+from .otel_telemetry import build_otlp_bundle, write_otlp_bundle
 
 
 def make_wave_debug(QtCore, QtGui, QtWidgets, project_root, on_crossprobe=None,
@@ -71,6 +72,15 @@ def make_wave_debug(QtCore, QtGui, QtWidgets, project_root, on_crossprobe=None,
     findings_detail.setReadOnly(True)
     layout.addWidget(findings_detail)
 
+    otel_row = QtWidgets.QHBoxLayout()
+    export_otel_button = QtWidgets.QPushButton("Export OpenTelemetry bundle")
+    export_otel_button.setObjectName("waveExportOtel")
+    export_otel_button.setEnabled(False)
+    otel_hint = QtWidgets.QLabel("OTLP traces · metrics · logs — vendor-neutral JSON")
+    otel_row.addWidget(export_otel_button)
+    otel_row.addWidget(otel_hint, 1)
+    layout.addLayout(otel_row)
+
     ai_row = QtWidgets.QHBoxLayout()
     backend = QtWidgets.QComboBox()
     backend.addItems(["ollama", "openai"])
@@ -131,9 +141,38 @@ def make_wave_debug(QtCore, QtGui, QtWidgets, project_root, on_crossprobe=None,
             json.dumps({"summary": report["summary"], "limits": report["limits"]},
                        indent=2))
         ai_text.clear()
+        export_otel_button.setEnabled(True)
         page.summaryText = ("Observed %d signals, %d evidence candidates; "
                             "root cause NOT proven." %
                             (sum(len(v) for v in report["groups"].values()), len(rows)))
+
+    def export_otel():
+        report = state["report"]
+        wave_data = state["wave"]
+        if report is None or wave_data is None:
+            findings_detail.setPlainText("Analyze a loaded VCD before exporting telemetry.")
+            return
+        filename, _selected = QtWidgets.QFileDialog.getSaveFileName(
+            page, "Export OpenTelemetry bundle",
+            "wengold-otel-bundle.json", "JSON bundle (*.json)")
+        if not filename:
+            return
+        try:
+            bundle = build_otlp_bundle(
+                report,
+                run_id=wave_data.get("run_id"),
+                time_unit_ns=wave_data.get("time_unit_ns") or 1,
+                time_unit_label=wave_data.get("time_unit_label") or "tick")
+            target = write_otlp_bundle(filename, bundle)
+            findings_detail.setPlainText(
+                "OpenTelemetry bundle exported.\n"
+                f"File: {target}\n"
+                f"Trace ID: {bundle['metadata']['trace_id']}\n"
+                f"Findings: {len(report.get('findings', []))}\n"
+                "The JSON contains separate OTLP traces, metrics and logs payloads. "
+                "No data was sent to an external service.")
+        except (OSError, TypeError, ValueError) as exc:
+            findings_detail.setPlainText(f"OpenTelemetry export failed: {exc}")
 
     def show_finding():
         row = finding_table.currentRow()
@@ -159,6 +198,7 @@ def make_wave_debug(QtCore, QtGui, QtWidgets, project_root, on_crossprobe=None,
     tb_table.itemSelectionChanged.connect(lambda: select_signal(tb_table))
     finding_table.itemSelectionChanged.connect(show_finding)
     run.clicked.connect(analyze)
+    export_otel_button.clicked.connect(export_otel)
 
     class AiWorker(QtCore.QObject):
         succeeded = QtCore.pyqtSignal(object)
