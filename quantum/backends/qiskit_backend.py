@@ -26,7 +26,7 @@ class QiskitBackend(Backend):
             "statevector": True, "sampling": True, "noise": False, "hardware": False,
             "supported_gates": [
                 "I", "H", "X", "Y", "Z", "S", "SDG", "T", "TDG", "SX",
-                "RX", "RY", "RZ", "CNOT", "CX", "CZ", "SWAP", "CCX",
+                "RX", "RY", "RZ", "CNOT", "CX", "CZ", "SWAP", "CCX", "TOFFOLI", "CSWAP",
                 "MEASURE", "RESET", "BARRIER",
             ],
         }
@@ -47,8 +47,10 @@ class QiskitBackend(Backend):
             params = op.params
             if gate in {"CNOT", "CX"}:
                 qc.cx(controls[0], targets[0])
-            elif gate == "CCX":
+            elif gate in {"CCX", "TOFFOLI"}:
                 qc.ccx(controls[0], controls[1], targets[0])
+            elif gate == "CSWAP":
+                qc.cswap(controls[0], targets[0], targets[1])
             elif gate == "MEASURE":
                 for qubit, cbit in zip(targets, op.classical_bits):
                     qc.measure(qubit, cbit)
