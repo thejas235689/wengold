@@ -209,7 +209,11 @@ def make_wave_debug(QtCore, QtGui, QtWidgets, project_root, on_crossprobe=None,
             try:
                 self.succeeded.emit(send_dynatrace_otlp(*self.arguments))
             except Exception as exc:
-                self.failed.emit(f"{type(exc).__name__}: {exc}")
+                detail = f"{type(exc).__name__}: {exc}"
+                sent = getattr(exc, "sent_signals", ())
+                if sent:
+                    detail += "\\nEarlier signal requests accepted: " + ", ".join(sent)
+                self.failed.emit(detail)
 
     def send_to_dynatrace():
         report = state["report"]
@@ -248,6 +252,12 @@ def make_wave_debug(QtCore, QtGui, QtWidgets, project_root, on_crossprobe=None,
 
         def upload_done():
             state["otel_busy"] = False
+            # Drop the worker's reference to the token and clear the masked UI
+            # field once this explicit upload attempt finishes.
+            worker.arguments = ()
+            dynatrace_token.clear()
+            state["otel_worker"] = None
+            state["otel_thread"] = None
             send_dynatrace_button.setEnabled(state["report"] is not None)
             export_otel_button.setEnabled(state["report"] is not None)
             thread.quit()
