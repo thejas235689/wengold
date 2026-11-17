@@ -2,6 +2,7 @@
 from __future__ import annotations
 import time
 import uuid
+import numpy as np
 
 from .base import Backend, BackendUnavailable, SimulationResult
 from quantum.core.circuit_ir import Circuit, validate_circuit
@@ -78,7 +79,7 @@ class QiskitBackend(Backend):
             qc.save_statevector()
             compiled = self._transpile(qc, simulator)
             result = simulator.run(compiled, shots=1).result()
-            state = result.get_statevector(compiled)
+            state = np.asarray(result.get_statevector(compiled), dtype=np.complex128)
             encoded = [[float(a.real), float(a.imag)] for a in state]
             probabilities = {
                 format(index, f"0{circuit.num_qubits}b"): float(abs(amplitude) ** 2)
