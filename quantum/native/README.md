@@ -16,7 +16,7 @@ Example:
 python -m pip install -e '.[quantum,quantum-native]'
 cmake -S quantum/native -B build/quest \
   -Dpybind11_DIR="$(python -m pybind11 --cmakedir)" \
-  -DCMAKE_PREFIX_PATH="$HOME/.local"
+  -DCMAKE_PREFIX_PATH="$HOME/.local/quest"
 cmake --build build/quest --config Release
 cmake --install build/quest --prefix .
 ```
