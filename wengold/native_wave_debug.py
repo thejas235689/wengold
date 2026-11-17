@@ -192,7 +192,8 @@ def make_wave_debug(QtCore, QtGui, QtWidgets, project_root, on_crossprobe=None,
     hierarchy_yosys.setMaximumWidth(150)
     hierarchy_frontend = QtWidgets.QComboBox()
     hierarchy_frontend.setObjectName("waveHierarchyFrontend")
-    hierarchy_frontend.addItem("Slang + Yosys (SV-2017)", "slang")
+    hierarchy_frontend.addItem("Slang AST (full SV hierarchy)", "slang_ast")
+    hierarchy_frontend.addItem("Slang + Yosys netlist (synth subset)", "slang")
     hierarchy_frontend.addItem("Yosys built-in SV subset", "yosys")
     hierarchy_wave_prefix = QtWidgets.QLineEdit()
     hierarchy_wave_prefix.setObjectName("waveHierarchyWavePrefix")
@@ -291,7 +292,8 @@ def make_wave_debug(QtCore, QtGui, QtWidgets, project_root, on_crossprobe=None,
         from pathlib import Path
         from .rtl_hierarchy import elaborate_with_yosys
         root = Path(project_root).resolve()
-        from .rtl_hierarchy import load_riscv_core_sources
+        from .rtl_hierarchy import (elaborate_with_slang_ast,
+                                    elaborate_with_yosys, load_riscv_core_sources)
         if (root / "sim" / "run.py").is_file() and (root / "rtl" / "riscv_core_top.sv").is_file():
             source_names = load_riscv_core_sources(root)
             sources = [root / name for name in source_names]
@@ -312,10 +314,15 @@ def make_wave_debug(QtCore, QtGui, QtWidgets, project_root, on_crossprobe=None,
         hierarchy_status.setText(
             f"Running {frontend} elaboration on {len(sources)} source files…")
         try:
-            graph = elaborate_with_yosys(
-                root, sources, top=hierarchy_top.text().strip(),
-                yosys=hierarchy_yosys.text().strip() or "yosys",
-                frontend=frontend)
+            if frontend == "slang_ast":
+                graph = elaborate_with_slang_ast(
+                    root, sources, top=hierarchy_top.text().strip(),
+                    slang=hierarchy_yosys.text().strip() or "slang")
+            else:
+                graph = elaborate_with_yosys(
+                    root, sources, top=hierarchy_top.text().strip(),
+                    yosys=hierarchy_yosys.text().strip() or "yosys",
+                    frontend=frontend)
             hierarchy_state["graph"] = graph
             hierarchy_state["nodes"] = {node["id"]: node for node in graph["nodes"]}
             hierarchy_tree.clear()
@@ -343,7 +350,7 @@ def make_wave_debug(QtCore, QtGui, QtWidgets, project_root, on_crossprobe=None,
             note = " · truncated at safety limit" if graph.get("truncated") else ""
             hierarchy_status.setText(
                 f"Yosys hierarchy ready: {graph['instance_count']} instances, "
-                f"{graph['connection_count']} actual port-bit connections{note}. "
+                f"{graph['connection_count']} actual {graph.get('connection_unit', 'port-bit connections')}{note}. "
                 f"Frontend: {graph.get('frontend', frontend)}. "
                 "Select a port to cross-probe the waveform and RTL.")
         except Exception as exc:
