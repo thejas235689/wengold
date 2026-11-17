@@ -106,7 +106,7 @@ _UPSCOPE = re.compile(r"\$upscope\s*\$end")
 def parse_vcd(text: str, limit: int = 4000) -> dict:
     """Parse a VCD dump into the waveform shape."""
     timing = _timescale_info(text)
-    ids: dict[str, tuple[str, int]] = {}
+    ids: dict[str, list[tuple[str, int]]] = {}
     scope: list[str] = []
     for line in text.splitlines():
         m = _VAR.search(line)
@@ -114,7 +114,10 @@ def parse_vcd(text: str, limit: int = 4000) -> dict:
             _kind, width, ident, name = m.groups()
             leaf = name.strip().split()[0]
             full = ".".join(scope + [leaf]) if scope else leaf
-            ids[ident] = (full, int(width))
+            aliases = ids.setdefault(ident, [])
+            alias = (full, int(width))
+            if alias not in aliases:
+                aliases.append(alias)
             continue
         s = _SCOPE.search(line)
         if s:
@@ -164,15 +167,16 @@ def parse_vcd(text: str, limit: int = 4000) -> dict:
                 "cycles": 0, "signals": [], **timing}
     history = history[:limit]
 
-    names = [ids[i][0] for i in ids]
+    names = [name for aliases in ids.values() for name, _width in aliases]
     clock = next((n for n in names if re.search(r"(?i)clk|clock", n)), None)
     if clock is None:
         clock = next((n for n in names
                       if re.search(r"(?i)clk|clock", n.split(".")[-1])), None)
     signals = []
-    for ident, (name, width) in ids.items():
+    for ident, aliases in ids.items():
         values = [snapshot.get(ident) for _t, snapshot in history]
-        signals.append({"name": name, "width": width, "values": values})
+        for name, width in aliases:
+            signals.append({"name": name, "width": width, "values": values})
     signals.sort(key=lambda s: (s["name"] != clock, s["name"]))
     return {"source": "vcd", "clock": clock, "fail_at": None,
             "cycles": len(history), "signals": signals,
