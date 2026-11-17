@@ -180,18 +180,18 @@ def elaborate_with_yosys(project_root: str | Path, sources: list[str | Path], *,
         # Load the plugin as its own Yosys command before invoking read_slang.
         script = ["plugin -i " + slang_plugin]
         read_cmd = ["read_slang --top " + top + " --std " + sv_standard]
-        read_cmd.extend("-I " + json.dumps(str(path)) for path in incdirs)
+        read_cmd.extend("-I " + str(path) for path in incdirs)
         read_cmd.extend(macro_args)
-        read_cmd.extend(json.dumps(str(path)) for path in resolved)
+        read_cmd.extend(str(path) for path in resolved)
         script.append(" ".join(read_cmd))
     else:
         read_cmd = ["read_verilog -sv"]
-        read_cmd.extend("-I" + json.dumps(str(path)) for path in incdirs)
+        read_cmd.extend("-I" + str(path) for path in incdirs)
         read_cmd.extend(macro_args)
-        read_cmd.extend(json.dumps(str(path)) for path in resolved)
+        read_cmd.extend(str(path) for path in resolved)
         script = [" ".join(read_cmd)]
     script.extend(["hierarchy -check -top " + top,
-                   "proc", "write_json " + json.dumps(str(output))])
+                   "proc", "write_json " + str(output)])
     completed = subprocess.run(
         [executable, "-Q", "-q", "-p", "; ".join(script)],
         cwd=root, capture_output=True, text=True, timeout=timeout_seconds, check=False)
