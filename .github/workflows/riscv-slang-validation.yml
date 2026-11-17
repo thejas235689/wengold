@@ -48,18 +48,25 @@ jobs:
           import json
           doc = json.load(open("slang_ast.json"))
           design = doc.get("design", {})
-          print("AST root:", design.get("kind"), "members:", len(design.get("members", [])))
-          def show(node, depth=0):
-              if isinstance(node, dict):
-                  if node.get("kind") in {"Instance", "InstanceBody", "Port"}:
-                      print("  " * depth, node.get("kind"), node.get("name"),
-                            "body=", (node.get("body") or {}).get("name"))
-                  for key, value in node.items():
-                      if key in {"members", "body"}:
-                          if isinstance(value, list):
-                              for item in value[:8]: show(item, depth + 1)
-                          elif isinstance(value, dict): show(value, depth + 1)
-          show(design)
+          members = design.get("members", [])
+          tops = [item for item in members if item.get("kind") == "Instance"]
+          print("AST root:", design.get("kind"), "members:", len(members),
+                "top instances:", [item.get("name") for item in tops])
+          top = next((item for item in tops if item.get("name") == "riscv_core_top"), None)
+          if top:
+            body = top.get("body", {})
+            print("TOP INSTANCE KEYS:", sorted(top.keys()))
+            print("TOP BODY KEYS:", sorted(body.keys()))
+            children = [item for item in body.get("members", [])
+                        if item.get("kind") == "Instance"]
+            print("CHILD INSTANCE COUNT:", len(children))
+            if children:
+              print("FIRST CHILD:", json.dumps(children[0], indent=2)[:6000])
+            ports = [item for item in body.get("members", [])
+                     if item.get("kind") == "Port"]
+            print("TOP PORT SAMPLE:", json.dumps(ports[:3], indent=2))
+          else:
+            raise SystemExit("Slang AST JSON did not contain riscv_core_top")
           PY
       - name: Elaborate the real RISC-V RTL with Slang
         run: |
