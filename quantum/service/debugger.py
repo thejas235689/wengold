@@ -227,3 +227,91 @@ def build_debug_trace(
         backend=getattr(backend, "name", "unknown"),
         snapshots=tuple(snapshots),
     )
+
+
+@dataclass(frozen=True)
+class ShotTrajectory:
+    """One independently sampled execution, including collapsed-state snapshots."""
+
+    shot: int
+    classical_bits: str
+    snapshots: tuple[DebugSnapshot, ...]
+    execution_time_ms: float | None
+    metadata: dict[str, Any]
+
+
+@dataclass(frozen=True)
+class QuantumTrajectoryTrace:
+    circuit_id: str
+    backend: str
+    seed: int | None
+    trajectories: tuple[ShotTrajectory, ...]
+
+    @property
+    def shots(self) -> int:
+        return len(self.trajectories)
+
+
+def build_measurement_trajectories(
+    circuit: Circuit,
+    backend: Any,
+    *,
+    shots: int = 32,
+    seed: int | None = 7,
+) -> QuantumTrajectoryTrace:
+    """Capture independently sampled, collapsed-state trajectories.
+
+    Requires an adapter implementing run_trajectory(). Each shot is a separate
+    seeded simulator execution. The adapter currently supplies the final
+    classical register value and a quantum-state snapshot at every operation
+    boundary; it may not expose the classical register history at each boundary.
+    """
+    validate_circuit(circuit)
+    if shots < 1:
+        raise ValueError("shots must be positive")
+    if not any(op.gate.upper() == "MEASURE" for op in circuit.operations):
+        raise QuantumDebugError("trajectory debugging requires at least one MEASURE operation")
+    if any(op.gate.upper() == "DELAY" for op in circuit.operations):
+        raise QuantumDebugError("DELAY is not supported by measurement trajectory debugging")
+    runner = getattr(backend, "run_trajectory", None)
+    if not callable(runner):
+        raise QuantumDebugError(
+            f"backend {getattr(backend, 'name', 'unknown')!r} does not implement shot trajectories"
+        )
+
+    trajectories = []
+    for shot_index in range(shots):
+        shot_seed = None if seed is None else seed + shot_index
+        result = runner(circuit, seed=shot_seed)
+        snapshots = tuple(
+            DebugSnapshot(
+                step=int(item["step"]),
+                operation_id=item.get("operation_id"),
+                gate=str(item["gate"]),
+                statevector=tuple(item["statevector"]),
+                probabilities={
+                    format(index, f"0{circuit.num_qubits}b"): float(real * real + imag * imag)
+                    for index, (real, imag) in enumerate(item["statevector"])
+                },
+                execution_time_ms=None,
+            )
+            for item in result["snapshots"]
+        )
+        if len(snapshots) != len(circuit.operations) + 1:
+            raise QuantumDebugError(
+                f"backend returned {len(snapshots)} trajectory boundaries; "
+                f"expected {len(circuit.operations) + 1}"
+            )
+        trajectories.append(ShotTrajectory(
+            shot=shot_index,
+            classical_bits=str(result["classical_bits"]),
+            snapshots=snapshots,
+            execution_time_ms=result.get("execution_time_ms"),
+            metadata=dict(result.get("metadata", {})),
+        ))
+    return QuantumTrajectoryTrace(
+        circuit_id=circuit.circuit_id,
+        backend=getattr(backend, "name", "unknown"),
+        seed=seed,
+        trajectories=tuple(trajectories),
+    )
