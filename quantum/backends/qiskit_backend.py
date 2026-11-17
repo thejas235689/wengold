@@ -93,7 +93,7 @@ class QiskitBackend(Backend):
                 metadata={"method": "aer_statevector", "bit_order": "c[n-1]..c[0]"},
             )
 
-        compiled = __import__("qiskit").transpile(qc, simulator)
+        compiled = self._transpile(qc, simulator)
         counts = simulator.run(compiled, shots=shots).result().get_counts()
         normalized = {}
         for raw_key, value in counts.items():
