@@ -152,6 +152,19 @@ def test_clock_alignment_normalizes_different_clock_periods():
     assert report["first_divergence"]["aligned_time"] == "1"
 
 
+def test_clock_alignment_does_not_infer_edge_across_unknown_sample():
+    capture = {
+        "cycles": 5, "times": [0, 5, 10, 15, 20], "time_unit_ns": "1",
+        "signals": [
+            {"name": "tb.clk", "width": 1, "values": [0, None, 1, 0, 1]},
+            {"name": "tb.dut.state", "width": 1, "values": [0, 0, 0, 1, 1]},
+        ],
+    }
+    with pytest.raises(ValueError, match="at least two observed rising edges"):
+        compare_waveforms(capture, capture, alignment="clock",
+                          pass_clock_signal="tb.clk", fail_clock_signal="tb.clk")
+
+
 def test_reset_alignment_requires_a_visible_release_transition():
     passed = {
         "cycles": 2, "times": [0, 5], "time_unit_ns": "1",
