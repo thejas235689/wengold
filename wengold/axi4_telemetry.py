@@ -259,6 +259,7 @@ def decode_axi4(wave: Mapping[str, Any], *,
         tx["attributes"]["observed_beats"] = tx["beats"]
         tx["attributes"]["expected_beats"] = tx["expected_beats"]
         tx["attributes"]["error_count"] = len(tx["_errors"])
+        tx["attributes"]["start_sample_index"] = tx.get("_start_index")
         tx["attributes"]["completion_index"] = index
         tx.pop("_start_index", None)
         tx.pop("_errors", None)
@@ -376,6 +377,12 @@ def decode_axi4(wave: Mapping[str, Any], *,
                     "region": val("AWREGION", index),
                 }
                 tx = make_transaction("write", awid, awaddr, awlen, index, attrs)
+                if awaddr is None:
+                    tx_issue(tx, "unknown_aw_address", "AXI4 AWADDR is unknown",
+                             index, [sig("AWADDR")], "AWADDR is X/Z/unobserved on an accepted AW transfer")
+                if attrs["burst"] == "UNKNOWN" and "AWBURST" in values:
+                    tx_issue(tx, "unknown_aw_burst", "AXI4 AWBURST is unknown",
+                             index, [sig("AWBURST")], "AWBURST is X/Z/unobserved")
                 if attrs["burst"] == "RESERVED":
                     tx_issue(tx, "reserved_aw_burst", "Reserved AWBURST encoding",
                              index, [sig("AWBURST")], "AWBURST=2'b11")
@@ -406,6 +413,11 @@ def decode_axi4(wave: Mapping[str, Any], *,
                     strobe = val("WSTRB", index)
                     if strobe is not None:
                         tx["attributes"]["last_strobe"] = hex(strobe)
+                if beat_index > tx["expected_beats"] and not tx["attributes"].get("burst_overrun_reported"):
+                    tx_issue(tx, "write_burst_overrun", "AXI4 write contains more W beats than AWLEN",
+                             index, [sig("AWLEN"), sig("WLAST")],
+                             f"observed beat {beat_index} exceeds expected {tx['expected_beats']}")
+                    tx["attributes"]["burst_overrun_reported"] = True
                 if wlast is None:
                     tx_issue(tx, "unknown_wlast", "AXI4 WLAST is unknown",
                              index, [sig("WLAST")], "WLAST is X/Z/unobserved on an accepted W beat")
@@ -464,6 +476,12 @@ def decode_axi4(wave: Mapping[str, Any], *,
                     "region": val("ARREGION", index),
                 }
                 tx = make_transaction("read", arid, araddr, arlen, index, attrs)
+                if araddr is None:
+                    tx_issue(tx, "unknown_ar_address", "AXI4 ARADDR is unknown",
+                             index, [sig("ARADDR")], "ARADDR is X/Z/unobserved on an accepted AR transfer")
+                if attrs["burst"] == "UNKNOWN" and "ARBURST" in values:
+                    tx_issue(tx, "unknown_ar_burst", "AXI4 ARBURST is unknown",
+                             index, [sig("ARBURST")], "ARBURST is X/Z/unobserved")
                 if attrs["burst"] == "RESERVED":
                     tx_issue(tx, "reserved_ar_burst", "Reserved ARBURST encoding",
                              index, [sig("ARBURST")], "ARBURST=2'b11")
@@ -487,6 +505,11 @@ def decode_axi4(wave: Mapping[str, Any], *,
                 tx["beats"] += 1
                 beat_index = tx["beats"]
                 expected_last = beat_index == tx["expected_beats"]
+                if beat_index > tx["expected_beats"] and not tx["attributes"].get("burst_overrun_reported"):
+                    tx_issue(tx, "read_burst_overrun", "AXI4 read contains more R beats than ARLEN",
+                             index, [sig("ARLEN"), sig("RLAST")],
+                             f"observed beat {beat_index} exceeds expected {tx['expected_beats']}")
+                    tx["attributes"]["burst_overrun_reported"] = True
                 if rdata is None:
                     tx["attributes"]["unknown_data_beats"] = (
                         tx["attributes"].get("unknown_data_beats", 0) + 1)
@@ -502,7 +525,10 @@ def decode_axi4(wave: Mapping[str, Any], *,
                     tx_issue(tx, rule, "AXI4 RLAST does not match ARLEN",
                              index, [sig("ARLEN"), sig("RLAST")],
                              f"beat {beat_index}/{tx['expected_beats']}, RLAST={rlast}")
-                if rresp is not None and rresp >= 2:
+                if rresp is None:
+                    tx_issue(tx, "unknown_rresp", "AXI4 RRESP is unknown",
+                             index, [sig("RRESP")], "RRESP is X/Z/unobserved")
+                elif rresp >= 2:
                     tx_issue(tx, "read_response_error", "AXI4 read response reported an error",
                              index, [sig("RRESP")], f"RRESP={_response(rresp)}")
                 beats_by_channel["R"] += 1
