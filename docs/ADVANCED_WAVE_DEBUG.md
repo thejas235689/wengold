@@ -74,6 +74,26 @@ to verify prompting and evidence boundaries: a real local model remains
 workstation-dependent.
 
 
+## AXI4 traffic decode
+
+The Wave Debug panel now includes an AXI4 prefix/clock selector and a
+**Decode AXI4 traffic** action. It reconstructs full AXI4 write/read transactions
+at rising ACLK edges, uses VALID && READY for handshakes, applies AXI4 AW-to-W
+ordering, matches B responses by BID and R beats by RID, and checks AWLEN/WLAST
+and ARLEN/RLAST. It also measures channel stalls and reports unknown controls,
+orphan beats, response errors, reset-aborted transactions and incomplete
+capture-end requests.
+
+Completed AXI4 transactions appear in a table; selecting one cross-probes its
+address-valid signal and start sample. AXI4 findings join the shared evidence
+table and are included in local AI hypotheses and OpenTelemetry export. AXI4
+stall cycles and maximum stall lengths are exported as protocol metrics.
+
+The decoder needs the full AXI4 channel signals and a clocked capture. The
+default interface prefix is tb.dut.axi; change it to match the VCD hierarchy.
+This is a full AXI4 decoder, not AXI4-Lite, AHB or APB. AVALID wait without
+READY is a measured backpressure interval, not proof of a DUT bug by itself.
+
 ## OpenTelemetry / Dynatrace export
 
 After analyzing a loaded VCD, use **Export OpenTelemetry bundle** to save the
