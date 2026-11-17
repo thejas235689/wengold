@@ -39,6 +39,117 @@ def make_wave_debug(QtCore, QtGui, QtWidgets, project_root, on_crossprobe=None,
         roots.addWidget(w)
     layout.addLayout(roots)
 
+    # Differential PASS-vs-FAIL waveform comparison. The primary waveform is
+    # the loaded capture; a second VCD is explicitly selected as the failing run.
+    diff_row = QtWidgets.QHBoxLayout()
+    pass_path = QtWidgets.QLineEdit()
+    pass_path.setObjectName("wavePassVcdPath")
+    pass_path.setPlaceholderText("PASS VCD (known-good reference)")
+    fail_path = QtWidgets.QLineEdit()
+    fail_path.setObjectName("waveFailVcdPath")
+    fail_path.setPlaceholderText("FAIL VCD (failing regression)")
+    pass_browse = QtWidgets.QPushButton("Browse PASS…")
+    pass_browse.setObjectName("waveBrowsePassVcd")
+    fail_browse = QtWidgets.QPushButton("Browse FAIL…")
+    fail_browse.setObjectName("waveBrowseFailVcd")
+    compare_button = QtWidgets.QPushButton("Compare PASS vs FAIL")
+    compare_button.setObjectName("waveComparePassFail")
+    compare_button.setEnabled(False)
+    diff_row.addWidget(pass_path, 2)
+    diff_row.addWidget(pass_browse)
+    diff_row.addWidget(fail_path, 2)
+    diff_row.addWidget(fail_browse)
+    diff_row.addWidget(compare_button)
+    layout.addLayout(diff_row)
+    diff_summary = QtWidgets.QLabel("Differential comparison not run")
+    diff_summary.setObjectName("waveDiffSummary")
+    layout.addWidget(diff_summary)
+    diff_table = QtWidgets.QTableWidget(0, 5)
+    diff_table.setObjectName("waveDiffSignals")
+    diff_table.setHorizontalHeaderLabels(
+        ["Signal", "Differences", "First time (ns)", "PASS value", "FAIL value"])
+    diff_table.horizontalHeader().setStretchLastSection(True)
+    diff_table.setMaximumHeight(155)
+    diff_table.setEditTriggers(QtWidgets.QAbstractItemView.EditTrigger.NoEditTriggers)
+    layout.addWidget(diff_table)
+    diff_state = {"report": None, "pass_wave": None, "fail_wave": None}
+
+    def browse_vcd(field, caption):
+        filename, _ = QtWidgets.QFileDialog.getOpenFileName(
+            page, caption, "", "VCD waveform (*.vcd);;All files (*)")
+        if filename:
+            field.setText(filename)
+
+    pass_browse.clicked.connect(lambda: browse_vcd(pass_path, "Select passing VCD"))
+    fail_browse.clicked.connect(lambda: browse_vcd(fail_path, "Select failing VCD"))
+
+    def compare_pass_fail():
+        from pathlib import Path
+        from .wave import parse_vcd
+        from .wave_diff import compare_waveforms
+        pfile, ffile = pass_path.text().strip(), fail_path.text().strip()
+        if not pfile or not ffile:
+            diff_summary.setText("Select both a PASS VCD and a FAIL VCD.")
+            return
+        try:
+            p_wave = parse_vcd(Path(pfile).read_text(errors="replace"))
+            f_wave = parse_vcd(Path(ffile).read_text(errors="replace"))
+            report = compare_waveforms(p_wave, f_wave)
+        except (OSError, ValueError, TypeError) as exc:
+            diff_summary.setText("Waveform comparison failed: " + str(exc))
+            diff_table.setRowCount(0)
+            return
+        diff_state.update(report=report, pass_wave=p_wave, fail_wave=f_wave)
+        diff_table.setRowCount(len(report["per_signal"]))
+        for row, item in enumerate(report["per_signal"]):
+            first = item["first_difference"]
+            values = (item["signal"], item["differences"], first["time_ns"],
+                      first["pass"], first["fail"])
+            for col, value in enumerate(values):
+                diff_table.setItem(row, col, QtWidgets.QTableWidgetItem(str(value)))
+        first = report["first_divergence"]
+        if first:
+            diff_summary.setText(
+                f"FIRST DIVERGENCE: {first['signal']} at {first['time_ns']} ns · "
+                f"PASS={first['pass']} · FAIL={first['fail']} · "
+                f"{report['total_differences']} differences across "
+                f"{len(report['per_signal'])} signals · "
+                f"{len(report['pass_only_signals'])} PASS-only / "
+                f"{len(report['fail_only_signals'])} FAIL-only signals")
+        else:
+            diff_summary.setText(
+                f"No value differences on {report['common_signals']} common signals "
+                f"over {report['compared_timestamps']} aligned timestamps. "
+                f"PASS-only: {len(report['pass_only_signals'])}; "
+                f"FAIL-only: {len(report['fail_only_signals'])}.")
+        findings_detail.setPlainText(json.dumps(report, indent=2))
+
+    def select_diff_signal():
+        row = diff_table.currentRow()
+        report = diff_state["report"]
+        if report is None or row < 0 or row >= len(report["per_signal"]):
+            return
+        item = report["per_signal"][row]
+        if on_crossprobe:
+            on_crossprobe(item["signal"])
+        # The currently loaded waveform remains the timeline reference. Jump
+        # to its closest physical timestamp to the first divergence.
+        if on_select_time and state["wave"] is not None:
+            target = item["first_difference"]["time_ns"]
+            scale = state["wave"].get("time_unit_ns") or 1
+            times = state["wave"].get("times", list(range(state["wave"].get("cycles", 0))))
+            try:
+                from decimal import Decimal
+                target_tick = Decimal(target) / Decimal(str(scale))
+                index = min(range(len(times)), key=lambda i: abs(Decimal(str(times[i])) - target_tick))
+                on_select_time(index)
+            except (ValueError, ZeroDivisionError):
+                pass
+        findings_detail.setPlainText(json.dumps(item, indent=2))
+
+    compare_button.clicked.connect(compare_pass_fail)
+    diff_table.itemSelectionChanged.connect(select_diff_signal)
+
     axi_row = QtWidgets.QHBoxLayout()
     axi_prefix = QtWidgets.QLineEdit("tb.dut.axi")
     axi_prefix.setObjectName("waveAxi4Prefix")
