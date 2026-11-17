@@ -25,6 +25,8 @@ formal = ["z3-solver>=4.12"]   # optional symbolic backend
 slang = ["pyslang>=9"]         # optional real SystemVerilog front-end
 spec = ["PyYAML>=6.0"]          # YAML specs (JSON needs nothing extra)
 otel = ["opentelemetry-proto>=1.30,<2"]  # Binary OTLP Protobuf export to Dynatrace/Collector
+quantum = ["qiskit>=1.2", "qiskit-aer>=0.15", "cirq-core>=1.4", "scipy>=1.11", "matplotlib>=3.8", "pyqtgraph>=0.13"]
+quantum-native = ["pybind11>=2.12"]  # QuEST bridge build support; QuEST itself is native C/C++
 all = ["z3-solver>=4.12", "pyslang>=9", "cocotb>=1.8", "PyYAML>=6.0"]
 dev  = ["pytest>=8.0", "pytest-cov", "PyYAML>=6.0"]
 
@@ -34,6 +36,9 @@ wengold = "wengold.cli:main"
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 
+[tool.setuptools]
+py-modules = ["quantum_app"]
+
 [tool.setuptools.packages.find]
-include = ["wengold", "wengold.*"]
+include = ["wengold", "wengold.*", "quantum", "quantum.*"]
 exclude = ["linux", "linux.*", "tests", "tests.*"]
