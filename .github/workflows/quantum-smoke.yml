@@ -47,7 +47,7 @@ jobs:
           python-version: '3.11'
       - run: python -m pip install --upgrade pip
       - run: python -m pip install -e '.[dev,quantum]'
-      - run: python -m pytest -q tests/test_quantum_ir.py tests/test_quantum_backends.py tests/test_quantum_openqasm3.py tests/test_quantum_quest_bridge.py
+      - run: python -m pytest -q tests/test_quantum_ir.py tests/test_quantum_backends.py tests/test_quantum_openqasm3.py tests/test_quantum_visualization.py tests/test_quantum_quest_bridge.py
 
   quest-native-cpu:
     runs-on: ubuntu-latest
