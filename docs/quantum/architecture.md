@@ -47,7 +47,7 @@ The first version lives in `quantum/core/circuit_ir.py`. It uses zero-based logi
 
 ## Desktop integration
 
-The existing native app uses PyQt6 and builds workspace tabs in `wengold/native_studio.py`. Integrate the Quantum Studio tab through a lazy import so systems without quantum extras continue to launch. The standalone app is `python -m quantum_app`. GUI simulations must execute in a worker thread/process with cancellation and resource limits; never run large simulations on the Qt event loop.
+The existing native app uses PyQt6 and builds workspace tabs in `wengold/native_studio.py`. Integrate the Quantum Studio tab through a lazy import so systems without quantum extras continue to launch. The standalone app is `python -m quantum_app`. Circuit simulation is dispatched through a QThread worker so the Qt event loop remains responsive. Cancellation and adaptive resource scheduling remain pending.
 
 ## Linux dependencies
 
@@ -60,7 +60,7 @@ Base: Python >=3.11, existing WENGOLD native extra (PyQt6), NumPy. Quantum optio
 3. Qiskit and Cirq adapters; backend capability reporting.
 4. QuEST native bridge and CPU CI; GPU/MPI optional profiles.
 5. OpenQASM 3 supported-subset import/export with strict unsupported-feature diagnostics.
-6. Statevector, density matrix, Bloch sphere, Q-sphere and measurement visualizers.
+6. Statevector, reduced-state Bloch sphere, Q-sphere and measurement histogram visualizers (initial statevector view implemented; density-matrix visualization remains pending).
 7. Differential and statistical verification, regression artifacts.
 8. AI circuit generation/optimization/debug agents with parser + simulator + verifier evidence.
 9. Native WENGOLD tab, standalone packaging, Rocky Linux and Ubuntu CI.
