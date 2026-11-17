@@ -9,9 +9,9 @@ def build_editor(QtWidgets):
     from PyQt6 import QtCore, QtGui
 
     gate_arity = {
-        "H": 1, "X": 1, "Y": 1, "Z": 1, "S": 1, "T": 1,
+        "H": 1, "X": 1, "Y": 1, "Z": 1, "S": 1, "SDG": 1, "T": 1, "TDG": 1,
         "RX": 1, "RY": 1, "RZ": 1, "CNOT": 2, "CZ": 2,
-        "SWAP": 2, "CCX": 3, "MEASURE": 1,
+        "SWAP": 2, "CCX": 3, "CSWAP": 3, "MEASURE": 1,
     }
 
     class GateButton(QtWidgets.QPushButton):
@@ -65,6 +65,8 @@ def build_editor(QtWidgets):
                 return [candidates[0], anchor]  # control, target
             if gate == "CCX":
                 return [candidates[0], candidates[1], anchor]  # controls, target
+            if gate == "CSWAP":
+                return [candidates[0], anchor, candidates[1]]  # control, swap targets
             return [anchor, candidates[0]]  # two targets
 
         def dropEvent(self, event):
@@ -93,6 +95,8 @@ def build_editor(QtWidgets):
                     op = Operation(item["id"], gate, targets=(qubits[1],), controls=(qubits[0],))
                 elif gate == "CCX":
                     op = Operation(item["id"], gate, targets=(qubits[2],), controls=(qubits[0], qubits[1]))
+                elif gate == "CSWAP":
+                    op = Operation(item["id"], gate, targets=(qubits[1], qubits[2]), controls=(qubits[0],))
                 elif gate in {"CZ", "SWAP"}:
                     op = Operation(item["id"], gate, targets=tuple(qubits))
                 elif gate == "MEASURE":
@@ -129,6 +133,11 @@ def build_editor(QtWidgets):
                     self.scene.addEllipse(x - 11, ys[2] - 11, 22, 22)
                     self.scene.addLine(x - 8, ys[2], x + 8, ys[2])
                     self.scene.addLine(x, ys[2] - 8, x, ys[2] + 8)
+                elif gate == "CSWAP":
+                    self.scene.addEllipse(x - 5, ys[0] - 5, 10, 10)
+                    for y in ys[1:]:
+                        self.scene.addLine(x - 8, y - 8, x + 8, y + 8)
+                        self.scene.addLine(x - 8, y + 8, x + 8, y - 8)
                 else:
                     rect_y = ys[0] - 19
                     self.scene.addRect(x - 24, rect_y, 48, 38)
