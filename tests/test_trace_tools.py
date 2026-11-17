@@ -241,5 +241,5 @@ def test_trace_diff_normalizes_implicit_unknown_bus_values():
     result = compare(left, right)
     rows = {row["name"]: row for row in result["rows"]}
     assert rows["tb.data"]["first"] == 1
-    assert result["times"][rows["tb.data"]["first"]] == 5
+    assert result["times"][rows["tb.data"]["first"]] == 5_000_000  # 5 ns in femtoseconds
     assert rows["tb.high_z"]["status"] == "No difference in overlap"
