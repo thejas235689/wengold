@@ -17,11 +17,16 @@ QuEST is a native C/C++ dependency and is built separately; see [docs/quantum/ar
 ## Initial scope
 
 - Backend-neutral JSON circuit IR with explicit operation IDs, qubit operands, parameters, classical operands and schema version.
+- Atomic `.wqproj` save/load with format-version validation.
 - Validation for qubit bounds, duplicate IDs, gate arity and parameter shape.
 - Lazy backend registry and normalized execution result.
-- Qiskit and Cirq adapters when their packages are installed.
+- Qiskit and Cirq adapters when their packages are installed, including statevector and sampled measurement paths with normalized bit ordering.
 - QuEST adapter contract with explicit unsupported status until a compatible native binding is configured.
 - Minimal native Qt circuit editor and standalone launcher.
+
+## Project persistence
+
+Use `quantum.core.project.save_project(path, circuit, metadata=...)` and `load_project(path)` for atomic `.wqproj` persistence. Writes use a temporary file in the destination directory followed by `os.replace`; project and circuit schema versions are checked on load.
 
 ## Verification boundary
 
