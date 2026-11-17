@@ -153,3 +153,37 @@ def test_qiskit_incremental_trace_uses_single_execution_when_available():
     assert trace.snapshots[0].statevector[0] == pytest.approx((1.0, 0.0))
     assert abs(trace.snapshots[1].statevector[0][0]) == pytest.approx(2 ** -0.5)
     assert abs(trace.snapshots[2].statevector[1][0]) == pytest.approx(2 ** -0.5)
+
+
+def test_qiskit_measurement_trajectories_capture_each_shot_and_collapsed_states():
+    pytest.importorskip("qiskit_aer")
+    from quantum.backends.qiskit_backend import QiskitBackend
+    from quantum.service.debugger import build_measurement_trajectories
+
+    circuit = Circuit("bell-trajectories", 2, (
+        Operation("h0", "H", (0,)),
+        Operation("cx01", "CNOT", (1,), (0,)),
+        Operation("measure0", "MEASURE", (0,), classical_bits=(0,)),
+        Operation("measure1", "MEASURE", (1,), classical_bits=(1,)),
+    ), num_clbits=2)
+
+    trace = build_measurement_trajectories(
+        circuit, QiskitBackend(), shots=12, seed=31,
+    )
+
+    assert trace.shots == 12
+    assert all(len(shot.snapshots) == 5 for shot in trace.trajectories)
+    assert {shot.classical_bits for shot in trace.trajectories} <= {"00", "11"}
+    for shot in trace.trajectories:
+        assert shot.snapshots[-1].gate == "MEASURE"
+        assert sum(shot.snapshots[-1].probabilities.values()) == pytest.approx(1.0)
+
+
+def test_trajectory_debugger_rejects_backend_without_shot_support():
+    from quantum.service.debugger import build_measurement_trajectories
+
+    circuit = Circuit("unsupported-trajectory", 1, (
+        Operation("m0", "MEASURE", (0,), classical_bits=(0,)),
+    ), num_clbits=1)
+    with pytest.raises(QuantumDebugError, match="does not implement shot trajectories"):
+        build_measurement_trajectories(circuit, FakeStatevectorBackend(), shots=2)
