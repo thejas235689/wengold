@@ -6,6 +6,7 @@ import sys
 import pytest
 
 from wengold.fst import to_vcd
+from wengold.native_trace_tools import invalidate_comparison_cache
 from wengold.studio_workspace import list_evidence, waveform
 from wengold.wave_compare import compare, plot_window
 from wengold.wave_inspect import wave_drom
@@ -243,3 +244,12 @@ def test_trace_diff_normalizes_implicit_unknown_bus_values():
     assert rows["tb.data"]["first"] == 1
     assert result["times"][rows["tb.data"]["first"]] == 5_000_000  # 5 ns in femtoseconds
     assert rows["tb.high_z"]["status"] == "No difference in overlap"
+
+
+
+def test_trace_selection_invalidates_cache_after_alignment_error():
+    # A failed alignment clears diff but leaves both parsed captures loaded.
+    state = {"a": {"source": "old-baseline"}, "b": {"source": "old-candidate"},
+             "diff": None}
+    invalidate_comparison_cache(state)
+    assert state == {"a": None, "b": None, "diff": None}
