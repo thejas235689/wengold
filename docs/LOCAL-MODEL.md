@@ -265,11 +265,12 @@ existing independent simulation and formal workflows to establish those results.
 WENGOLD now has an optional **kimi-k3-cli** model backend for
 [FareedKhan-dev/kimi-k3-in-c](https://github.com/FareedKhan-dev/kimi-k3-in-c).
 The upstream project is a C99/OpenMP CPU inference engine. Its CLI writes a
-machine-readable JSON report, which WENGOLD consumes instead of scraping
-terminal output. The adapter sends one prompt per process using --prompt-file,
---incremental, --out and the checkpoint tokenizer. System instructions are
-prepended as ordinary prompt text; this is batch generation, not the upstream
-interactive XTML chat REPL.
+official XTML chat mode and the checkpoint tokenizer. WENGOLD creates a
+one-turn JSONL history (system + user), invokes the CLI with --chat and
+--incremental, then reads the assistant record written back to that history.
+It sends /exit to close the upstream REPL after the first response. This keeps
+the official chat template and role boundaries instead of treating the
+instruction-tuned checkpoint as raw text completion.
 
 ### Install the upstream engine
 
@@ -306,11 +307,12 @@ The native **Local AI** and **DV Workflow** model controls also expose
 **Use Kimi K3 C**. The model selection does not download weights or start
 the engine automatically; configure the environment and restart WENGOLD.
 
-The adapter refuses to accept output if the executable fails, times out, the
-JSON report is absent or malformed, generation is interrupted, layers are
-incomplete, expert loads were dropped, or decoded text is empty. It uses
-argument-list subprocess execution (no shell) and temporary prompt/output
-files. Proprietary RTL prompts remain on the local machine.
+The adapter refuses to accept output if the executable fails or times out,
+the JSONL history is malformed, no assistant turn was completed, or response
+text is empty. It uses argument-list subprocess execution (no shell) and
+private temporary history files. The upstream CLI returns a nonzero status for
+incomplete chat turns and routed-expert load drops; WENGOLD rejects those runs.
+Proprietary RTL prompts remain on the local machine.
 
 ### Important capability boundaries
 
