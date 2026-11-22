@@ -12,7 +12,8 @@ from typing import Iterable
 from ..dv_pipeline import run_regression
 from ..eda_flows import inspect_manifest
 from ..ledger.store import Ledger
-from .formal_agents import SymbiYosysManifestAgent\nfrom .orchestration import (
+from .formal_agents import SymbiYosysManifestAgent
+from .orchestration import (
     AgentReport, AgentStatus, AgentTask, LoopPolicy,
     LoopStitchCoordinator, LoopStitchResult,
 )
@@ -87,7 +88,9 @@ def run_reviewed_manifests(
 ) -> LoopStitchResult:
     """Execute selected reviewed regression manifests through Loop & Stitch.
 
-    Each manifest is an independently selectable agent. Formal manifests are routed\n    to the proof-status-aware SymbiYosys agent; other supported manifests use the\n    simulation regression agent. The current version
+    Each manifest is an independently selectable agent. Formal manifests are routed
+    to the proof-status-aware SymbiYosys agent; other supported manifests use the
+    simulation regression agent. The current version
     runs each manifest once: retrying an unchanged failing test would add no
     information. A future repair agent must change and re-fingerprint inputs
     before the coordinator may safely schedule a retry.
