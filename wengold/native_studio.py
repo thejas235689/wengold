@@ -452,9 +452,14 @@ def make_studio_tabs(state, QtCore, QtGui, QtWidgets, parent=None):
                               "mismatch", "elaboration_error", "unknown"])
     repair_button = QtWidgets.QPushButton("Create Repair Proposal")
     repair_button.setObjectName("createLoopStitchRepairProposal")
+    repair_approve_button = QtWidgets.QPushButton("Approve Candidate Copy")
+    repair_approve_button.setObjectName("approveLoopStitchRepairCandidate")
+    repair_approve_button.setEnabled(False)
     repair_row.addWidget(repair_rtl, 2)
     repair_row.addWidget(repair_category, 1)
     repair_row.addWidget(repair_button)
+    repair_row.addWidget(repair_approve_button)
+    repair_payload_state = {"value": None}
     agent_layout.addLayout(repair_row)
     repair_evidence = QtWidgets.QPlainTextEdit()
     repair_evidence.setObjectName("loopStitchRepairEvidence")
@@ -610,6 +615,8 @@ def make_studio_tabs(state, QtCore, QtGui, QtWidgets, parent=None):
         thread.start()
 
     def create_repair_proposal():
+        repair_payload_state["value"] = None
+        repair_approve_button.setEnabled(False)
         rtl_rel = repair_rtl.text().strip()
         evidence = repair_evidence.toPlainText().strip()
         if not rtl_rel or not evidence:
@@ -626,16 +633,46 @@ def make_studio_tabs(state, QtCore, QtGui, QtWidgets, parent=None):
             import json
             loop_stitch_trace.setPlainText(json.dumps(report.as_dict(), indent=2))
             if report.status.value == "pass":
-                alert("Repair proposal generated in memory only. Review the diff; RTL was not changed.")
+                repair_payload_state["value"] = report.outputs.get("repair_proposal:" + rtl_rel)
+                repair_approve_button.setEnabled(bool(repair_payload_state["value"]))
+                alert("Proposal generated in memory. Review the diff before approving a separate candidate copy.")
             else:
                 alert("Repair proposal not generated: " + "; ".join(report.findings), True)
         except Exception as exc:
             alert(f"Repair proposal failed: {type(exc).__name__}: {exc}", True)
 
+    def approve_repair_candidate():
+        payload = repair_payload_state.get("value")
+        if not payload:
+            alert("Create and review a repair proposal first", True)
+            return
+        answer = QtWidgets.QMessageBox.question(
+            tabs, "Approve candidate copy",
+            "Write this proposal as a NEW file under results/approved_repairs? "
+            "The original RTL will not be overwritten. Verification will remain NOT RUN.",
+        )
+        if answer != QtWidgets.QMessageBox.StandardButton.Yes:
+            alert("Candidate copy approval cancelled")
+            return
+        try:
+            from .verification.repair_agents import approve_candidate_copy
+            result = approve_candidate_copy(
+                state["path"], payload, approved=True,
+                expected_source_sha256=payload.get("source_sha256"),
+                expected_candidate_sha256=payload.get("candidate_sha256"),
+            )
+            import json
+            loop_stitch_trace.setPlainText(json.dumps(result, indent=2))
+            repair_approve_button.setEnabled(False)
+            alert("Approved candidate copy written. Original RTL is unchanged; verification NOT RUN.")
+        except Exception as exc:
+            alert(f"Candidate approval refused: {type(exc).__name__}: {exc}", True)
+
     agent_plan.clicked.connect(show_plan)
     loop_run.clicked.connect(run_loop_stitch_preview)
     manifest_run.clicked.connect(run_reviewed_manifest_agents)
     repair_button.clicked.connect(create_repair_proposal)
+    repair_approve_button.clicked.connect(approve_repair_candidate)
     tabs.addTab(agent_page, "Agents")
 
     # Quantum Design Studio is loaded lazily and shares the standalone editor.
@@ -772,6 +809,7 @@ def make_studio_tabs(state, QtCore, QtGui, QtWidgets, parent=None):
     tabs.loopStitchRepairRtl = repair_rtl
     tabs.loopStitchRepairEvidence = repair_evidence
     tabs.loopStitchRepairButton = repair_button
+    tabs.loopStitchRepairApproveButton = repair_approve_button
     refresh_evidence()
     refresh_jobs()
     return tabs
