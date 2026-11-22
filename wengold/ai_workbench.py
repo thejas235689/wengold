@@ -5,6 +5,7 @@ An LLM draft is never automatically promoted to verification signoff.
 from __future__ import annotations
 
 import hashlib
+import os
 import ipaddress
 from pathlib import Path
 import re
@@ -14,13 +15,25 @@ import tempfile
 from urllib.parse import urlparse
 
 from .ai_prompts import make_prompt
-from .agent.llm import LocalModel, probe
+from .agent.llm import KIMI_K3_MODEL, KimiK3CLIModel, LocalModel, probe
 from .qwen_cloud import QWEN_BACKEND, QwenCloudModel
 
 
 def model_client(backend: str, endpoint: str, model: str, timeout: float = 120.0) -> LocalModel:
     if backend == QWEN_BACKEND:
         return QwenCloudModel(model, endpoint, timeout)
+    if backend == "kimi-k3-cli":
+        if model != KIMI_K3_MODEL:
+            raise ValueError("select the kimi-k3-in-c model preset")
+        return KimiK3CLIModel(
+            binary=os.environ.get("WENGOLD_K3_BIN", "k3"),
+            model_dir=os.environ.get("WENGOLD_K3_MODEL_DIR", ""),
+            trunk_dir=os.environ.get("WENGOLD_K3_TRUNK_DIR", ""),
+            tokenizer_dir=os.environ.get("WENGOLD_K3_TOK_DIR", ""),
+            preset_name=os.environ.get("WENGOLD_K3_PRESET", "auto"),
+            max_tokens=int(os.environ.get("WENGOLD_K3_GEN", "256")),
+            timeout=float(os.environ.get("WENGOLD_K3_TIMEOUT", str(max(timeout, 3600.0)))),
+        )
     if backend not in ("ollama", "openai"):
         raise ValueError("unsupported backend")
     if not model or len(model) > 200:
@@ -39,6 +52,8 @@ def model_client(backend: str, endpoint: str, model: str, timeout: float = 120.0
 def list_models(backend: str, endpoint: str) -> list[str]:
     if backend == QWEN_BACKEND:
         raise ValueError("Qwen4-Max has a fixed model ID. Use Test Inference to check access.")
+    if backend == "kimi-k3-cli":
+        return probe(endpoint, backend, timeout=5.0).models
     model_client(backend, endpoint, "__probe__", 5.0)
     return probe(endpoint, backend, timeout=5.0).models
 
