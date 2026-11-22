@@ -38,7 +38,8 @@ import urllib.error
 import urllib.request
 from dataclasses import dataclass, field
 
-__all__ = ["LocalModel", "KimiK3CLIModel", "KIMI_K3_MODEL", "LLMUnavailable",\n           "ModelInfo", "Preset", "PRESETS", "probe", "preset", "from_env"]
+__all__ = ["LocalModel", "KimiK3CLIModel", "KIMI_K3_MODEL", "LLMUnavailable",
+           "ModelInfo", "Preset", "PRESETS", "probe", "preset", "from_env"]
 
 
 class LLMUnavailable(RuntimeError):
