@@ -29,10 +29,10 @@ def _actual_sby_mode(root: Path, argv: list[str]) -> str | None:
         source = sby_path.read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError):
         return None
-    options = re.search(r"(?ims)^\\s*\\[options\\]\\s*(.*?)(?=^\\s*\\[|\\Z)", source)
+    options = re.search(r"(?ims)^\s*\[options\]\s*(.*?)(?=^\s*\[|\Z)", source)
     if not options:
         return None
-    mode = re.search(r"(?im)^\\s*mode\\s+([A-Za-z_]+)\\s*(?:#.*)?$", options.group(1))
+    mode = re.search(r"(?im)^\s*mode\s+([A-Za-z_]+)\s*(?:#.*)?$", options.group(1))
     return mode.group(1).lower() if mode else None
 
 class SymbiYosysManifestAgent:
