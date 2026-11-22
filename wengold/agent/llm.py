@@ -262,6 +262,11 @@ class KimiK3CLIModel:
                 raise LLMUnavailable("Kimi K3 returned no decoded text.")
             return answer.strip()
 
+    def _require_instruction_following(self, job: str) -> None:
+        # The upstream K3 checkpoint exposes an instruction/chat template; this
+        # adapter sends one batch prompt, so this guard is intentionally a no-op.
+        return None
+
     def explain_failure(self, verdict_text: str) -> str:
         return self.ask("Explain this silicon-verification result in at most four sentences. Use only supplied evidence; do not invent causes or claim correctness.\n\n" + verdict_text,
                         system="You explain hardware verification evidence conservatively.")
