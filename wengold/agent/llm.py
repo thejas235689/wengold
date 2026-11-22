@@ -251,7 +251,11 @@ class KimiK3CLIModel:
             requested, done = result.get("layers_requested"), result.get("layers_completed")
             if requested is not None and done != requested:
                 raise LLMUnavailable(f"Kimi K3 completed {done}/{requested} layers; partial output rejected.")
-            if int(result.get("expert_drops") or 0) != 0:
+            try:
+                expert_drops = int(result.get("expert_drops") or 0)
+            except (TypeError, ValueError) as exc:
+                raise LLMUnavailable("Kimi K3 report has an invalid expert_drops field.") from exc
+            if expert_drops != 0:
                 raise LLMUnavailable("Kimi K3 reported expert load drops; output rejected.")
             answer = result.get("generated_text")
             if not isinstance(answer, str) or not answer.strip():
