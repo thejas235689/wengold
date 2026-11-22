@@ -168,6 +168,8 @@ class LoopStitchCoordinator:
         ledger: Ledger | None = None,
     ) -> LoopStitchResult:
         policy = policy or LoopPolicy()
+        if not agents:
+            raise ValueError("at least one verification agent is required")
         ordered = self._order_agents(agents)
         base_context = dict(context or {})
         history: list[dict[str, Any]] = []
@@ -188,10 +190,17 @@ class LoopStitchCoordinator:
                         findings=("blocked by dependencies: " + ", ".join(failed_deps),),
                     )
                 else:
-                    report = agent.execute(dict(iteration_context))
-                    if report.agent_id != task.agent_id:
-                        raise ValueError(
-                            f"agent {task.agent_id!r} returned report for {report.agent_id!r}"
+                    try:
+                        report = agent.execute(dict(iteration_context))
+                        if report.agent_id != task.agent_id:
+                            raise ValueError(
+                                f"agent {task.agent_id!r} returned report for {report.agent_id!r}"
+                            )
+                    except Exception as exc:
+                        report = AgentReport(
+                            task.agent_id, AgentStatus.ERROR,
+                            findings=(f"agent execution raised {type(exc).__name__}: {exc}",),
+                            retryable=False,
                         )
                     if report.status is AgentStatus.PASS:
                         passed.add(task.agent_id)
@@ -204,14 +213,16 @@ class LoopStitchCoordinator:
             all_passed = all(r.status is AgentStatus.PASS for r in reports)
             if all_passed and stitch.consistent:
                 status = RunStatus.PASS
+            elif any(r.retryable for r in reports if r.status is not AgentStatus.PASS):
+                status = RunStatus.INCOMPLETE
             elif any(r.status is AgentStatus.FAIL for r in reports):
-                retryable = any(r.status is AgentStatus.FAIL and r.retryable for r in reports)
-                status = RunStatus.INCOMPLETE if retryable else RunStatus.FAIL
+                status = RunStatus.FAIL
+            elif any(r.status in (AgentStatus.ERROR, AgentStatus.BLOCKED) for r in reports):
+                status = RunStatus.BLOCKED
+            elif not stitch.consistent:
+                status = RunStatus.BLOCKED
             else:
-                status = RunStatus.BLOCKED if any(
-                    r.status in (AgentStatus.ERROR, AgentStatus.BLOCKED)
-                    for r in reports
-                ) or not stitch.consistent else RunStatus.INCOMPLETE
+                status = RunStatus.INCOMPLETE
 
             entry = {
                 "iteration": iteration,
@@ -229,7 +240,8 @@ class LoopStitchCoordinator:
             if status in (RunStatus.FAIL, RunStatus.BLOCKED):
                 break
             if policy.stop_on_non_retryable_failure and any(
-                r.status is AgentStatus.FAIL and not r.retryable for r in reports
+                r.status is not AgentStatus.PASS and not r.retryable
+                for r in reports
             ):
                 status = RunStatus.FAIL
                 break
