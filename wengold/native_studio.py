@@ -398,19 +398,45 @@ def make_studio_tabs(state, QtCore, QtGui, QtWidgets, parent=None):
     audit.clicked.connect(lambda: job_result.setPlainText(str(jobs.audit())))
     tabs.addTab(job_page, "Jobs & Signoff")
 
-    # Agents: actual project/graph facts and bounded orchestration stages.
+    # Agents: Loop & Stitch is surfaced in the native workspace. The initial
+    # desktop integration previews real graph/plan agents; EDA execution remains
+    # with the configured tool adapters and is never implied by a preview PASS.
     agent_page, agent_layout = column()
     agent_hint = QtWidgets.QLabel(
-        "Agent orchestration: inspect real design context and queued local verification stages.\n"
-        "No unattended RTL repair, unrestricted shell or automatic tapeout signoff.")
+        "Loop & Stitch: bounded agent iterations, dependency-aware execution, "
+        "conflict detection and evidence history.\n"
+        "This preview inspects the current graph and plan; it does not run RTL "
+        "simulation, formal proof or approve signoff.")
     agent_hint.setWordWrap(True)
     agent_layout.addWidget(agent_hint)
+
+    agent_controls = QtWidgets.QHBoxLayout()
     agent_plan = QtWidgets.QPushButton("Inspect graph-based agent plan")
-    agent_layout.addWidget(agent_plan)
+    agent_plan.setObjectName("inspectAgentPlan")
+    loop_iterations = QtWidgets.QSpinBox()
+    loop_iterations.setObjectName("loopStitchMaxIterations")
+    loop_iterations.setRange(1, 10)
+    loop_iterations.setValue(3)
+    loop_run = QtWidgets.QPushButton("Run Loop & Stitch Preview")
+    loop_run.setObjectName("runLoopStitchPreview")
+    agent_controls.addWidget(agent_plan)
+    agent_controls.addWidget(QtWidgets.QLabel("Max iterations"))
+    agent_controls.addWidget(loop_iterations)
+    agent_controls.addWidget(loop_run)
+    agent_controls.addStretch(1)
+    agent_layout.addLayout(agent_controls)
+
     agent_trace = QtWidgets.QPlainTextEdit()
     agent_trace.setObjectName("agentPlan")
     agent_trace.setReadOnly(True)
     agent_layout.addWidget(agent_trace)
+
+    loop_stitch_trace = QtWidgets.QPlainTextEdit()
+    loop_stitch_trace.setObjectName("loopStitchResults")
+    loop_stitch_trace.setReadOnly(True)
+    loop_stitch_trace.setPlaceholderText(
+        "Loop iterations, agent outcomes, stitched outputs and conflicts appear here.")
+    agent_layout.addWidget(loop_stitch_trace)
 
     def show_plan():
         try:
@@ -423,7 +449,72 @@ def make_studio_tabs(state, QtCore, QtGui, QtWidgets, parent=None):
         except Exception as exc:
             alert(f"Agent plan failed: {exc}", True)
 
+    def run_loop_stitch_preview():
+        try:
+            from .desktop import _agent
+            from .verification.orchestration import (
+                AgentReport, AgentStatus, AgentTask, LoopPolicy,
+                LoopStitchCoordinator,
+            )
+
+            class GraphContextAgent:
+                task = AgentTask("graph-context")
+
+                def execute(self, _context):
+                    graph = state["graph"]
+                    return AgentReport(
+                        "graph-context", AgentStatus.PASS,
+                        outputs={"graph_summary": {
+                            "nodes": len(graph.nodes),
+                            "edges": len(graph.edges),
+                            "rtl_blocks": len(state.get("block_names", [])),
+                            "complete": bool(state.get("complete", False)),
+                        }},
+                        findings=tuple(state.get("notes", [])),
+                    )
+
+            class VerificationPlanAgent:
+                task = AgentTask("verification-plan", ("graph-context",))
+
+                def execute(self, context):
+                    plan = _agent(state, "inspect verification dependencies")
+                    if not plan.get("ok", True):
+                        return AgentReport(
+                            "verification-plan", AgentStatus.ERROR,
+                            findings=(str(plan.get("error", "plan inspection failed")),),
+                        )
+                    return AgentReport(
+                        "verification-plan", AgentStatus.PASS,
+                        outputs={"verification_plan": {
+                            "steps": plan.get("steps", []),
+                            "summary": plan.get("summary", ""),
+                            "graph_nodes_seen": context["graph_summary"]["nodes"],
+                        }},
+                    )
+
+            coordinator = LoopStitchCoordinator()
+            result = coordinator.run(
+                [VerificationPlanAgent(), GraphContextAgent()],
+                policy=LoopPolicy(max_iterations=loop_iterations.value()),
+                required_outputs=("graph_summary", "verification_plan"),
+            )
+            import json
+            payload = result.as_dict()
+            payload["mode"] = "read_only_plan_preview"
+            payload["verification_claim"] = (
+                "No RTL simulation, formal proof, coverage run or signoff was executed."
+            )
+            loop_stitch_trace.setPlainText(json.dumps(payload, indent=2, default=str))
+            alert(
+                f"Loop & Stitch preview: {result.status.value.upper()} "
+                f"after {result.iterations} iteration(s); plan preview only."
+            )
+        except Exception as exc:
+            loop_stitch_trace.setPlainText(f"Loop & Stitch preview failed: {type(exc).__name__}: {exc}")
+            alert(f"Loop & Stitch preview failed: {exc}", True)
+
     agent_plan.clicked.connect(show_plan)
+    loop_run.clicked.connect(run_loop_stitch_preview)
     tabs.addTab(agent_page, "Agents")
 
     # Quantum Design Studio is loaded lazily and shares the standalone editor.
