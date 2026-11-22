@@ -98,3 +98,40 @@ def test_failed_agent_outputs_are_not_stitched():
     result = Stitcher().stitch([report], required_keys=("fake_pass",))
     assert "fake_pass" not in result.outputs
     assert result.missing_required == ("fake_pass",)
+
+
+
+def test_agent_exception_is_recorded_as_error_not_pass():
+    def explode(_context, _call):
+        raise RuntimeError("adapter crashed")
+
+    agent = FakeAgent("sim", explode)
+    result = LoopStitchCoordinator().run([agent])
+    assert result.status is RunStatus.BLOCKED
+    assert result.reports[0].status is AgentStatus.ERROR
+    assert "adapter crashed" in result.reports[0].findings[0]
+
+
+def test_empty_agent_set_is_rejected():
+    try:
+        LoopStitchCoordinator().run([])
+    except ValueError as exc:
+        assert "at least one" in str(exc)
+    else:
+        raise AssertionError("expected empty agent set rejection")
+
+
+def test_ledger_records_iterations_and_final_result(tmp_path):
+    from wengold.ledger.store import Ledger
+
+    ledger = Ledger(tmp_path / "loop-stitch.jsonl")
+    agent = FakeAgent("lint", lambda _ctx, _call: AgentReport(
+        "lint", AgentStatus.PASS, {"lint_clean": True}
+    ))
+    result = LoopStitchCoordinator().run(
+        [agent], required_outputs=("lint_clean",), ledger=ledger
+    )
+    assert result.status is RunStatus.PASS
+    kinds = [record["kind"] for record in ledger]
+    assert kinds == ["loop_stitch_iteration", "loop_stitch_result"]
+    assert ledger.audit().ok
