@@ -24,6 +24,8 @@ def model_controls(QtCore, QtWidgets, prefix, *, discoverable=False, dhir=False)
                 "kimi-k3-cli": "", QWEN_BACKEND: qwen_endpoint()}
     endpoint = QtWidgets.QLineEdit(os.environ.get("WENGOLD_LLM_URL") or defaults[initial])
     endpoint.setObjectName(prefix + "Endpoint")
+    endpoint.setPlaceholderText("Kimi K3 uses WENGOLD_K3_* paths; no HTTP endpoint")
+    endpoint.setToolTip("For Kimi K3 CLI, configure the executable, checkpoint and packed-trunk paths with WENGOLD_K3_* environment variables.")
     if discoverable:
         model = QtWidgets.QComboBox()
         model.setEditable(True)
