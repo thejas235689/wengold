@@ -101,7 +101,7 @@ WENGOLD's existing adapters.
 
 Formal manifests with `kind: "formal"` are routed to
 `SymbiYosysManifestAgent`, not the generic simulation runner. The manifest
-must explicitly declare `engine: "symbiyosys"`, `proof_mode: "prove"`,
+must explicitly declare `engine: "symbiyosys"`, `proof_mode: "prove"`, and its referenced `.sby` file must also contain `[options]` / `mode prove`,
 project inputs, and fresh proof artifacts. The agent parses the SBY
 `DONE (...)` / `Status:` result using the existing outcome parser:
 - Parsed PASS plus successful execution, unchanged inputs and fresh declared
@@ -148,4 +148,4 @@ The manifest runner validates the executable and inputs before launch. A
 manifest that declares a nonexistent or non-fresh PASS artifact cannot yield a
 formal-agent PASS. The actual SBY task must also be configured for a prove-mode
 proof; WENGOLD's explicit `proof_mode` field is a declared contract and should
-be checked against the reviewed `.sby` file by the engineer.
+be checked against the reviewed `.sby` file; WENGOLD parses that file's actual `[options] mode` and rejects BMC/cover even if the manifest metadata claims `prove`.
