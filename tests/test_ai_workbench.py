@@ -149,3 +149,23 @@ def test_real_model_smoke_requires_configuration(monkeypatch, tmp_path):
     monkeypatch.delenv("WENGOLD_LLM_MODEL", raising=False)
     assert module.main(["--project", str(tmp_path),
                         "--output", str(tmp_path / "evidence.json")]) == 2
+
+
+def test_kimi_k3_cli_is_a_supported_local_ai_backend(monkeypatch, tmp_path):
+    from wengold.agent.llm import KIMI_K3_MODEL, KimiK3CLIModel
+
+    binary = tmp_path / "k3"
+    binary.write_text("#!/bin/sh\nexit 0\n")
+    binary.chmod(0o755)
+    model_dir, trunk_dir = tmp_path / "model", tmp_path / "trunk"
+    model_dir.mkdir()
+    trunk_dir.mkdir()
+    monkeypatch.setenv("WENGOLD_K3_BIN", str(binary))
+    monkeypatch.setenv("WENGOLD_K3_MODEL_DIR", str(model_dir))
+    monkeypatch.setenv("WENGOLD_K3_TRUNK_DIR", str(trunk_dir))
+    client = model_client("kimi-k3-cli", "", KIMI_K3_MODEL)
+    assert isinstance(client, KimiK3CLIModel)
+    assert client.backend == "kimi-k3-cli"
+    assert callable(client._require_instruction_following)
+    with pytest.raises(ValueError, match="kimi-k3-in-c"):
+        model_client("kimi-k3-cli", "", "wrong-model")
