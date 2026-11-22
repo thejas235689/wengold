@@ -643,6 +643,9 @@ def make_studio_tabs(state, QtCore, QtGui, QtWidgets, parent=None):
     tabs.formalViewer = formal_result
     tabs.jobTable = job_table
     tabs.agentViewer = agent_trace
+    tabs.loopStitchViewer = loop_stitch_trace
+    tabs.loopStitchRunButton = loop_run
+    tabs.loopStitchIterations = loop_iterations
     refresh_evidence()
     refresh_jobs()
     return tabs
