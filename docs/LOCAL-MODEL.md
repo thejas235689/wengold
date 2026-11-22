@@ -259,3 +259,68 @@ output hashes. Large input files may be excerpted, which the result records.
 These roles generate read-only drafts or review notes. They do not edit RTL,
 run EDA, credit coverage, establish a proof, or grant signoff. Use the
 existing independent simulation and formal workflows to establish those results.
+
+## Kimi K3 through the native C inference engine
+
+WENGOLD now has an optional **kimi-k3-cli** model backend for
+[FareedKhan-dev/kimi-k3-in-c](https://github.com/FareedKhan-dev/kimi-k3-in-c).
+The upstream project is a C99/OpenMP CPU inference engine. Its CLI writes a
+machine-readable JSON report, which WENGOLD consumes instead of scraping
+terminal output. The adapter sends one prompt per process using --prompt-file,
+--incremental, --out and the checkpoint tokenizer. System instructions are
+prepended as ordinary prompt text; this is batch generation, not the upstream
+interactive XTML chat REPL.
+
+### Install the upstream engine
+
+```sh
+git clone https://github.com/FareedKhan-dev/kimi-k3-in-c.git
+cd kimi-k3-in-c
+make -j
+make test
+./bin/k3 --help
+```
+
+Complete the upstream model setup separately. Its README describes a roughly
+**1.56 TB checkpoint** and a roughly **109 GB packed trunk**. Run its doctor and
+download/packing steps only after checking available disk, RAM, and the
+checkpoint's own access and licence terms. The C inference engine's Apache-2.0
+licence does not automatically grant rights to the model weights.
+
+Configure WENGOLD with the paths on the machine running Studio:
+
+```sh
+export WENGOLD_LLM_MODEL=kimi-k3-in-c
+export WENGOLD_LLM_BACKEND=kimi-k3-cli
+export WENGOLD_K3_BIN="$HOME/kimi-k3-in-c/bin/k3"
+export WENGOLD_K3_MODEL_DIR="$HOME/k3model"
+export WENGOLD_K3_TRUNK_DIR="$HOME/k3trunk"
+export WENGOLD_K3_TOK_DIR="$HOME/k3model"
+export WENGOLD_K3_PRESET=auto
+export WENGOLD_K3_GEN=256
+export WENGOLD_K3_TIMEOUT=3600
+wengold doctor --llm
+```
+
+The native **Local AI** and **DV Workflow** model controls also expose
+**Use Kimi K3 C**. The model selection does not download weights or start
+the engine automatically; configure the environment and restart WENGOLD.
+
+The adapter refuses to accept output if the executable fails, times out, the
+JSON report is absent or malformed, generation is interrupted, layers are
+incomplete, expert loads were dropped, or decoded text is empty. It uses
+argument-list subprocess execution (no shell) and temporary prompt/output
+files. Proprietary RTL prompts remain on the local machine.
+
+### Important capability boundaries
+
+- This first adapter is **text-only, single-request batch inference**. It does
+  not connect Kimi K3's interactive chat REPL, expose an HTTP server, invoke
+  WENGOLD tools, or autonomously execute EDA commands.
+- It is available for drafting RTL and explaining already-established
+  verification evidence. Model output is advisory and never changes proof,
+  simulation, coverage, or signoff status.
+- The upstream README describes CPU inference and memory presets, but real
+  performance depends on your CPU, RAM, storage bandwidth, and checkpoint
+  setup. WENGOLD CI uses a fake CLI for adapter tests; it does not download
+  the checkpoint or claim a real Kimi K3 inference run.
