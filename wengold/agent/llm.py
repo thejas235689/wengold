@@ -265,7 +265,7 @@ class KimiK3CLIModel:
 
     def _require_instruction_following(self, job: str) -> None:
         # The upstream K3 checkpoint exposes an instruction/chat template; this
-        # adapter sends one batch prompt, so this guard is intentionally a no-op.
+        # The upstream K3 checkpoint uses its official instruction/chat template.
         return None
 
     def explain_failure(self, verdict_text: str) -> str:
