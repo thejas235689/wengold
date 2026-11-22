@@ -103,12 +103,15 @@ def approve_candidate_copy(
 
     candidate_root = root / "results" / "approved_repairs"
     candidate_root.mkdir(parents=True, exist_ok=True)
+    resolved_candidate_root = candidate_root.resolve()
+    if not resolved_candidate_root.is_relative_to(root):
+        raise ValueError("approved_repairs directory escapes project root")
     destination = candidate_root / rtl_rel
     resolved_destination = destination.resolve()
-    if not resolved_destination.is_relative_to(candidate_root.resolve()):
+    if not resolved_destination.is_relative_to(resolved_candidate_root):
         raise ValueError("candidate destination escapes approved_repairs")
     destination.parent.mkdir(parents=True, exist_ok=True)
-    if not destination.parent.resolve().is_relative_to(candidate_root.resolve()):
+    if not destination.parent.resolve().is_relative_to(resolved_candidate_root):
         raise ValueError("candidate destination parent escapes approved_repairs")
 
     # O_EXCL prevents accidental replacement, including a race between checks.
