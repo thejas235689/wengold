@@ -481,3 +481,23 @@ def test_native_sv_agent_roles_keep_separate_results(native_window, monkeypatch)
     selector.setCurrentIndex(selector.findData("formal"))
     assert "formal draft" in output.toPlainText()
     assert calls == ["formal", "debug", "spec"]
+
+
+def test_native_loop_stitch_preview_is_available_and_explicit(native_window):
+    import json
+    from PyQt6.QtWidgets import QPushButton, QSpinBox
+
+    _root, _app, window = native_window
+    tab = window.workspace
+    run = tab.findChild(QPushButton, "runLoopStitchPreview")
+    iterations = tab.findChild(QSpinBox, "loopStitchMaxIterations")
+    assert run is not None
+    assert iterations is not None
+    assert iterations.value() == 3
+
+    run.click()
+    payload = json.loads(tab.loopStitchViewer.toPlainText())
+    assert payload["mode"] == "read_only_plan_preview"
+    assert payload["status"] == "pass"
+    assert payload["iterations"] == 1
+    assert payload["verification_claim"].startswith("No RTL simulation")
