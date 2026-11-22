@@ -513,3 +513,13 @@ def test_native_agents_expose_reviewed_manifest_loop_stitch_controls(native_wind
     assert run is not None
     manifest_input.setText("flows/simulation.json")
     assert manifest_input.text() == "flows/simulation.json"
+
+
+def test_native_agents_expose_formal_and_repair_review_controls(native_window):
+    from PyQt6.QtWidgets import QComboBox, QLineEdit, QPlainTextEdit, QPushButton
+    _root, _app, window = native_window
+    tab = window.workspace
+    assert tab.findChild(QLineEdit, "loopStitchRepairRtl") is not None
+    assert tab.findChild(QPlainTextEdit, "loopStitchRepairEvidence") is not None
+    assert tab.findChild(QComboBox, "loopStitchRepairCategory") is not None
+    assert tab.findChild(QPushButton, "createLoopStitchRepairProposal") is not None
