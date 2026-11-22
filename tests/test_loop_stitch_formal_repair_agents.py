@@ -13,7 +13,7 @@ def _formal_agent(tmp_path, monkeypatch, *, proof_mode="prove", actual_mode="pro
     sby_dir = tmp_path / "formal"
     sby_dir.mkdir()
     (sby_dir / "top.sby").write_text(
-        "[options]\\nmode " + actual_mode + "\\n[engines]\\nsmtbmc\\n")
+        "[options]\nmode " + actual_mode + "\n[engines]\nsmtbmc\n")
     manifest.write_text('{"kind":"formal","engine":"symbiyosys","proof_mode":"' +
                         proof_mode + '","argv":["sby","-f","formal/top.sby"]}')
     agent = formal_agents.SymbiYosysManifestAgent(tmp_path, "flows/formal.json")
