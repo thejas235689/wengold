@@ -224,17 +224,27 @@ class KimiK3CLIModel:
         full_prompt = (("System instructions:\n" + system.strip() + "\n\n") if system.strip() else "") + prompt
         with tempfile.TemporaryDirectory(prefix="wengold-kimi-k3-") as tmp:
             tmpdir = Path(tmp)
-            prompt_file, output_file = tmpdir / "prompt.txt", tmpdir / "result.json"
-            prompt_file.write_text(full_prompt, encoding="utf-8")
+            history_file = tmpdir / "history.jsonl"
+            messages = []
+            if system.strip():
+                messages.append({"role": "system", "content": system})
+            messages.append({"role": "user", "content": prompt})
+            history_file.write_text(
+                "\\n".join(json.dumps(message, ensure_ascii=False) for message in messages) + "\\n",
+                encoding="utf-8",
+            )
             argv = [executable, str(model_dir), "--trunk", str(trunk_dir),
                     "--preset", self.preset_name, "--tok", str(tok_dir),
-                    "--prompt-file", str(prompt_file), "--gen", str(self.max_tokens),
-                    "--incremental", "--stop-id", "163585", "--stop-id", "163586",
-                    "--out", str(output_file)]
+                    "--chat", "--history", str(history_file),
+                    "--gen", str(self.max_tokens), "--incremental",
+                    "--thinking-effort", "high"]
+            if system.strip():
+                argv.extend(["--system", system])
             try:
-                completed = subprocess.run(argv, cwd=str(tmpdir), stdin=subprocess.DEVNULL,
-                    stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
-                    encoding="utf-8", errors="replace", timeout=self.timeout, check=False)
+                completed = subprocess.run(argv, cwd=str(tmpdir), input="/exit\\n",
+                    stdin=None, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                    text=True, encoding="utf-8", errors="replace",
+                    timeout=self.timeout, check=False)
             except subprocess.TimeoutExpired as exc:
                 raise LLMUnavailable(f"Kimi K3 exceeded {self.timeout:g}s timeout; answer rejected.") from exc
             except OSError as exc:
@@ -243,23 +253,14 @@ class KimiK3CLIModel:
                 detail = (completed.stderr or completed.stdout or "").strip()[-1200:]
                 raise LLMUnavailable(f"Kimi K3 exited {completed.returncode}: {detail}")
             try:
-                result = json.loads(output_file.read_text(encoding="utf-8"))
+                records = [json.loads(line) for line in history_file.read_text(encoding="utf-8").splitlines() if line.strip()]
             except (OSError, ValueError) as exc:
-                raise LLMUnavailable("Kimi K3 did not produce valid --out JSON.") from exc
-            if not isinstance(result, dict) or result.get("interrupted"):
-                raise LLMUnavailable("Kimi K3 report is invalid or marks generation interrupted.")
-            requested, done = result.get("layers_requested"), result.get("layers_completed")
-            if requested is not None and done != requested:
-                raise LLMUnavailable(f"Kimi K3 completed {done}/{requested} layers; partial output rejected.")
-            try:
-                expert_drops = int(result.get("expert_drops") or 0)
-            except (TypeError, ValueError) as exc:
-                raise LLMUnavailable("Kimi K3 report has an invalid expert_drops field.") from exc
-            if expert_drops != 0:
-                raise LLMUnavailable("Kimi K3 reported expert load drops; output rejected.")
-            answer = result.get("generated_text")
+                raise LLMUnavailable("Kimi K3 did not produce a valid JSONL chat history.") from exc
+            if not records or records[-1].get("role") != "assistant":
+                raise LLMUnavailable("Kimi K3 chat did not complete an assistant turn.")
+            answer = records[-1].get("content")
             if not isinstance(answer, str) or not answer.strip():
-                raise LLMUnavailable("Kimi K3 returned no decoded text.")
+                raise LLMUnavailable("Kimi K3 returned no assistant response text.")
             return answer.strip()
 
     def _require_instruction_following(self, job: str) -> None:
