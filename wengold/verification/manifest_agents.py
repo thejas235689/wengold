@@ -99,6 +99,7 @@ def run_reviewed_manifests(
     if len(selected) > 20:
         raise ValueError("at most 20 regression manifests may be run in one orchestration")
     agents = []
+    required = []
     for item in selected:
         try:
             spec = inspect_manifest(root, item)
@@ -108,19 +109,20 @@ def run_reviewed_manifests(
             continue
         if spec["kind"] == "formal":
             agents.append(SymbiYosysManifestAgent(root, item))
+            required.append("formal:" + item)
         else:
             agents.append(ReviewedManifestAgent(root, item))
+            required.append("manifest:" + item)
 
     ledger_file = (root / ledger_path).resolve()
     if not ledger_file.is_relative_to(root):
         raise ValueError("ledger path must remain inside the project")
     ledger_file.parent.mkdir(parents=True, exist_ok=True)
     ledger = Ledger(ledger_file)
-    required = tuple("manifest:" + item for item in selected)
     return LoopStitchCoordinator().run(
         agents,
         context={"project_root": str(root), "execution_mode": "reviewed_manifest"},
         policy=LoopPolicy(max_iterations=1),
-        required_outputs=required,
+        required_outputs=tuple(required),
         ledger=ledger,
     )
