@@ -30,6 +30,10 @@ from __future__ import annotations
 import http.client
 import json
 import os
+import shutil
+import subprocess
+import tempfile
+from pathlib import Path
 import urllib.error
 import urllib.request
 from dataclasses import dataclass, field
@@ -57,6 +61,7 @@ class ModelInfo:
 DEFAULT_OLLAMA = "http://127.0.0.1:11434"
 DEFAULT_OPENAI = "http://127.0.0.1:8080/v1"
 GEMMA4_MODEL = "gemma4:e4b"
+KIMI_K3_MODEL = "kimi-k3-in-c"
 
 
 @dataclass(frozen=True)
@@ -79,6 +84,18 @@ class Preset:
 
 
 PRESETS: dict[str, Preset] = {
+    KIMI_K3_MODEL: Preset(
+        name=KIMI_K3_MODEL,
+        hf="https://github.com/FareedKhan-dev/kimi-k3-in-c",
+        params="Kimi K3 · CPU/C99/OpenMP",
+        licence="Apache-2.0 engine; checkpoint terms separate",
+        instruction_tuned=True,
+        backend="kimi-k3-cli",
+        serve="Build the upstream C engine with make; configure WENGOLD_K3_* paths.",
+        note="Local Kimi K3 C inference adapter. Text-only batch generation via the "
+             "native CLI; no HTTP server, tools, image input or autonomous tool use. "
+             "The full checkpoint is about 1.56 TB and needs a packed trunk directory.",
+    ),
     GEMMA4_MODEL: Preset(
         name=GEMMA4_MODEL,
         hf="google/gemma-4-E4B-it",
@@ -160,10 +177,101 @@ def from_env() -> LocalModel | None:
     known = preset(model)
     backend = os.environ.get("WENGOLD_LLM_BACKEND", "").strip().lower() or (
         known.backend if known else "ollama")
+    if backend == "kimi-k3-cli":
+        return KimiK3CLIModel(
+            binary=os.environ.get("WENGOLD_K3_BIN", "k3"),
+            model_dir=os.environ.get("WENGOLD_K3_MODEL_DIR", ""),
+            trunk_dir=os.environ.get("WENGOLD_K3_TRUNK_DIR", ""),
+            tokenizer_dir=os.environ.get("WENGOLD_K3_TOK_DIR", ""),
+            preset_name=os.environ.get("WENGOLD_K3_PRESET", "auto"),
+            max_tokens=int(os.environ.get("WENGOLD_K3_GEN", "256")),
+            timeout=float(os.environ.get("WENGOLD_K3_TIMEOUT", "3600")),
+        )
     url = os.environ.get("WENGOLD_LLM_URL", "").strip() or (
         DEFAULT_OPENAI if backend == "openai" else DEFAULT_OLLAMA)
     return LocalModel(model=model, endpoint=url, backend=backend)
 
+
+class KimiK3CLIModel:
+    """Safe batch adapter for FareedKhan-dev/kimi-k3-in-c."""
+    def __init__(self, binary="k3", model_dir="", trunk_dir="", tokenizer_dir="",
+                 preset_name="auto", max_tokens=256, timeout=3600.0):
+        self.binary, self.model_dir, self.trunk_dir = binary, model_dir, trunk_dir
+        self.tokenizer_dir = tokenizer_dir or model_dir
+        self.preset_name, self.max_tokens, self.timeout = preset_name, max_tokens, timeout
+        self.backend, self.model, self.calls = "kimi-k3-cli", KIMI_K3_MODEL, 0
+        self.preset = preset(self.model)
+
+    def ask(self, prompt: str, system: str = "") -> str:
+        self.calls += 1
+        if not self.model_dir or not self.trunk_dir:
+            raise LLMUnavailable("Set WENGOLD_K3_MODEL_DIR and WENGOLD_K3_TRUNK_DIR; Kimi K3 requires the checkpoint and packed trunk.")
+        if not 1 <= self.max_tokens <= 4096:
+            raise LLMUnavailable("WENGOLD_K3_GEN must be between 1 and 4096.")
+        executable = self.binary
+        if os.path.sep in executable:
+            candidate = Path(executable).expanduser()
+            if not candidate.is_file():
+                raise LLMUnavailable(f"Kimi K3 executable does not exist: {executable}")
+            executable = str(candidate.resolve())
+        elif shutil.which(executable) is None:
+            raise LLMUnavailable(f"Kimi K3 executable {executable!r} is not on PATH; build the upstream C project first.")
+        model_dir = Path(self.model_dir).expanduser().resolve()
+        trunk_dir = Path(self.trunk_dir).expanduser().resolve()
+        tok_dir = Path(self.tokenizer_dir).expanduser().resolve()
+        if not model_dir.is_dir() or not trunk_dir.is_dir() or not tok_dir.is_dir():
+            raise LLMUnavailable("Kimi K3 model, packed trunk and tokenizer paths must be existing directories.")
+        full_prompt = (("System instructions:\n" + system.strip() + "\n\n") if system.strip() else "") + prompt
+        with tempfile.TemporaryDirectory(prefix="wengold-kimi-k3-") as tmp:
+            tmpdir = Path(tmp)
+            prompt_file, output_file = tmpdir / "prompt.txt", tmpdir / "result.json"
+            prompt_file.write_text(full_prompt, encoding="utf-8")
+            argv = [executable, str(model_dir), "--trunk", str(trunk_dir),
+                    "--preset", self.preset_name, "--tok", str(tok_dir),
+                    "--prompt-file", str(prompt_file), "--gen", str(self.max_tokens),
+                    "--incremental", "--stop-id", "163585", "--stop-id", "163586",
+                    "--out", str(output_file)]
+            try:
+                completed = subprocess.run(argv, cwd=str(tmpdir), stdin=subprocess.DEVNULL,
+                    stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+                    encoding="utf-8", errors="replace", timeout=self.timeout, check=False)
+            except subprocess.TimeoutExpired as exc:
+                raise LLMUnavailable(f"Kimi K3 exceeded {self.timeout:g}s timeout; answer rejected.") from exc
+            except OSError as exc:
+                raise LLMUnavailable(f"Could not launch Kimi K3: {type(exc).__name__}: {exc}") from exc
+            if completed.returncode != 0:
+                detail = (completed.stderr or completed.stdout or "").strip()[-1200:]
+                raise LLMUnavailable(f"Kimi K3 exited {completed.returncode}: {detail}")
+            try:
+                result = json.loads(output_file.read_text(encoding="utf-8"))
+            except (OSError, ValueError) as exc:
+                raise LLMUnavailable("Kimi K3 did not produce valid --out JSON.") from exc
+            if not isinstance(result, dict) or result.get("interrupted"):
+                raise LLMUnavailable("Kimi K3 report is invalid or marks generation interrupted.")
+            requested, done = result.get("layers_requested"), result.get("layers_completed")
+            if requested is not None and done != requested:
+                raise LLMUnavailable(f"Kimi K3 completed {done}/{requested} layers; partial output rejected.")
+            if int(result.get("expert_drops") or 0) != 0:
+                raise LLMUnavailable("Kimi K3 reported expert load drops; output rejected.")
+            answer = result.get("generated_text")
+            if not isinstance(answer, str) or not answer.strip():
+                raise LLMUnavailable("Kimi K3 returned no decoded text.")
+            return answer.strip()
+
+    def explain_failure(self, verdict_text: str) -> str:
+        return self.ask("Explain this silicon-verification result in at most four sentences. Use only supplied evidence; do not invent causes or claim correctness.\n\n" + verdict_text,
+                        system="You explain hardware verification evidence conservatively.")
+
+    @staticmethod
+    def unfence(text: str) -> str:
+        return LocalModel.unfence(text)
+
+    def draft_rtl(self, spec: str, language: str = "SystemVerilog") -> str:
+        return self.unfence(self.ask(f"Write synthesizable {language} for this specification. Return code only; do not claim it is verified.\n\n" + spec,
+                                    system="You draft RTL conservatively and do not invent interfaces."))
+
+    def render(self) -> str:
+        return f"  {self.backend}/{self.model} ({self.calls} call(s)); model_dir={self.model_dir or \"not configured\"}; trunk_dir={self.trunk_dir or \"not configured\"}"
 
 def probe(endpoint: str = DEFAULT_OLLAMA, backend: str = "ollama",
           timeout: float = 2.0) -> ModelInfo:
