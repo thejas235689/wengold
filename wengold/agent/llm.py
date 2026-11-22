@@ -280,7 +280,10 @@ class KimiK3CLIModel:
                                     system="You draft RTL conservatively and do not invent interfaces."))
 
     def render(self) -> str:
-        return f"  {self.backend}/{self.model} ({self.calls} call(s)); model_dir={self.model_dir or \"not configured\"}; trunk_dir={self.trunk_dir or \"not configured\"}"
+        model_dir = self.model_dir or "not configured"
+        trunk_dir = self.trunk_dir or "not configured"
+        return (f"  {self.backend}/{self.model} ({self.calls} call(s)); "
+                f"model_dir={model_dir}; trunk_dir={trunk_dir}")
 
 def probe(endpoint: str = DEFAULT_OLLAMA, backend: str = "ollama",
           timeout: float = 2.0) -> ModelInfo:
