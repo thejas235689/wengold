@@ -87,3 +87,50 @@ def test_formal_agent_checks_actual_sby_file_not_only_manifest_claim(tmp_path, m
     report = agent.execute({})
     assert report.status is AgentStatus.BLOCKED
     assert "actual .sby" in report.findings[0]
+
+
+def test_approved_repair_writes_separate_candidate_and_preserves_source(tmp_path):
+    rtl = tmp_path / "rtl" / "top.sv"
+    rtl.parent.mkdir()
+    original = "module top;\nendmodule\n"
+    rtl.write_text(original)
+    report = repair_agents.RepairProposalAgent(
+        tmp_path, "rtl/top.sv",
+        {"category": "assertion_failure", "file": "rtl/top.sv", "log": "ready mismatch"},
+    ).execute({})
+    payload = report.outputs["repair_proposal:rtl/top.sv"]
+    with __import__("pytest").raises(PermissionError):
+        repair_agents.approve_candidate_copy(
+            tmp_path, payload, expected_source_sha256=payload["source_sha256"],
+            expected_candidate_sha256=payload["candidate_sha256"])
+    result = repair_agents.approve_candidate_copy(
+        tmp_path, payload, approved=True,
+        expected_source_sha256=payload["source_sha256"],
+        expected_candidate_sha256=payload["candidate_sha256"])
+    candidate = tmp_path / result["candidate_path"]
+    assert candidate.is_file()
+    assert candidate.read_text() == payload["candidate_text"]
+    assert rtl.read_text() == original
+    assert result["verification_status"] == "NOT_RUN"
+    with __import__("pytest").raises(FileExistsError):
+        repair_agents.approve_candidate_copy(
+            tmp_path, payload, approved=True,
+            expected_source_sha256=payload["source_sha256"],
+            expected_candidate_sha256=payload["candidate_sha256"])
+
+
+def test_approved_repair_rejects_stale_source(tmp_path):
+    rtl = tmp_path / "rtl" / "top.sv"
+    rtl.parent.mkdir()
+    rtl.write_text("module top;\nendmodule\n")
+    report = repair_agents.RepairProposalAgent(
+        tmp_path, "rtl/top.sv",
+        {"category": "assertion_failure", "file": "rtl/top.sv", "log": "ready mismatch"},
+    ).execute({})
+    payload = report.outputs["repair_proposal:rtl/top.sv"]
+    rtl.write_text("module top; // edited after proposal\nendmodule\n")
+    with __import__("pytest").raises(RuntimeError, match="source RTL changed"):
+        repair_agents.approve_candidate_copy(
+            tmp_path, payload, approved=True,
+            expected_source_sha256=payload["source_sha256"],
+            expected_candidate_sha256=payload["candidate_sha256"])
