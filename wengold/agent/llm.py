@@ -193,7 +193,7 @@ def from_env() -> LocalModel | None:
 
 
 class KimiK3CLIModel:
-    """Safe batch adapter for FareedKhan-dev/kimi-k3-in-c."""
+    """Safe one-turn XTML chat adapter for FareedKhan-dev/kimi-k3-in-c."""
     def __init__(self, binary="k3", model_dir="", trunk_dir="", tokenizer_dir="",
                  preset_name="auto", max_tokens=256, timeout=3600.0):
         self.binary, self.model_dir, self.trunk_dir = binary, model_dir, trunk_dir
