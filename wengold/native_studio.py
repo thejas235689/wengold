@@ -530,7 +530,7 @@ def make_studio_tabs(state, QtCore, QtGui, QtWidgets, parent=None):
             alert(f"Loop & Stitch preview failed: {exc}", True)
 
     def run_reviewed_manifest_agents():
-        selected = [item.strip() for item in manifest_input.text().replace("\\n", ",").split(",")
+        selected = [item.strip() for item in manifest_input.text().replace("\n", ",").split(",")
                     if item.strip()]
         if not selected:
             alert("Enter at least one reviewed project manifest", True)
