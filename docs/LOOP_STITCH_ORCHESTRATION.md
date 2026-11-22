@@ -95,3 +95,34 @@ This increment provides a synchronous Python orchestration API, native
 workspace preview controls and unit tests. It does not provide distributed
 workers or claim end-to-end CI validation. Tool execution continues through
 WENGOLD's existing adapters.
+
+
+## Proof-aware formal agents and reviewed repair proposals
+
+Formal manifests with `kind: "formal"` are routed to
+`SymbiYosysManifestAgent`, not the generic simulation runner. The manifest
+must explicitly declare `engine: "symbiyosys"`, `proof_mode: "prove"`,
+project inputs, and fresh proof artifacts. The agent parses the SBY
+`DONE (...)` / `Status:` result using the existing outcome parser:
+- Parsed PASS plus successful execution, unchanged inputs and fresh declared
+  artifacts is a formal-agent PASS.
+- A parsed counterexample is FAIL.
+- UNKNOWN, unparseable output, stale/missing artifacts or changed inputs are
+  INCONCLUSIVE.
+- Missing tool/configuration and unsupported bounded/cover modes are BLOCKED.
+
+A generic process exit code of zero is never treated as a proof. In particular,
+BMC and cover PASS are not accepted as unbounded proof. The UI routes selected
+formal manifests through the same **Run Reviewed Tool Agents** action.
+
+The Agents workspace also exposes **Create Repair Proposal**. The
+`RepairProposalAgent` uses the existing deterministic Repairer to create a
+candidate unified diff in memory. It validates a project-local RTL path and
+records source/candidate hashes. It never writes source files. The UI shows the
+proposal and explicitly marks `verification_status: NOT_RUN`; an engineer
+must review and apply a patch separately, then run fresh simulation/formal
+checks. The proposal agent's PASS means only that a proposal was produced,
+not that the RTL is correct or fixed.
+
+Tests cover SBY PASS parsing, bounded-mode rejection, counterexample FAIL,
+repair proposal non-mutation and path confinement.
