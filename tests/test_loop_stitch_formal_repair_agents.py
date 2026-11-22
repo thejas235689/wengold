@@ -7,11 +7,15 @@ from wengold.verification import formal_agents, repair_agents
 from wengold.verification.orchestration import AgentStatus
 
 
-def _formal_agent(tmp_path, monkeypatch, *, proof_mode="prove", parsed=ToolOutcome.PASS):
+def _formal_agent(tmp_path, monkeypatch, *, proof_mode="prove", actual_mode="prove", parsed=ToolOutcome.PASS):
     manifest = tmp_path / "flows" / "formal.json"
     manifest.parent.mkdir()
+    sby_dir = tmp_path / "formal"
+    sby_dir.mkdir()
+    (sby_dir / "top.sby").write_text(
+        "[options]\\nmode " + actual_mode + "\\n[engines]\\nsmtbmc\\n")
     manifest.write_text('{"kind":"formal","engine":"symbiyosys","proof_mode":"' +
-                        proof_mode + '","argv":["sby","-f","formal.sby"]}')
+                        proof_mode + '","argv":["sby","-f","formal/top.sby"]}')
     agent = formal_agents.SymbiYosysManifestAgent(tmp_path, "flows/formal.json")
     monkeypatch.setattr(formal_agents, "inspect_manifest", lambda *_: {
         "kind": "formal", "artifacts_expected": ["formal/PASS"]
@@ -76,3 +80,10 @@ def test_repair_proposal_rejects_path_escape(tmp_path):
     )
     report = agent.execute({})
     assert report.status is AgentStatus.BLOCKED
+
+
+def test_formal_agent_checks_actual_sby_file_not_only_manifest_claim(tmp_path, monkeypatch):
+    agent = _formal_agent(tmp_path, monkeypatch, proof_mode="prove", actual_mode="bmc")
+    report = agent.execute({})
+    assert report.status is AgentStatus.BLOCKED
+    assert "actual .sby" in report.findings[0]
