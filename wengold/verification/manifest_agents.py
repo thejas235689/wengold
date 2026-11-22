@@ -12,7 +12,7 @@ from typing import Iterable
 from ..dv_pipeline import run_regression
 from ..eda_flows import inspect_manifest
 from ..ledger.store import Ledger
-from .orchestration import (
+from .formal_agents import SymbiYosysManifestAgent\nfrom .orchestration import (
     AgentReport, AgentStatus, AgentTask, LoopPolicy,
     LoopStitchCoordinator, LoopStitchResult,
 )
@@ -87,7 +87,7 @@ def run_reviewed_manifests(
 ) -> LoopStitchResult:
     """Execute selected reviewed regression manifests through Loop & Stitch.
 
-    Each manifest is an independently selectable agent. The current version
+    Each manifest is an independently selectable agent. Formal manifests are routed\n    to the proof-status-aware SymbiYosys agent; other supported manifests use the\n    simulation regression agent. The current version
     runs each manifest once: retrying an unchanged failing test would add no
     information. A future repair agent must change and re-fingerprint inputs
     before the coordinator may safely schedule a retry.
@@ -98,7 +98,18 @@ def run_reviewed_manifests(
         raise ValueError("select at least one reviewed regression manifest")
     if len(selected) > 20:
         raise ValueError("at most 20 regression manifests may be run in one orchestration")
-    agents = [ReviewedManifestAgent(root, item) for item in selected]
+    agents = []
+    for item in selected:
+        try:
+            spec = inspect_manifest(root, item)
+        except Exception:
+            # Let the regular agent produce the canonical BLOCKED/ERROR report.
+            agents.append(ReviewedManifestAgent(root, item))
+            continue
+        if spec["kind"] == "formal":
+            agents.append(SymbiYosysManifestAgent(root, item))
+        else:
+            agents.append(ReviewedManifestAgent(root, item))
 
     ledger_file = (root / ledger_path).resolve()
     if not ledger_file.is_relative_to(root):
