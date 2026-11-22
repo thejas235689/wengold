@@ -437,10 +437,31 @@ def make_studio_tabs(state, QtCore, QtGui, QtWidgets, parent=None):
     manifest_row.addWidget(manifest_run)
     agent_layout.addLayout(manifest_row)
     manifest_hint = QtWidgets.QLabel(
-        "Executes only explicitly selected, project-local simulation/UVM/RustDV/PSS "
+        "Executes only explicitly selected, project-local simulation/UVM/RustDV/PSS or proof-aware SymbiYosys formal "
         "manifests. This runs real configured commands; inspect each manifest first.")
     manifest_hint.setWordWrap(True)
     agent_layout.addWidget(manifest_hint)
+
+    repair_row = QtWidgets.QHBoxLayout()
+    repair_rtl = QtWidgets.QLineEdit()
+    repair_rtl.setObjectName("loopStitchRepairRtl")
+    repair_rtl.setPlaceholderText("Project-relative RTL file, e.g. rtl/top.sv")
+    repair_category = QtWidgets.QComboBox()
+    repair_category.setObjectName("loopStitchRepairCategory")
+    repair_category.addItems(["assertion_failure", "formal_counterexample",
+                              "mismatch", "elaboration_error", "unknown"])
+    repair_button = QtWidgets.QPushButton("Create Repair Proposal")
+    repair_button.setObjectName("createLoopStitchRepairProposal")
+    repair_row.addWidget(repair_rtl, 2)
+    repair_row.addWidget(repair_category, 1)
+    repair_row.addWidget(repair_button)
+    agent_layout.addLayout(repair_row)
+    repair_evidence = QtWidgets.QPlainTextEdit()
+    repair_evidence.setObjectName("loopStitchRepairEvidence")
+    repair_evidence.setPlaceholderText(
+        "Paste relevant failure log / counterexample evidence. The proposal is read-only.")
+    repair_evidence.setMaximumHeight(78)
+    agent_layout.addWidget(repair_evidence)
 
     agent_trace = QtWidgets.QPlainTextEdit()
     agent_trace.setObjectName("agentPlan")
@@ -588,9 +609,33 @@ def make_studio_tabs(state, QtCore, QtGui, QtWidgets, parent=None):
         agent_page.loopStitchWorker = worker
         thread.start()
 
+    def create_repair_proposal():
+        rtl_rel = repair_rtl.text().strip()
+        evidence = repair_evidence.toPlainText().strip()
+        if not rtl_rel or not evidence:
+            alert("Provide an RTL file and its failure evidence", True)
+            return
+        try:
+            from .verification.repair_agents import RepairProposalAgent
+            agent = RepairProposalAgent(
+                state["path"], rtl_rel,
+                {"category": repair_category.currentText(), "file": rtl_rel,
+                 "log": evidence},
+            )
+            report = agent.execute({})
+            import json
+            loop_stitch_trace.setPlainText(json.dumps(report.as_dict(), indent=2))
+            if report.status.value == "pass":
+                alert("Repair proposal generated in memory only. Review the diff; RTL was not changed.")
+            else:
+                alert("Repair proposal not generated: " + "; ".join(report.findings), True)
+        except Exception as exc:
+            alert(f"Repair proposal failed: {type(exc).__name__}: {exc}", True)
+
     agent_plan.clicked.connect(show_plan)
     loop_run.clicked.connect(run_loop_stitch_preview)
     manifest_run.clicked.connect(run_reviewed_manifest_agents)
+    repair_button.clicked.connect(create_repair_proposal)
     tabs.addTab(agent_page, "Agents")
 
     # Quantum Design Studio is loaded lazily and shares the standalone editor.
@@ -724,6 +769,9 @@ def make_studio_tabs(state, QtCore, QtGui, QtWidgets, parent=None):
     tabs.loopStitchIterations = loop_iterations
     tabs.loopStitchManifestInput = manifest_input
     tabs.loopStitchManifestRunButton = manifest_run
+    tabs.loopStitchRepairRtl = repair_rtl
+    tabs.loopStitchRepairEvidence = repair_evidence
+    tabs.loopStitchRepairButton = repair_button
     refresh_evidence()
     refresh_jobs()
     return tabs
