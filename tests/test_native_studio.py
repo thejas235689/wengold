@@ -526,3 +526,19 @@ def test_native_agents_expose_formal_and_repair_review_controls(native_window):
     approval = tab.findChild(QPushButton, "approveLoopStitchRepairCandidate")
     assert approval is not None
     assert not approval.isEnabled()
+
+
+@pytest.mark.parametrize("prefix", ["ai", "dv", "waveAi"])
+def test_kimi_k3_preset_selects_local_cli_backend(native_window, prefix):
+    from PyQt6 import QtWidgets
+
+    _, _, window = native_window
+    get = lambda kind, name: window.findChild(kind, prefix + name)
+    backend = get(QtWidgets.QComboBox, "Backend")
+    endpoint = get(QtWidgets.QLineEdit, "Endpoint")
+    model = get(QtWidgets.QComboBox if prefix == "ai" else QtWidgets.QLineEdit, "Model")
+    select_model = model.currentText if prefix == "ai" else model.text
+    get(QtWidgets.QPushButton, "KimiK3Preset").click()
+    assert backend.currentText() == "kimi-k3-cli"
+    assert endpoint.text() == ""
+    assert select_model() == "kimi-k3-in-c"
