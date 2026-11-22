@@ -5,12 +5,32 @@ unbounded proof mode and a parsed SBY PASS status plus fresh declared artifacts.
 """
 from __future__ import annotations
 
+import configparser
 import json
 from pathlib import Path
 
 from ..eda_flows import execute_manifest, inspect_manifest
 from ..tools.outcome import ToolOutcome, parse_sby_status
 from .orchestration import AgentReport, AgentStatus, AgentTask
+
+
+
+def _actual_sby_mode(root: Path, argv: list[str]) -> str | None:
+    """Read mode from the actual .sby file, not just manifest metadata."""
+    candidates = [arg for arg in argv if isinstance(arg, str) and arg.endswith(".sby")]
+    if len(candidates) != 1:
+        return None
+    sby_path = (root / candidates[0]).resolve()
+    if not sby_path.is_relative_to(root) or not sby_path.is_file():
+        return None
+    if sby_path.stat().st_size > 64_000:
+        return None
+    parser = configparser.ConfigParser(interpolation=None)
+    try:
+        parser.read_string(sby_path.read_text(encoding="utf-8"))
+        return parser.get("options", "mode", fallback=None)
+    except (OSError, UnicodeDecodeError, configparser.Error):
+        return None
 
 
 class SymbiYosysManifestAgent:
@@ -40,10 +60,13 @@ class SymbiYosysManifestAgent:
             return AgentReport(self.task.agent_id, AgentStatus.BLOCKED,
                                findings=("declare engine='symbiyosys' explicitly",))
         # BMC and cover PASS are not inductive/unbounded proofs.
-        if data.get("proof_mode") != "prove":
+        declared_mode = data.get("proof_mode")
+        actual_mode = _actual_sby_mode(self.project_root, data.get("argv", []))
+        if declared_mode != "prove" or actual_mode != "prove":
             return AgentReport(
                 self.task.agent_id, AgentStatus.BLOCKED,
-                findings=("declare proof_mode='prove'; bounded BMC/cover cannot satisfy this proof agent",),
+                findings=(f"unbounded proof required; declared proof_mode={declared_mode!r}, "
+                          f"actual .sby [options] mode={actual_mode!r}; BMC/cover cannot satisfy this proof agent",),
             )
         if not spec["artifacts_expected"]:
             return AgentReport(self.task.agent_id, AgentStatus.BLOCKED,
