@@ -65,19 +65,29 @@ tool availability, requirement coverage, waivers, and human approval.
 
 ## Native desktop integration
 
-The native Agents workspace now exposes:
+The native Agents workspace exposes:
 - A configurable maximum-iteration control.
 - A graph-based plan inspection action.
-- A Loop & Stitch preview action.
+- A read-only Loop & Stitch preview action.
+- A reviewed-manifest input and **Run Reviewed Tool Agents** action.
 - A structured result view with iteration count, agent reports, stitched
-  outputs, conflicts and an explicit preview-only verification claim.
+  outputs, conflicts, evidence references and explicit execution claims.
 
-The first UI integration runs two read-only analysis agents (graph context and
-verification plan). It demonstrates dependency ordering and stitching against
-the live project graph, but it does not execute simulation, formal proof,
-coverage, RTL repair or signoff. The existing tool-backed run loop remains the
-execution path for real checks and must be wired to configured result manifests
-before the UI can claim tool execution.
+The real execution path is implemented in
+`wengold/verification/manifest_agents.py`. It calls the existing
+`dv_pipeline.run_regression` and `eda_flows.inspect_manifest` functions for
+explicitly selected, project-local manifests of kind `simulation`, `uvm`,
+`rustdv_sim` or `pss`. Each manifest becomes an independent agent. The
+coordinator records iteration and final results in
+`results/loop-stitch-ledger.jsonl`.
+
+The current real-manifest runner deliberately executes each selected manifest
+once. It does not rerun an unchanged failing test: a future retry must follow a
+reviewed repair or changed input and new provenance fingerprint. Formal
+manifests are not currently routed through this regression runner because a
+formal PASS requires engine-specific proof-status parsing, not just a zero
+process exit code. No RTL repair, formal proof, coverage closure or signoff is
+implied by a simulation-manifest result.
 
 ## Current implementation boundary
 
