@@ -936,12 +936,14 @@ def make_wave_debug(QtCore, QtGui, QtWidgets, project_root, on_crossprobe=None,
         cloud = backend.currentText() == QWEN_BACKEND
         ai_text.setPlainText("Sending bounded waveform evidence to Alibaba Cloud…" if cloud
                              else "Calling local model with bounded waveform evidence…")
-        args = (state["report"], backend.currentText(), endpoint.text().strip(),
-        ai_text.setPlainText("Calling selected LOCAL model with bounded waveform evidence…")
         ai_report = dict(state["report"])
         ai_report["findings"] = list(state["display_findings"])
-        args = (ai_report, backend.currentText(), endpoint.text().strip(),
-                model.text().strip())
+        args = (
+            ai_report,
+            backend.currentText(),
+            endpoint.text().strip(),
+            model.text().strip(),
+        )
         thread = QtCore.QThread(page)
         worker = AiWorker(args)
         worker.moveToThread(thread)
