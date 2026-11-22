@@ -230,7 +230,7 @@ class KimiK3CLIModel:
                 messages.append({"role": "system", "content": system})
             messages.append({"role": "user", "content": prompt})
             history_file.write_text(
-                "\\n".join(json.dumps(message, ensure_ascii=False) for message in messages) + "\\n",
+                "\n".join(json.dumps(message, ensure_ascii=False) for message in messages) + "\n",
                 encoding="utf-8",
             )
             argv = [executable, str(model_dir), "--trunk", str(trunk_dir),
@@ -241,8 +241,8 @@ class KimiK3CLIModel:
             if system.strip():
                 argv.extend(["--system", system])
             try:
-                completed = subprocess.run(argv, cwd=str(tmpdir), input="/exit\\n",
-                    stdin=None, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                completed = subprocess.run(argv, cwd=str(tmpdir), input="/exit\n",
+                    stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                     text=True, encoding="utf-8", errors="replace",
                     timeout=self.timeout, check=False)
             except subprocess.TimeoutExpired as exc:
