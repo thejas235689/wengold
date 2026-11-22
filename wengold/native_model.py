@@ -21,7 +21,7 @@ def model_controls(QtCore, QtWidgets, prefix, *, discoverable=False, dhir=False)
         known.backend if known else "ollama")
     backend.setCurrentText(initial)
     defaults = {"ollama": DEFAULT_OLLAMA, "openai": DEFAULT_OPENAI,
-                QWEN_BACKEND: qwen_endpoint()}
+                "kimi-k3-cli": "", QWEN_BACKEND: qwen_endpoint()}
     endpoint = QtWidgets.QLineEdit(os.environ.get("WENGOLD_LLM_URL") or defaults[initial])
     endpoint.setObjectName(prefix + "Endpoint")
     if discoverable:
@@ -78,6 +78,8 @@ def model_controls(QtCore, QtWidgets, prefix, *, discoverable=False, dhir=False)
         add_button("Use Dhīr 2B", "DhirPreset", p.backend, p.name, p.note + "\n" + p.serve)
     p = PRESETS[GEMMA4_MODEL]
     add_button("Use Gemma 4", "Gemma4Preset", p.backend, p.name, p.note + "\n" + p.serve)
+    p = PRESETS[KIMI_K3_MODEL]
+    add_button("Use Kimi K3 C", "KimiK3Preset", p.backend, p.name, p.note + "\n" + p.serve)
     add_button("Use Qwen4-Max (cloud)", "Qwen4MaxPreset", QWEN_BACKEND, QWEN_MODEL,
                "Sends prompt and selected files or evidence to Alibaba Cloud. "
                "Requires explicit cloud opt-in and a Model Studio API key.")

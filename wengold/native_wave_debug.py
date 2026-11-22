@@ -6,6 +6,7 @@ model explains the evidence in a worker thread and cannot sign off a cause.
 from __future__ import annotations
 
 import json
+import os
 
 from .native_model import model_controls
 from .qwen_cloud import QWEN_BACKEND

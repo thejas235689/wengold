@@ -481,3 +481,64 @@ def test_native_sv_agent_roles_keep_separate_results(native_window, monkeypatch)
     selector.setCurrentIndex(selector.findData("formal"))
     assert "formal draft" in output.toPlainText()
     assert calls == ["formal", "debug", "spec"]
+
+
+def test_native_loop_stitch_preview_is_available_and_explicit(native_window):
+    import json
+    from PyQt6.QtWidgets import QPushButton, QSpinBox
+
+    _root, _app, window = native_window
+    tab = window.workspace
+    run = tab.findChild(QPushButton, "runLoopStitchPreview")
+    iterations = tab.findChild(QSpinBox, "loopStitchMaxIterations")
+    assert run is not None
+    assert iterations is not None
+    assert iterations.value() == 3
+
+    run.click()
+    payload = json.loads(tab.loopStitchViewer.toPlainText())
+    assert payload["mode"] == "read_only_plan_preview"
+    assert payload["status"] == "pass"
+    assert payload["iterations"] == 1
+    assert payload["verification_claim"].startswith("No RTL simulation")
+
+
+def test_native_agents_expose_reviewed_manifest_loop_stitch_controls(native_window):
+    from PyQt6.QtWidgets import QLineEdit, QPushButton
+    _root, _app, window = native_window
+    tab = window.workspace
+    manifest_input = tab.findChild(QLineEdit, "loopStitchManifestList")
+    run = tab.findChild(QPushButton, "runLoopStitchManifests")
+    assert manifest_input is not None
+    assert run is not None
+    manifest_input.setText("flows/simulation.json")
+    assert manifest_input.text() == "flows/simulation.json"
+
+
+def test_native_agents_expose_formal_and_repair_review_controls(native_window):
+    from PyQt6.QtWidgets import QComboBox, QLineEdit, QPlainTextEdit, QPushButton
+    _root, _app, window = native_window
+    tab = window.workspace
+    assert tab.findChild(QLineEdit, "loopStitchRepairRtl") is not None
+    assert tab.findChild(QPlainTextEdit, "loopStitchRepairEvidence") is not None
+    assert tab.findChild(QComboBox, "loopStitchRepairCategory") is not None
+    assert tab.findChild(QPushButton, "createLoopStitchRepairProposal") is not None
+    approval = tab.findChild(QPushButton, "approveLoopStitchRepairCandidate")
+    assert approval is not None
+    assert not approval.isEnabled()
+
+
+@pytest.mark.parametrize("prefix", ["ai", "dv", "waveAi"])
+def test_kimi_k3_preset_selects_local_cli_backend(native_window, prefix):
+    from PyQt6 import QtWidgets
+
+    _, _, window = native_window
+    get = lambda kind, name: window.findChild(kind, prefix + name)
+    backend = get(QtWidgets.QComboBox, "Backend")
+    endpoint = get(QtWidgets.QLineEdit, "Endpoint")
+    model = get(QtWidgets.QComboBox if prefix == "ai" else QtWidgets.QLineEdit, "Model")
+    select_model = model.currentText if prefix == "ai" else model.text
+    get(QtWidgets.QPushButton, "KimiK3Preset").click()
+    assert backend.currentText() == "kimi-k3-cli"
+    assert endpoint.text() == ""
+    assert select_model() == "kimi-k3-in-c"

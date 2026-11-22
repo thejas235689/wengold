@@ -276,6 +276,21 @@ class KimiK3CLIModel:
 def probe(endpoint: str = DEFAULT_OLLAMA, backend: str = "ollama",
           timeout: float = 2.0) -> ModelInfo:
     """Ask the server what it has. Raises LLMUnavailable if nothing answers."""
+    if backend == "kimi-k3-cli":
+        binary = os.environ.get("WENGOLD_K3_BIN", "k3")
+        model_dir = os.environ.get("WENGOLD_K3_MODEL_DIR", "").strip()
+        trunk_dir = os.environ.get("WENGOLD_K3_TRUNK_DIR", "").strip()
+        executable = (Path(binary).expanduser().is_file()
+                      if os.path.sep in binary else shutil.which(binary) is not None)
+        ready = bool(executable and model_dir and trunk_dir
+                     and Path(model_dir).expanduser().is_dir()
+                     and Path(trunk_dir).expanduser().is_dir())
+        if not ready:
+            raise LLMUnavailable(
+                "Kimi K3 CLI is not configured. Set WENGOLD_K3_BIN, "
+                "WENGOLD_K3_MODEL_DIR and WENGOLD_K3_TRUNK_DIR.")
+        return ModelInfo(name=KIMI_K3_MODEL, backend=backend,
+                         endpoint="local executable", models=[KIMI_K3_MODEL])
     if backend == "openai":
         url = endpoint.rstrip("/") + "/models"
         data = _get_json(url, timeout)

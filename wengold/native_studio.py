@@ -398,19 +398,87 @@ def make_studio_tabs(state, QtCore, QtGui, QtWidgets, parent=None):
     audit.clicked.connect(lambda: job_result.setPlainText(str(jobs.audit())))
     tabs.addTab(job_page, "Jobs & Signoff")
 
-    # Agents: actual project/graph facts and bounded orchestration stages.
+    # Agents: Loop & Stitch is surfaced in the native workspace. The initial
+    # desktop integration previews real graph/plan agents; EDA execution remains
+    # with the configured tool adapters and is never implied by a preview PASS.
     agent_page, agent_layout = column()
     agent_hint = QtWidgets.QLabel(
-        "Agent orchestration: inspect real design context and queued local verification stages.\n"
-        "No unattended RTL repair, unrestricted shell or automatic tapeout signoff.")
+        "Loop & Stitch: bounded agent iterations, dependency-aware execution, "
+        "conflict detection and evidence history.\n"
+        "This preview inspects the current graph and plan; it does not run RTL "
+        "simulation, formal proof or approve signoff.")
     agent_hint.setWordWrap(True)
     agent_layout.addWidget(agent_hint)
+
+    agent_controls = QtWidgets.QHBoxLayout()
     agent_plan = QtWidgets.QPushButton("Inspect graph-based agent plan")
-    agent_layout.addWidget(agent_plan)
+    agent_plan.setObjectName("inspectAgentPlan")
+    loop_iterations = QtWidgets.QSpinBox()
+    loop_iterations.setObjectName("loopStitchMaxIterations")
+    loop_iterations.setRange(1, 10)
+    loop_iterations.setValue(3)
+    loop_run = QtWidgets.QPushButton("Run Loop & Stitch Preview")
+    loop_run.setObjectName("runLoopStitchPreview")
+    agent_controls.addWidget(agent_plan)
+    agent_controls.addWidget(QtWidgets.QLabel("Max iterations"))
+    agent_controls.addWidget(loop_iterations)
+    agent_controls.addWidget(loop_run)
+    agent_controls.addStretch(1)
+    agent_layout.addLayout(agent_controls)
+
+    manifest_row = QtWidgets.QHBoxLayout()
+    manifest_input = QtWidgets.QLineEdit()
+    manifest_input.setObjectName("loopStitchManifestList")
+    manifest_input.setPlaceholderText(
+        "Reviewed project manifests, comma-separated: flows/smoke.json, flows/uvm.json")
+    manifest_run = QtWidgets.QPushButton("Run Reviewed Tool Agents")
+    manifest_run.setObjectName("runLoopStitchManifests")
+    manifest_row.addWidget(manifest_input, 1)
+    manifest_row.addWidget(manifest_run)
+    agent_layout.addLayout(manifest_row)
+    manifest_hint = QtWidgets.QLabel(
+        "Executes only explicitly selected, project-local simulation/UVM/RustDV/PSS or proof-aware SymbiYosys formal "
+        "manifests. This runs real configured commands; inspect each manifest first.")
+    manifest_hint.setWordWrap(True)
+    agent_layout.addWidget(manifest_hint)
+
+    repair_row = QtWidgets.QHBoxLayout()
+    repair_rtl = QtWidgets.QLineEdit()
+    repair_rtl.setObjectName("loopStitchRepairRtl")
+    repair_rtl.setPlaceholderText("Project-relative RTL file, e.g. rtl/top.sv")
+    repair_category = QtWidgets.QComboBox()
+    repair_category.setObjectName("loopStitchRepairCategory")
+    repair_category.addItems(["assertion_failure", "formal_counterexample",
+                              "mismatch", "elaboration_error", "unknown"])
+    repair_button = QtWidgets.QPushButton("Create Repair Proposal")
+    repair_button.setObjectName("createLoopStitchRepairProposal")
+    repair_approve_button = QtWidgets.QPushButton("Approve Candidate Copy")
+    repair_approve_button.setObjectName("approveLoopStitchRepairCandidate")
+    repair_approve_button.setEnabled(False)
+    repair_row.addWidget(repair_rtl, 2)
+    repair_row.addWidget(repair_category, 1)
+    repair_row.addWidget(repair_button)
+    repair_row.addWidget(repair_approve_button)
+    repair_payload_state = {"value": None}
+    agent_layout.addLayout(repair_row)
+    repair_evidence = QtWidgets.QPlainTextEdit()
+    repair_evidence.setObjectName("loopStitchRepairEvidence")
+    repair_evidence.setPlaceholderText(
+        "Paste relevant failure log / counterexample evidence. The proposal is read-only.")
+    repair_evidence.setMaximumHeight(78)
+    agent_layout.addWidget(repair_evidence)
+
     agent_trace = QtWidgets.QPlainTextEdit()
     agent_trace.setObjectName("agentPlan")
     agent_trace.setReadOnly(True)
     agent_layout.addWidget(agent_trace)
+
+    loop_stitch_trace = QtWidgets.QPlainTextEdit()
+    loop_stitch_trace.setObjectName("loopStitchResults")
+    loop_stitch_trace.setReadOnly(True)
+    loop_stitch_trace.setPlaceholderText(
+        "Loop iterations, agent outcomes, stitched outputs and conflicts appear here.")
+    agent_layout.addWidget(loop_stitch_trace)
 
     def show_plan():
         try:
@@ -423,7 +491,188 @@ def make_studio_tabs(state, QtCore, QtGui, QtWidgets, parent=None):
         except Exception as exc:
             alert(f"Agent plan failed: {exc}", True)
 
+    def run_loop_stitch_preview():
+        try:
+            from .desktop import _agent
+            from .verification.orchestration import (
+                AgentReport, AgentStatus, AgentTask, LoopPolicy,
+                LoopStitchCoordinator,
+            )
+
+            class GraphContextAgent:
+                task = AgentTask("graph-context")
+
+                def execute(self, _context):
+                    graph = state["graph"]
+                    return AgentReport(
+                        "graph-context", AgentStatus.PASS,
+                        outputs={"graph_summary": {
+                            "nodes": len(graph.nodes),
+                            "edges": len(graph.edges),
+                            "rtl_blocks": len(state.get("block_names", [])),
+                            "complete": bool(state.get("complete", False)),
+                        }},
+                        findings=tuple(state.get("notes", [])),
+                    )
+
+            class VerificationPlanAgent:
+                task = AgentTask("verification-plan", ("graph-context",))
+
+                def execute(self, context):
+                    plan = _agent(state, "inspect verification dependencies")
+                    if not plan.get("ok", True):
+                        return AgentReport(
+                            "verification-plan", AgentStatus.ERROR,
+                            findings=(str(plan.get("error", "plan inspection failed")),),
+                        )
+                    return AgentReport(
+                        "verification-plan", AgentStatus.PASS,
+                        outputs={"verification_plan": {
+                            "steps": plan.get("steps", []),
+                            "summary": plan.get("summary", ""),
+                            "graph_nodes_seen": context["graph_summary"]["nodes"],
+                        }},
+                    )
+
+            coordinator = LoopStitchCoordinator()
+            result = coordinator.run(
+                [VerificationPlanAgent(), GraphContextAgent()],
+                policy=LoopPolicy(max_iterations=loop_iterations.value()),
+                required_outputs=("graph_summary", "verification_plan"),
+            )
+            import json
+            payload = result.as_dict()
+            payload["mode"] = "read_only_plan_preview"
+            payload["verification_claim"] = (
+                "No RTL simulation, formal proof, coverage run or signoff was executed."
+            )
+            loop_stitch_trace.setPlainText(json.dumps(payload, indent=2, default=str))
+            alert(
+                f"Loop & Stitch preview: {result.status.value.upper()} "
+                f"after {result.iterations} iteration(s); plan preview only."
+            )
+        except Exception as exc:
+            loop_stitch_trace.setPlainText(f"Loop & Stitch preview failed: {type(exc).__name__}: {exc}")
+            alert(f"Loop & Stitch preview failed: {exc}", True)
+
+    def run_reviewed_manifest_agents():
+        selected = [item.strip() for item in manifest_input.text().replace("\n", ",").split(",")
+                    if item.strip()]
+        if not selected:
+            alert("Enter at least one reviewed project manifest", True)
+            return
+        manifest_run.setEnabled(False)
+        loop_stitch_trace.setPlainText(
+            "RUNNING · launching selected reviewed manifest agents; "
+            "tool logs and evidence hashes will be collected…")
+
+        class ManifestWorker(QtCore.QObject):
+            finished = QtCore.pyqtSignal(object)
+            failed = QtCore.pyqtSignal(str)
+
+            def __init__(self, project_root, manifest_paths):
+                super().__init__()
+                self.project_root = project_root
+                self.manifest_paths = manifest_paths
+
+            @QtCore.pyqtSlot()
+            def run(self):
+                try:
+                    from .verification.manifest_agents import run_reviewed_manifests
+                    result = run_reviewed_manifests(self.project_root, self.manifest_paths)
+                    self.finished.emit(result.as_dict())
+                except Exception as exc:
+                    self.failed.emit(f"{type(exc).__name__}: {exc}")
+
+        thread = QtCore.QThread(agent_page)
+        worker = ManifestWorker(state["path"], selected)
+        worker.moveToThread(thread)
+
+        def manifest_finished(payload):
+            import json
+            loop_stitch_trace.setPlainText(json.dumps(payload, indent=2, default=str))
+            manifest_run.setEnabled(True)
+            alert(
+                f"Reviewed tool agents: {payload['status'].upper()} "
+                f"after {payload['iterations']} iteration(s). "
+                "Inspect evidence and logs; this is not signoff."
+            )
+
+        def manifest_failed(message):
+            loop_stitch_trace.setPlainText("Manifest orchestration error: " + message)
+            manifest_run.setEnabled(True)
+            alert("Manifest orchestration failed: " + message, True)
+
+        thread.started.connect(worker.run)
+        worker.finished.connect(manifest_finished)
+        worker.failed.connect(manifest_failed)
+        worker.finished.connect(thread.quit)
+        worker.failed.connect(thread.quit)
+        thread.finished.connect(worker.deleteLater)
+        thread.finished.connect(thread.deleteLater)
+        agent_page.loopStitchThread = thread
+        agent_page.loopStitchWorker = worker
+        thread.start()
+
+    def create_repair_proposal():
+        repair_payload_state["value"] = None
+        repair_approve_button.setEnabled(False)
+        rtl_rel = repair_rtl.text().strip()
+        evidence = repair_evidence.toPlainText().strip()
+        if not rtl_rel or not evidence:
+            alert("Provide an RTL file and its failure evidence", True)
+            return
+        try:
+            from .verification.repair_agents import RepairProposalAgent
+            agent = RepairProposalAgent(
+                state["path"], rtl_rel,
+                {"category": repair_category.currentText(), "file": rtl_rel,
+                 "log": evidence},
+            )
+            report = agent.execute({})
+            import json
+            loop_stitch_trace.setPlainText(json.dumps(report.as_dict(), indent=2))
+            if report.status.value == "pass":
+                repair_payload_state["value"] = report.outputs.get("repair_proposal:" + rtl_rel)
+                repair_approve_button.setEnabled(bool(repair_payload_state["value"]))
+                alert("Proposal generated in memory. Review the diff before approving a separate candidate copy.")
+            else:
+                alert("Repair proposal not generated: " + "; ".join(report.findings), True)
+        except Exception as exc:
+            alert(f"Repair proposal failed: {type(exc).__name__}: {exc}", True)
+
+    def approve_repair_candidate():
+        payload = repair_payload_state.get("value")
+        if not payload:
+            alert("Create and review a repair proposal first", True)
+            return
+        answer = QtWidgets.QMessageBox.question(
+            tabs, "Approve candidate copy",
+            "Write this proposal as a NEW file under results/approved_repairs? "
+            "The original RTL will not be overwritten. Verification will remain NOT RUN.",
+        )
+        if answer != QtWidgets.QMessageBox.StandardButton.Yes:
+            alert("Candidate copy approval cancelled")
+            return
+        try:
+            from .verification.repair_agents import approve_candidate_copy
+            result = approve_candidate_copy(
+                state["path"], payload, approved=True,
+                expected_source_sha256=payload.get("source_sha256"),
+                expected_candidate_sha256=payload.get("candidate_sha256"),
+            )
+            import json
+            loop_stitch_trace.setPlainText(json.dumps(result, indent=2))
+            repair_approve_button.setEnabled(False)
+            alert("Approved candidate copy written. Original RTL is unchanged; verification NOT RUN.")
+        except Exception as exc:
+            alert(f"Candidate approval refused: {type(exc).__name__}: {exc}", True)
+
     agent_plan.clicked.connect(show_plan)
+    loop_run.clicked.connect(run_loop_stitch_preview)
+    manifest_run.clicked.connect(run_reviewed_manifest_agents)
+    repair_button.clicked.connect(create_repair_proposal)
+    repair_approve_button.clicked.connect(approve_repair_candidate)
     tabs.addTab(agent_page, "Agents")
 
     # Quantum Design Studio is loaded lazily and shares the standalone editor.
@@ -552,6 +801,15 @@ def make_studio_tabs(state, QtCore, QtGui, QtWidgets, parent=None):
     tabs.formalViewer = formal_result
     tabs.jobTable = job_table
     tabs.agentViewer = agent_trace
+    tabs.loopStitchViewer = loop_stitch_trace
+    tabs.loopStitchRunButton = loop_run
+    tabs.loopStitchIterations = loop_iterations
+    tabs.loopStitchManifestInput = manifest_input
+    tabs.loopStitchManifestRunButton = manifest_run
+    tabs.loopStitchRepairRtl = repair_rtl
+    tabs.loopStitchRepairEvidence = repair_evidence
+    tabs.loopStitchRepairButton = repair_button
+    tabs.loopStitchRepairApproveButton = repair_approve_button
     refresh_evidence()
     refresh_jobs()
     return tabs
