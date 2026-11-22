@@ -63,9 +63,25 @@ the requested output contract was stitched consistently. It is not design
 signoff. The signoff workflow must separately validate evidence freshness,
 tool availability, requirement coverage, waivers, and human approval.
 
+## Native desktop integration
+
+The native Agents workspace now exposes:
+- A configurable maximum-iteration control.
+- A graph-based plan inspection action.
+- A Loop & Stitch preview action.
+- A structured result view with iteration count, agent reports, stitched
+  outputs, conflicts and an explicit preview-only verification claim.
+
+The first UI integration runs two read-only analysis agents (graph context and
+verification plan). It demonstrates dependency ordering and stitching against
+the live project graph, but it does not execute simulation, formal proof,
+coverage, RTL repair or signoff. The existing tool-backed run loop remains the
+execution path for real checks and must be wired to configured result manifests
+before the UI can claim tool execution.
+
 ## Current implementation boundary
 
-This increment provides a synchronous Python orchestration API and unit tests.
-It does not launch EDA tools itself, provide distributed workers, persist agent
-state outside the ledger, or claim end-to-end CI validation. Tool execution
-continues through WENGOLD's existing adapters.
+This increment provides a synchronous Python orchestration API, native
+workspace preview controls and unit tests. It does not provide distributed
+workers or claim end-to-end CI validation. Tool execution continues through
+WENGOLD's existing adapters.
