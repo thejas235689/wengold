@@ -426,6 +426,22 @@ def make_studio_tabs(state, QtCore, QtGui, QtWidgets, parent=None):
     agent_controls.addStretch(1)
     agent_layout.addLayout(agent_controls)
 
+    manifest_row = QtWidgets.QHBoxLayout()
+    manifest_input = QtWidgets.QLineEdit()
+    manifest_input.setObjectName("loopStitchManifestList")
+    manifest_input.setPlaceholderText(
+        "Reviewed project manifests, comma-separated: flows/smoke.json, flows/uvm.json")
+    manifest_run = QtWidgets.QPushButton("Run Reviewed Tool Agents")
+    manifest_run.setObjectName("runLoopStitchManifests")
+    manifest_row.addWidget(manifest_input, 1)
+    manifest_row.addWidget(manifest_run)
+    agent_layout.addLayout(manifest_row)
+    manifest_hint = QtWidgets.QLabel(
+        "Executes only explicitly selected, project-local simulation/UVM/RustDV/PSS "
+        "manifests. This runs real configured commands; inspect each manifest first.")
+    manifest_hint.setWordWrap(True)
+    agent_layout.addWidget(manifest_hint)
+
     agent_trace = QtWidgets.QPlainTextEdit()
     agent_trace.setObjectName("agentPlan")
     agent_trace.setReadOnly(True)
@@ -513,8 +529,68 @@ def make_studio_tabs(state, QtCore, QtGui, QtWidgets, parent=None):
             loop_stitch_trace.setPlainText(f"Loop & Stitch preview failed: {type(exc).__name__}: {exc}")
             alert(f"Loop & Stitch preview failed: {exc}", True)
 
+    def run_reviewed_manifest_agents():
+        selected = [item.strip() for item in manifest_input.text().replace("\\n", ",").split(",")
+                    if item.strip()]
+        if not selected:
+            alert("Enter at least one reviewed project manifest", True)
+            return
+        manifest_run.setEnabled(False)
+        loop_stitch_trace.setPlainText(
+            "RUNNING · launching selected reviewed manifest agents; "
+            "tool logs and evidence hashes will be collected…")
+
+        class ManifestWorker(QtCore.QObject):
+            finished = QtCore.pyqtSignal(object)
+            failed = QtCore.pyqtSignal(str)
+
+            def __init__(self, project_root, manifest_paths):
+                super().__init__()
+                self.project_root = project_root
+                self.manifest_paths = manifest_paths
+
+            @QtCore.pyqtSlot()
+            def run(self):
+                try:
+                    from .verification.manifest_agents import run_reviewed_manifests
+                    result = run_reviewed_manifests(self.project_root, self.manifest_paths)
+                    self.finished.emit(result.as_dict())
+                except Exception as exc:
+                    self.failed.emit(f"{type(exc).__name__}: {exc}")
+
+        thread = QtCore.QThread(agent_page)
+        worker = ManifestWorker(state["path"], selected)
+        worker.moveToThread(thread)
+
+        def manifest_finished(payload):
+            import json
+            loop_stitch_trace.setPlainText(json.dumps(payload, indent=2, default=str))
+            manifest_run.setEnabled(True)
+            alert(
+                f"Reviewed tool agents: {payload['status'].upper()} "
+                f"after {payload['iterations']} iteration(s). "
+                "Inspect evidence and logs; this is not signoff."
+            )
+
+        def manifest_failed(message):
+            loop_stitch_trace.setPlainText("Manifest orchestration error: " + message)
+            manifest_run.setEnabled(True)
+            alert("Manifest orchestration failed: " + message, True)
+
+        thread.started.connect(worker.run)
+        worker.finished.connect(manifest_finished)
+        worker.failed.connect(manifest_failed)
+        worker.finished.connect(thread.quit)
+        worker.failed.connect(thread.quit)
+        thread.finished.connect(worker.deleteLater)
+        thread.finished.connect(thread.deleteLater)
+        agent_page.loopStitchThread = thread
+        agent_page.loopStitchWorker = worker
+        thread.start()
+
     agent_plan.clicked.connect(show_plan)
     loop_run.clicked.connect(run_loop_stitch_preview)
+    manifest_run.clicked.connect(run_reviewed_manifest_agents)
     tabs.addTab(agent_page, "Agents")
 
     # Quantum Design Studio is loaded lazily and shares the standalone editor.
@@ -646,6 +722,8 @@ def make_studio_tabs(state, QtCore, QtGui, QtWidgets, parent=None):
     tabs.loopStitchViewer = loop_stitch_trace
     tabs.loopStitchRunButton = loop_run
     tabs.loopStitchIterations = loop_iterations
+    tabs.loopStitchManifestInput = manifest_input
+    tabs.loopStitchManifestRunButton = manifest_run
     refresh_evidence()
     refresh_jobs()
     return tabs
