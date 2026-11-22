@@ -501,3 +501,15 @@ def test_native_loop_stitch_preview_is_available_and_explicit(native_window):
     assert payload["status"] == "pass"
     assert payload["iterations"] == 1
     assert payload["verification_claim"].startswith("No RTL simulation")
+
+
+def test_native_agents_expose_reviewed_manifest_loop_stitch_controls(native_window):
+    from PyQt6.QtWidgets import QLineEdit, QPushButton
+    _root, _app, window = native_window
+    tab = window.workspace
+    manifest_input = tab.findChild(QLineEdit, "loopStitchManifestList")
+    run = tab.findChild(QPushButton, "runLoopStitchManifests")
+    assert manifest_input is not None
+    assert run is not None
+    manifest_input.setText("flows/simulation.json")
+    assert manifest_input.text() == "flows/simulation.json"
