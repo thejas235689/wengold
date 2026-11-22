@@ -523,3 +523,6 @@ def test_native_agents_expose_formal_and_repair_review_controls(native_window):
     assert tab.findChild(QPlainTextEdit, "loopStitchRepairEvidence") is not None
     assert tab.findChild(QComboBox, "loopStitchRepairCategory") is not None
     assert tab.findChild(QPushButton, "createLoopStitchRepairProposal") is not None
+    approval = tab.findChild(QPushButton, "approveLoopStitchRepairCandidate")
+    assert approval is not None
+    assert not approval.isEnabled()
