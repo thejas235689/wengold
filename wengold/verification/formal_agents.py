@@ -5,8 +5,8 @@ unbounded proof mode and a parsed SBY PASS status plus fresh declared artifacts.
 """
 from __future__ import annotations
 
-import configparser
 import json
+import re
 from pathlib import Path
 
 from ..eda_flows import execute_manifest, inspect_manifest
@@ -25,13 +25,15 @@ def _actual_sby_mode(root: Path, argv: list[str]) -> str | None:
         return None
     if sby_path.stat().st_size > 64_000:
         return None
-    parser = configparser.ConfigParser(interpolation=None)
     try:
-        parser.read_string(sby_path.read_text(encoding="utf-8"))
-        return parser.get("options", "mode", fallback=None)
-    except (OSError, UnicodeDecodeError, configparser.Error):
+        source = sby_path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
         return None
-
+    options = re.search(r"(?ims)^\\s*\\[options\\]\\s*(.*?)(?=^\\s*\\[|\\Z)", source)
+    if not options:
+        return None
+    mode = re.search(r"(?im)^\\s*mode\\s+([A-Za-z_]+)\\s*(?:#.*)?$", options.group(1))
+    return mode.group(1).lower() if mode else None
 
 class SymbiYosysManifestAgent:
     def __init__(self, project_root: str | Path, manifest_rel: str) -> None:
