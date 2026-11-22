@@ -316,9 +316,12 @@ Proprietary RTL prompts remain on the local machine.
 
 ### Important capability boundaries
 
-- This first adapter is **text-only, single-request batch inference**. It does
-  not connect Kimi K3's interactive chat REPL, expose an HTTP server, invoke
-  WENGOLD tools, or autonomously execute EDA commands.
+- This first adapter is **text-only, one-turn inference per process**. It uses
+  the official XTML chat REPL for each request, then exits. A persistent K3
+  session that reuses loaded weights and KV state across WENGOLD requests is
+  not implemented yet, so repeated requests may pay substantial startup and
+  model-loading cost. It does not expose an HTTP server, invoke WENGOLD tools,
+  or autonomously execute EDA commands.
 - It is available for drafting RTL and explaining already-established
   verification evidence. Model output is advisory and never changes proof,
   simulation, coverage, or signoff status.
