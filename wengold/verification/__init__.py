@@ -9,10 +9,12 @@ from .orchestration import (
     LoopStitchResult, RunStatus, StitchResult, Stitcher, VerificationAgent,
 )
 from .planner import LeanPlan, LeanPlanner, PlanAction, PlanItem
+from .manifest_agents import ReviewedManifestAgent, run_reviewed_manifests
 
 __all__ = [
     "RunManifest", "LeanPlan", "LeanPlanner", "PlanAction", "PlanItem",
     "AgentReport", "AgentStatus", "AgentTask", "LoopPolicy",
     "LoopStitchCoordinator", "LoopStitchResult", "RunStatus",
     "StitchResult", "Stitcher", "VerificationAgent",
+    "ReviewedManifestAgent", "run_reviewed_manifests",
 ]
