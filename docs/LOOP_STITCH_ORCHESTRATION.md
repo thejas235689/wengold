@@ -149,3 +149,22 @@ manifest that declares a nonexistent or non-fresh PASS artifact cannot yield a
 formal-agent PASS. The actual SBY task must also be configured for a prove-mode
 proof; WENGOLD's explicit `proof_mode` field is a declared contract and should
 be checked against the reviewed `.sby` file; WENGOLD parses that file's actual `[options] mode` and rejects BMC/cover even if the manifest metadata claims `prove`.
+
+
+## Guarded repair approval and candidate isolation
+
+Repair proposals now include the candidate text plus SHA-256 hashes for both
+the source and candidate. The native Agents workspace enables **Approve
+Candidate Copy** only after a proposal has been generated. The action requires
+a second confirmation and writes a new file under
+`results/approved_repairs/<original-relative-path>`.
+
+The approval API requires an explicit approval flag and both expected hashes.
+It re-reads the source and refuses approval if the source changed after
+proposal generation; it also verifies the candidate hash. The candidate
+directory is confined to the project, and file creation is exclusive: an
+existing candidate is never overwritten. The original RTL is never modified.
+The result remains `verification_status: NOT_RUN`; approval is not proof of
+correctness and does not launch any tools. Review the candidate copy, then
+run fresh Slang/lint, simulation, formal and coverage checks against that
+candidate before considering integration.
