@@ -25,6 +25,7 @@ else:
 
 class QuESTBackend(Backend):
     name = "quest"
+    cache_identity = "quest-v4-statevector-v1"
 
     def __init__(self):
         if _quest_bridge is None:
