@@ -7,6 +7,7 @@ without pretending to support mid-circuit measurement or reset.
 from __future__ import annotations
 
 from dataclasses import dataclass
+import math
 from typing import Any
 
 from quantum.core.circuit_ir import Circuit, NON_UNITARY, Operation, validate_circuit
@@ -99,4 +100,94 @@ def build_debug_trace(
         circuit_id=circuit.circuit_id,
         backend=getattr(backend, "name", "unknown"),
         snapshots=tuple(snapshots),
+    )
+
+
+
+@dataclass(frozen=True)
+class AmplitudeRow:
+    basis_state: str
+    real: float
+    imag: float
+    magnitude: float
+    phase_radians: float
+    probability: float
+
+
+@dataclass(frozen=True)
+class StatevectorComparison:
+    fidelity: float
+    global_phase_radians: float
+    reference_norm: float
+    candidate_norm: float
+    dimension: int
+
+
+def _complex_amplitude(value: Any) -> complex:
+    """Accept Python complex values or backend [real, imag] pairs."""
+    if isinstance(value, complex):
+        result = value
+    elif isinstance(value, (tuple, list)) and len(value) == 2:
+        result = complex(float(value[0]), float(value[1]))
+    else:
+        result = complex(float(value), 0.0)
+    if not (math.isfinite(result.real) and math.isfinite(result.imag)):
+        raise QuantumDebugError("statevector contains a non-finite amplitude")
+    return result
+
+
+def amplitude_rows(statevector: Any, *, threshold: float = 0.0) -> tuple[AmplitudeRow, ...]:
+    """Return basis-indexed amplitude details; basis labels use q[n-1]…q[0]."""
+    if not math.isfinite(threshold) or threshold < 0:
+        raise ValueError("threshold must be a finite non-negative number")
+    values = tuple(_complex_amplitude(value) for value in statevector)
+    if not values:
+        raise QuantumDebugError("statevector is empty")
+    norm_sq = sum(abs(value) ** 2 for value in values)
+    if not math.isfinite(norm_sq) or norm_sq <= 0:
+        raise QuantumDebugError("statevector has zero or invalid norm")
+    qubits = (len(values) - 1).bit_length()
+    rows = []
+    for index, value in enumerate(values):
+        probability = abs(value) ** 2 / norm_sq
+        if probability < threshold:
+            continue
+        rows.append(AmplitudeRow(
+            basis_state=format(index, f"0{qubits}b"),
+            real=value.real,
+            imag=value.imag,
+            magnitude=abs(value),
+            phase_radians=math.atan2(value.imag, value.real) if value else 0.0,
+            probability=probability,
+        ))
+    return tuple(rows)
+
+
+def compare_statevectors(reference: Any, candidate: Any) -> StatevectorComparison:
+    """Compare two pure states using fidelity invariant to global phase.
+
+    Both inputs are normalized for comparison. The reported phase is the
+    candidate's global phase relative to the reference, inferred from <ref|cand>.
+    """
+    ref = tuple(_complex_amplitude(value) for value in reference)
+    cand = tuple(_complex_amplitude(value) for value in candidate)
+    if not ref or not cand:
+        raise QuantumDebugError("statevectors must not be empty")
+    if len(ref) != len(cand):
+        raise QuantumDebugError(
+            f"statevector dimensions differ: {len(ref)} != {len(cand)}"
+        )
+    ref_norm_sq = sum(abs(value) ** 2 for value in ref)
+    cand_norm_sq = sum(abs(value) ** 2 for value in cand)
+    if ref_norm_sq <= 0 or cand_norm_sq <= 0:
+        raise QuantumDebugError("statevector has zero norm")
+    overlap = sum(a.conjugate() * b for a, b in zip(ref, cand))
+    fidelity = min(1.0, max(0.0, abs(overlap) ** 2 / (ref_norm_sq * cand_norm_sq)))
+    phase = math.atan2(overlap.imag, overlap.real) if overlap else 0.0
+    return StatevectorComparison(
+        fidelity=fidelity,
+        global_phase_radians=phase,
+        reference_norm=math.sqrt(ref_norm_sq),
+        candidate_norm=math.sqrt(cand_norm_sq),
+        dimension=len(ref),
     )
