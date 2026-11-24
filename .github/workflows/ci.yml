@@ -274,17 +274,18 @@ jobs:
       - name: Simulate a 3.9 interpreter
         shell: bash
         run: |
+          # A heredoc body at column 1 ends the YAML block scalar and makes the
+          # whole workflow unparseable, so the shim is written with printf.
           shim="$RUNNER_TEMP/oldpy"; mkdir -p "$shim"
           real="$(command -v python3.12 || command -v python3)"
           for cand in python3.13 python3.12 python3.11 python3; do
-            cat > "$shim/$cand" <<EOF
-#!/bin/sh
-case "\$2" in
-  *"version_info >= (3,11)"*) exit 1 ;;
-  *"version_info[:2]"*) echo "3.9"; exit 0 ;;
-esac
-exec "$real" "\$@"
-EOF
+            printf '%s\n' \
+              '#!/bin/sh' \
+              'case "$2" in' \
+              '  *"version_info >= (3,11)"*) exit 1 ;;' \
+              '  *"version_info[:2]"*) echo "3.9"; exit 0 ;;' \
+              'esac' \
+              "exec $real \"\$@\"" > "$shim/$cand"
             chmod +x "$shim/$cand"
           done
           set +e

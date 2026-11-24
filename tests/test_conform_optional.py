@@ -47,7 +47,6 @@ def test_parsing_without_pyslang_refuses_clearly():
     """It must refuse, not imitate the check with a regex — a regex would report
     conformance it had not established."""
     code = BLOCK_PYSLANG + '''
-    code = '''
 import sys
 sys.modules["pyslang"] = None
 from wengold.generate.conform import _parse
@@ -69,14 +68,14 @@ def test_vibe_does_not_traceback_without_pyslang(tmp_path):
     spec = REPO / "examples" / "timer" / "timer.spec.yaml"
     if not spec.exists():
         pytest.skip("no example spec")
-    code = BLOCK_PYSLANG + '''
-    code = '''
-import sys
-sys.modules["pyslang"] = None
-sys.argv = ["wengold", "vibe", %r, "--out", %r]
-from wengold.cli import main
-raise SystemExit(main())
-''' % (str(spec), str(tmp_path / "out"))
+    body = (
+        "import sys\n"
+        "sys.modules['pyslang'] = None\n"
+        f"sys.argv = ['wengold', 'vibe', {str(spec)!r}, '--out', {str(tmp_path / 'out')!r}]\n"
+        "from wengold.cli import main\n"
+        "raise SystemExit(main())\n"
+    )
+    code = BLOCK_PYSLANG + "\n" + body
     r = subprocess.run([sys.executable, "-c", code], cwd=REPO,
                        capture_output=True, text=True, timeout=180,
                        env={**os.environ, "PYTHONPATH": str(REPO)})

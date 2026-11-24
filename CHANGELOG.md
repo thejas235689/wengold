@@ -14,6 +14,31 @@ what the tags are for.
 
 ---
 
+## [0.68.4] — 2026-11-24
+
+### The package did not import
+
+`wengold/agent/llm.py` had a backslash inside an f-string expression:
+
+    return f"... model_dir={self.model_dir or \"not configured\"} ..."
+
+That is a SyntaxError on every Python version, so `wengold --version` printed
+nothing and every command died in the import — the whole tool was unusable, and
+nothing in CI caught it because the syntax error is in a module only reached
+through `sv_agents` and `ai_workbench`.
+
+Two more breakages were hiding behind it:
+
+- `tests/test_conform_optional.py` had a duplicated `code = '''` line from a bad
+  edit, so the file did not parse and pytest stopped at collection.
+- `.github/workflows/ci.yml` had a heredoc body at column 1, which ends the YAML
+  block scalar and makes the entire workflow unparseable. Rewritten with `printf`,
+  and the shim verified to still refuse a 3.9 interpreter.
+
+**1252 tests passing**, 35 skipped.
+
+---
+
 ## [0.68.3] — 2026-11-11
 
 ### A simulation could not find its own design file
